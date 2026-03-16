@@ -16,4 +16,4 @@ __pycache__/
 venv/
 
 # IDE
-.idea/
+industrial_anomaly_agent.egg-info/
