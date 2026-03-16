@@ -146,6 +146,137 @@ function generateTaskId() {
 }
 
 /**
+ * Render a safe subset of Markdown into HTML.
+ * Supports: headings (#..###), bold (**), inline code (`), blockquote (>),
+ * unordered/ordered lists, horizontal rule (---), and paragraphs.
+ */
+function renderMarkdownLite(markdown) {
+    if (!markdown) return '';
+
+    const escapeHtml = (s) => String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const formatInline = (s) => {
+        // Inline code first to avoid formatting inside code spans.
+        s = s.replace(/`([^`]+)`/g, (_m, p1) => `<code>${p1}</code>`);
+        s = s.replace(/\*\*([^*]+)\*\*/g, (_m, p1) => `<strong>${p1}</strong>`);
+        return s;
+    };
+
+    const lines = escapeHtml(markdown).split(/\r?\n/);
+    const out = [];
+    let inUl = false;
+    let inOl = false;
+    let inQuote = false;
+    let seenH2 = false;
+
+    const closeLists = () => {
+        if (inUl) {
+            out.push('</ul>');
+            inUl = false;
+        }
+        if (inOl) {
+            out.push('</ol>');
+            inOl = false;
+        }
+    };
+
+    const closeQuote = () => {
+        if (inQuote) {
+            out.push('</blockquote>');
+            inQuote = false;
+        }
+    };
+
+    for (const rawLine of lines) {
+        const line = rawLine.trimRight();
+        const trimmed = line.trim();
+
+        if (!trimmed) {
+            closeLists();
+            closeQuote();
+            continue;
+        }
+
+        if (/^---$/.test(trimmed)) {
+            closeLists();
+            closeQuote();
+            out.push('<hr />');
+            continue;
+        }
+
+        const headingMatch = /^(#{1,3})\s+(.*)$/.exec(trimmed);
+        if (headingMatch) {
+            closeLists();
+            closeQuote();
+            const level = headingMatch[1].length;
+            let title = headingMatch[2];
+            // Normalize headings like "2.异常详情" -> "2. 异常详情"
+            title = title.replace(/^(\d{1,2})\.\s*(\S)/, '$1. $2');
+            if (level === 2) {
+                if (seenH2) out.push('<div class="report-section-divider"></div>');
+                seenH2 = true;
+            }
+            out.push(`<h${level}>${formatInline(title)}</h${level}>`);
+            continue;
+        }
+
+        const quoteMatch = /^&gt;\s?(.*)$/.exec(trimmed);
+        if (quoteMatch) {
+            closeLists();
+            if (!inQuote) {
+                out.push('<blockquote>');
+                inQuote = true;
+            }
+            out.push(`<p>${formatInline(quoteMatch[1])}</p>`);
+            continue;
+        }
+
+        const ulMatch = /^[-*]\s+(.*)$/.exec(trimmed);
+        if (ulMatch) {
+            closeQuote();
+            if (inOl) {
+                out.push('</ol>');
+                inOl = false;
+            }
+            if (!inUl) {
+                out.push('<ul>');
+                inUl = true;
+            }
+            out.push(`<li>${formatInline(ulMatch[1])}</li>`);
+            continue;
+        }
+
+        const olMatch = /^\d+\.\s+(.*)$/.exec(trimmed);
+        if (olMatch) {
+            closeQuote();
+            if (inUl) {
+                out.push('</ul>');
+                inUl = false;
+            }
+            if (!inOl) {
+                out.push('<ol>');
+                inOl = true;
+            }
+            out.push(`<li>${formatInline(olMatch[1])}</li>`);
+            continue;
+        }
+
+        closeLists();
+        closeQuote();
+        out.push(`<p>${formatInline(trimmed)}</p>`);
+    }
+
+    closeLists();
+    closeQuote();
+    return out.join('\n');
+}
+
+/**
  * Show toast notification
  */
 function showToast(message, type = 'info', duration = 3000) {

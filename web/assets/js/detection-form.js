@@ -276,14 +276,8 @@ function displayResult(result) {
 
         ${result.summary ? `
             <div style="margin-bottom: 20px;">
-                <h4 style="margin: 0 0 8px 0;">Summary</h4>
-                <p style="
-                    background: #f8fafc;
-                    padding: 12px;
-                    border-radius: 6px;
-                    margin: 0;
-                    line-height: 1.6;
-                ">${result.summary}</p>
+                <h4 style="margin: 0 0 8px 0;">Report</h4>
+                <div class="report-md">${renderMarkdownLite(result.summary)}</div>
             </div>
         ` : ''}
 
