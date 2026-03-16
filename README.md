@@ -41,7 +41,7 @@ MMDL-Agent/
     ├── schemas/
     │   └── detection.py         # 数据模型（Pydantic）
     ├── tools/
-    │   └── anomaly_detection.py # 异常检测工具实现
+    │   └── image_anomaly_detection.py # 异常检测工具实现
     └── utils/
         └── logging.py           # 日志与追踪工具
 ```
@@ -160,10 +160,10 @@ curl http://127.0.0.1:8000/
 
 <a id="detection-algorithm"></a>
 
-### 异常检测算法 TODO（概览）
+### 异常检测算法流（概览）
 
 - 客户端或 Web 前端向 `POST /v1/detect` 提交检测任务，请求体会被解析为 `DetectionTask`（见 `app/schemas/detection.py`）。
-- Agent 调用在 `app/tools/anomaly_detection.py` 中注册的检测工具（如 `MockAnomalyDetectionTool`，后续可扩展为 `HttpAnomalyDetectionTool` 对接真实服务）。
+- Agent 调用在 `app/tools/image_anomaly_detection.py` 中注册的检测工具。
 - 工具返回 `DetectionResult`，其中包含任务状态、异常列表、摘要与元数据，最终被封装为标准 API 响应返回给调用方。
 
 ---

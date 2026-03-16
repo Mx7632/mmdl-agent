@@ -17,14 +17,26 @@ class APIClient {
      */
     async request(endpoint, options = {}) {
         const url = `${this.baseURL}${endpoint}`;
+        const isFormData = (typeof FormData !== 'undefined') && (options.body instanceof FormData);
+        const headers = { ...this.headers };
+        if (isFormData) {
+            // Let the browser set the correct multipart boundary.
+            delete headers['Content-Type'];
+        }
         const config = {
             method: options.method || 'GET',
-            headers: this.headers,
+            headers,
             ...options,
         };
 
-        if (options.body && typeof options.body === 'object') {
-            config.body = JSON.stringify(options.body);
+        if (options.body) {
+            if (isFormData) {
+                config.body = options.body;
+            } else if (typeof options.body === 'object') {
+                config.body = JSON.stringify(options.body);
+            } else {
+                config.body = options.body;
+            }
         }
 
         try {
@@ -42,13 +54,6 @@ class APIClient {
             console.error(`API Error [${endpoint}]:`, error);
             throw error;
         }
-    }
-
-    /**
-     * GET /health - Check API health
-     */
-    async checkHealth() {
-        return this.request('/health');
     }
 
     /**

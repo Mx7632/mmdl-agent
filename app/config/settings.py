@@ -5,11 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """应用配置类。
-
-    说明：
-    - 所有字段都可以通过环境变量 APP_* 覆盖，例如 APP_APP_NAME、APP_ANOMALY_DETECTION_URL 等。
-    """
+    """应用配置类"""
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="APP_")
 
@@ -19,7 +15,7 @@ class Settings(BaseSettings):
     enable_tracing: bool = False
 
     # 异常检测服务配置（供 HttpAnomalyDetectionTool 使用）
-    anomaly_detection_url: str = "http://localhost:8080/"  #Todo后期要修改的核心地方 
+    anomaly_detection_url: str = "http://localhost:8080/"  #Todo 后期要修改的核心地方 
     anomaly_detection_timeout: float = 30.0
 
     # LLM 配置（供 summarize_node 使用）
@@ -30,6 +26,7 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 500
     llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
+    # Vision LLM (qwen3.5-plus) config (for image anomaly detection)
+    llm_vision_model: str = "qwen3.5-plus"    # TODO: When switching to local CV inference, this section becomes unused.
 
 settings = Settings()
-

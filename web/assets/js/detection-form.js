@@ -33,50 +33,17 @@ function autofillTaskId() {
  */
 function setupFormListeners() {
     const form = document.getElementById('detection-form');
-    const dataInput = document.getElementById('data-input');
-    const thresholdSlider = document.getElementById('threshold-slider');
+    const imageInput = document.getElementById('image-input');
 
     // Form submission
     if (form) {
         form.addEventListener('submit', handleFormSubmit);
     }
 
-    // Threshold slider sync with display
-    if (thresholdSlider) {
-        thresholdSlider.addEventListener('input', (e) => {
-            updateThresholdDisplay(e.target.value);
+    if (imageInput) {
+        imageInput.addEventListener('change', () => {
+            // Placeholder for future: show image preview, size limit tips, etc.
         });
-    }
-
-    // Data input format example
-    if (dataInput) {
-        dataInput.addEventListener('focus', () => {
-            if (!dataInput.value) {
-                dataInput.placeholder = 'Example: 10.5, 20.3, 15.8, 100.2, 12.1\nOr: [10.5, 20.3, 15.8]';
-            }
-        });
-    }
-}
-
-/**
- * Update threshold display value
- */
-function updateThresholdDisplay(value) {
-    const display = document.getElementById('threshold-value');
-    const input = document.getElementById('threshold-input');
-
-    if (display) {
-        display.textContent = parseFloat(value).toFixed(2);
-    }
-    if (input) {
-        input.value = value;
-    }
-
-    // Update slider background gradient
-    const slider = document.getElementById('threshold-slider');
-    if (slider) {
-        const percentage = (value / 1.0) * 100;
-        slider.style.background = `linear-gradient(to right, #16a34a 0%, #f59e0b ${percentage}%, #dc2626 100%)`;
     }
 }
 
@@ -112,7 +79,7 @@ async function handleFormSubmit(e) {
         if (typeof addRecentDetection === 'function') {
             const detection = {
                 task_id: result.task_id,
-                asset_id: taskData.asset_id,
+                asset_id: document.getElementById('asset-id')?.value?.trim() || '',
                 status: result.status,
                 anomalies: result.anomalies || [],
                 summary: result.summary,
@@ -137,9 +104,9 @@ async function handleFormSubmit(e) {
 function validateForm() {
     const taskId = document.getElementById('task-id').value.trim();
     const assetId = document.getElementById('asset-id').value.trim();
-    const dataInput = document.getElementById('data-input').value.trim();
     const startTime = document.getElementById('start-time').value;
     const endTime = document.getElementById('end-time').value;
+    const imageFile = document.getElementById('image-input')?.files?.[0];
 
     // Task ID
     if (!taskId) {
@@ -153,17 +120,8 @@ function validateForm() {
         return false;
     }
 
-    // Data
-    if (!dataInput) {
-        showError('Please enter detection data');
-        return false;
-    }
-
-    // Validate data format
-    try {
-        parseDataInput(dataInput);
-    } catch (e) {
-        showError(`Invalid data format: ${e.message}`);
+    if (!imageFile) {
+        showError('Please upload an image');
         return false;
     }
 
@@ -193,23 +151,24 @@ function getFormData() {
     const dataSource = document.getElementById('data-source').value || 'manual';
     const startTime = document.getElementById('start-time').value;
     const endTime = document.getElementById('end-time').value;
-    const dataInput = document.getElementById('data-input').value.trim();
-    const threshold = document.getElementById('threshold-slider').value;
+    const question = document.getElementById('question-input')?.value?.trim() || '';
+    const imageFile = document.getElementById('image-input')?.files?.[0];
 
-    const parsedData = parseDataInput(dataInput);
+    const formData = new FormData();
+    formData.append('task_id', taskId);
+    formData.append('asset_id', assetId);
+    formData.append('start_time', formatDateTime(startTime));
+    formData.append('end_time', formatDateTime(endTime));
+    formData.append('data_source', dataSource);
+    formData.append('question', question);
+    formData.append('image', imageFile);
 
-    return {
-        task_id: taskId,
-        asset_id: assetId,
-        start_time: formatDateTime(startTime),
-        end_time: formatDateTime(endTime),
-        data_source: dataSource,
-        parameters: {
-            threshold: parseFloat(threshold),
-            data: parsedData,
-            //tool_type: "http"
-        },
+    const parameters = {
+        tool_type: 'qwen3.5-plus',
+        detector_params: {},
     };
+    formData.append('parameters', JSON.stringify(parameters));
+    return formData;
 }
 
 /**
@@ -368,6 +327,12 @@ function showError(message) {
     if (errorDiv) {
         errorDiv.textContent = message;
         errorDiv.style.display = 'block';
+
+        // Make it hard to miss when users are scrolled down.
+        errorDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (typeof showToast === 'function') {
+            showToast(message, 'error');
+        }
         
         // Auto-hide after 5 seconds
         setTimeout(() => {

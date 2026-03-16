@@ -1,4 +1,4 @@
-# TODO 异常检测工具接口与 Mock 实现，需把Mock删掉，补充真实工具接口
+# TODO 异常检测工具接口，需补充真实工具接口
 from __future__ import annotations
 
 from typing import Optional
@@ -15,19 +15,6 @@ class BaseTool:
         """执行工具逻辑并返回标签 ToolResponse"""
         raise NotImplementedError
 
-class MockAnomalyDetectionTool(BaseTool):
-    name = "mock_anomaly_detection"
-
-    async def run(self, task: DetectionTask) -> ToolResponse:
-        """Mock 异常检测实现，用于联调与测试"""
-        result = DetectionResult(
-            task_id=task.task_id,
-            status="success",
-            anomalies=[{"timestamp": task.start_time, "score": 0.82, "type": "spike"}],
-            summary=None,
-            metadata={"mock": True},
-        )
-        return ToolResponse(tool_name=self.name, success=True, result=result) 
 
 class HttpAnomalyDetectionTool(BaseTool):
     name = "http_anomaly_detection"

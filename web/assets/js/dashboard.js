@@ -37,15 +37,12 @@ async function loadSystemStatus() {
         statusBadge.textContent = 'Loading...';
         statusBadge.className = 'status-badge loading';
 
-        const health = await apiClient.checkHealth();
+        // /health has been removed; use lightweight root probe instead.
+        await apiClient.getAppInfo();
         
-        if (health.status === 'ok') {
-            dashboardState.systemHealth = 'online';
-            statusBadge.textContent = '🟢 Online';
-            statusBadge.className = 'status-badge online';
-        } else {
-            throw new Error('Unhealthy status');
-        }
+        dashboardState.systemHealth = 'online';
+        statusBadge.textContent = '🟢 Online';
+        statusBadge.className = 'status-badge online';
     } catch (error) {
         console.error('Health check failed:', error);
         dashboardState.systemHealth = 'offline';
