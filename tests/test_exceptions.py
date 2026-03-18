@@ -4,7 +4,6 @@
 测试 app/exceptions/base.py 中的异常类与创建工具
 """
 
-import pytest
 from app.exceptions.base import (
     AppError,
     ModelError,

@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.config.settings import settings
 from app.core.agent import build_graph
@@ -74,20 +75,26 @@ async def detect(request: Request):
 
     form = await request.form()
 
-    task_id = (form.get("task_id") or "").strip()
-    asset_id = (form.get("asset_id") or "").strip()
-    start_time = (form.get("start_time") or "").strip()
-    end_time = (form.get("end_time") or "").strip()
-    data_source = (form.get("data_source") or None)
-    question = (form.get("question") or None)
+    def get_form_text(key: str) -> str:
+        value = form.get(key)
+        return value if isinstance(value, str) else ""
+
+    task_id = get_form_text("task_id").strip()
+    asset_id = get_form_text("asset_id").strip()
+    start_time = get_form_text("start_time").strip()
+    end_time = get_form_text("end_time").strip()
+    data_source = get_form_text("data_source").strip() or None
+    question = get_form_text("question").strip() or None
 
     if not task_id or not asset_id or not start_time or not end_time:
         raise DataMissingError("task_id/asset_id/start_time/end_time are required for image detection")
 
-    raw_parameters = form.get("parameters") or "{}"
+    raw_parameters = form.get("parameters")
     try:
         parameters: dict[str, Any]
-        if isinstance(raw_parameters, str):
+        if raw_parameters is None:
+            parameters = {}
+        elif isinstance(raw_parameters, str):
             parameters = json.loads(raw_parameters) if raw_parameters else {}
         elif isinstance(raw_parameters, dict):
             parameters = raw_parameters
@@ -101,7 +108,7 @@ async def detect(request: Request):
         )
 
     upload = form.get("image")
-    if upload is None:
+    if not isinstance(upload, StarletteUploadFile) or not getattr(upload, "filename", None):
         raise DataMissingError("image file is required for image detection")
 
     image_bytes = await upload.read()

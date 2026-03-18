@@ -7,6 +7,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
+from pydantic import SecretStr
 
 from app.config.settings import settings
 from app.exceptions.base import ConfigurationError, ModelError, ResponseParseError, ToolExecutionError
@@ -77,7 +78,7 @@ class ImageAnomalyDetectionTool(BaseTool):
         llm = ChatOpenAI(
             model=settings.llm_vision_model,
             temperature=0.1,
-            api_key=settings.openai_api_key,
+            api_key=SecretStr(settings.openai_api_key),
             timeout=settings.llm_timeout,
             max_tokens=settings.llm_max_tokens,
             base_url=settings.llm_base_url,
@@ -142,4 +143,3 @@ def _extract_json(text: str) -> Any:
         return json.loads(match.group(0))
     except Exception:
         return None
-

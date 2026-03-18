@@ -17,10 +17,12 @@ class APIClient {
      */
     async request(endpoint, options = {}) {
         const url = `${this.baseURL}${endpoint}`;
-        const isFormData = (typeof FormData !== 'undefined') && (options.body instanceof FormData);
-        const headers = { ...this.headers };
+        const isFormData = options.body && (
+            (typeof FormData !== 'undefined' && options.body instanceof FormData) ||
+            (typeof options.body.append === 'function' && typeof options.body.get === 'function')
+        );
+        const headers = { ...this.headers, ...(options.headers || {}) };
         if (isFormData) {
-            // Let the browser set the correct multipart boundary.
             delete headers['Content-Type'];
         }
         const config = {

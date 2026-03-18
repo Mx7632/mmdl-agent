@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 
 from langchain_openai import ChatOpenAI
+from pydantic import SecretStr
 
 from app.config.settings import settings
-from app.exceptions.base import ConfigurationError, DataMissingError, ModelError
+from app.exceptions.base import ConfigurationError, DataMissingError
 from app.memory.state import DetectionState
 from app.prompts.image_report import IMAGE_REPORT_PROMPT
 from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool
@@ -57,7 +58,7 @@ async def summarize_node(state: DetectionState) -> DetectionState:
         llm = ChatOpenAI(
             model=settings.llm_model,
             temperature=settings.llm_temperature,
-            api_key=settings.openai_api_key,
+            api_key=SecretStr(settings.openai_api_key),
             timeout=settings.llm_timeout,
             max_tokens=settings.llm_max_tokens,
             base_url=settings.llm_base_url,

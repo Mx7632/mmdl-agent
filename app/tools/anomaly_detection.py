@@ -1,10 +1,9 @@
 # TODO 异常检测工具接口，需补充真实工具接口
 from __future__ import annotations
 
-from typing import Optional
 import httpx
 from app.config.settings import settings
-from app.exceptions.base import ConfigurationError, ExternalServiceError, ToolExecutionError
+from app.exceptions.base import ExternalServiceError, ToolExecutionError
 from app.schemas.detection import DetectionResult, DetectionTask, ToolResponse
 
 # 抽象基类，所有的工具都必须有一个name和一个run方法

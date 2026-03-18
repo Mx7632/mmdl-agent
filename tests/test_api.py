@@ -1,4 +1,4 @@
-﻿# API 路由、中间件与异常转换测试。
+# API 路由、中间件与异常转换测试。
 """
 API 路由测试
 测试 app/api/main.py 中的 HTTP 端点、中间件与异常转换
@@ -16,22 +16,32 @@ def client():
     return TestClient(app)
 
 
-class TestHealthCheckEndpoint:
-    """测试健康检查端点 GET /health"""
+class TestRootEndpoint:
+    """测试根路由 GET /"""
 
-    def test_health_check_returns_ok_status(self, client):
-        """GET /health 返回成功状态"""
-        response = client.get("/health")
+    def test_root_returns_welcome_info(self, client):
+        """GET / 返回欢迎信息"""
+        response = client.get("/")
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "ok"
+        
+        # 验证返回字段
+        assert "app" in data
+        assert "version" in data
+        assert "message" in data
+        assert "docs" in data
+        assert "openapi_schema" in data
+        
+        # 验证具体值
+        assert data["app"] == "industrial-anomaly-agent"
+        assert data["version"] == "0.1.0"
+        assert data["message"] == "Welcome to MMDL-Agent"
+        assert data["docs"] == "/docs"
 
-    def test_health_check_always_succeeds(self, client):
-        """健康检查总是成功"""
-        for _ in range(3):
-            response = client.get("/health")
-            assert response.status_code == 200
-            assert response.json()["status"] == "ok"
+    def test_root_content_type(self, client):
+        """验证响应内容类型"""
+        response = client.get("/")
+        assert response.headers["content-type"] == "application/json"
 
 
 class TestMiddleware:
@@ -39,14 +49,14 @@ class TestMiddleware:
 
     def test_trace_id_header_added_to_response(self, client):
         """验证 trace_id 被添加到响应头"""
-        response = client.get("/health")
+        response = client.get("/")
         assert response.status_code == 200
         assert "X-Trace-Id" in response.headers
 
     def test_trace_id_is_unique_per_request(self, client):
         """未提供 trace_id 时应为每次请求生成新的值"""
-        response_1 = client.get("/health")
-        response_2 = client.get("/health")
+        response_1 = client.get("/")
+        response_2 = client.get("/")
 
         assert response_1.status_code == 200
         assert response_2.status_code == 200
@@ -56,7 +66,7 @@ class TestMiddleware:
 
     def test_trace_id_echoes_request_header(self, client):
         """客户端提供 trace_id 时应原样回传"""
-        response = client.get("/health", headers={"X-Trace-Id": "trace-test-001"})
+        response = client.get("/", headers={"X-Trace-Id": "trace-test-001"})
         assert response.status_code == 200
         assert response.headers.get("X-Trace-Id") == "trace-test-001"
 
@@ -129,9 +139,10 @@ class TestExceptionHandling:
 class TestContentNegotiation:
     """测试内容协商"""
 
-    def test_health_check_json_format(self, client):
-        """健康检查返回 JSON"""
-        response = client.get("/health")
+    def test_response_json_format(self, client):
+        """验证响应是 JSON 格式"""
+        response = client.get("/")
+        # 如果响应是有效的 JSON，这不会抛出异常
         data = response.json()
         assert isinstance(data, dict)
 
@@ -148,8 +159,8 @@ class TestRouteNotFound:
 class TestHttpMethods:
     """测试 HTTP 方法"""
 
-    def test_post_to_health_endpoint_not_allowed(self, client):
-        """健康检查端点不支持 POST"""
-        response = client.post("/health")
-        assert response.status_code == 405
+    def test_put_to_root_endpoint_not_allowed(self, client):
+        """根路由不支持 PUT"""
+        response = client.put("/")
+        assert response.status_code == 405  # Method Not Allowed
 

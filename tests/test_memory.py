@@ -4,7 +4,6 @@
 测试 app/memory/state.py 和 app/memory/checkpoint.py
 """
 
-import pytest
 from app.memory.state import DetectionState
 from app.schemas.detection import DetectionTask, DetectionResult
 

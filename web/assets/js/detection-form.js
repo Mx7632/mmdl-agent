@@ -6,6 +6,7 @@
 let formState = {
     isLoading: false,
     currentResult: null,
+    previewUrl: null,
 };
 
 /**
@@ -42,9 +43,91 @@ function setupFormListeners() {
 
     if (imageInput) {
         imageInput.addEventListener('change', () => {
-            // Placeholder for future: show image preview, size limit tips, etc.
+            const file = imageInput.files?.[0] || null;
+            updateImagePreview(file);
         });
     }
+}
+
+function updateImagePreview(file) {
+    const container = document.getElementById('image-preview-container');
+    const previewImage = document.getElementById('image-preview');
+    const previewMeta = document.getElementById('image-preview-meta');
+
+    if (!container || !previewImage) {
+        return;
+    }
+
+    if (!file) {
+        clearImagePreview();
+        return;
+    }
+
+    if (!file.type || !file.type.startsWith('image/')) {
+        clearImagePreview();
+        const imageInput = document.getElementById('image-input');
+        if (imageInput) {
+            imageInput.value = '';
+        }
+        showError('Please upload a valid image file');
+        return;
+    }
+
+    if (formState.previewUrl) {
+        window.URL.revokeObjectURL(formState.previewUrl);
+        formState.previewUrl = null;
+    }
+
+    const url = window.URL.createObjectURL(file);
+    formState.previewUrl = url;
+    previewImage.src = url;
+    previewImage.alt = file.name || 'Uploaded image';
+    container.classList.add('show');
+
+    if (previewMeta) {
+        previewMeta.textContent = `${file.name || 'image'} · ${formatFileSize(file.size)}`;
+    }
+}
+
+function clearImagePreview() {
+    const container = document.getElementById('image-preview-container');
+    const previewImage = document.getElementById('image-preview');
+    const previewMeta = document.getElementById('image-preview-meta');
+
+    if (formState.previewUrl) {
+        window.URL.revokeObjectURL(formState.previewUrl);
+        formState.previewUrl = null;
+    }
+
+    if (previewImage) {
+        previewImage.removeAttribute('src');
+    }
+
+    if (previewMeta) {
+        previewMeta.textContent = '';
+    }
+
+    if (container) {
+        container.classList.remove('show');
+    }
+}
+
+function formatFileSize(bytes) {
+    if (!Number.isFinite(bytes)) {
+        return '-';
+    }
+
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let size = bytes;
+    let unitIndex = 0;
+
+    while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex += 1;
+    }
+
+    const precision = size >= 10 || unitIndex === 0 ? 0 : 1;
+    return `${size.toFixed(precision)} ${units[unitIndex]}`;
 }
 
 /**
@@ -374,6 +457,8 @@ function resetForm() {
     if (errorDiv) {
         errorDiv.style.display = 'none';
     }
+
+    clearImagePreview();
 
     // Reset threshold slider
     const thresholdSlider = document.getElementById('threshold-slider');

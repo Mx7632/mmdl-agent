@@ -1,8 +1,8 @@
-﻿from __future__ import annotations
-
 """
 提供结构化的异常类型，帮助用户准确识别和处理错误
 """
+
+from __future__ import annotations
 
 from typing import Any, Dict, Optional, Type
 
@@ -146,9 +146,10 @@ class ConfigurationError(AppError):
 
     code = "configuration_error"
 
-    def __init__(self, message: str, config_key: Optional[str] = None) -> None:
+    def __init__(self, message: str, config_key: Optional[str] = None, **kwargs) -> None:
         details = {"config_key": config_key} if config_key else {}
-        super().__init__(message, details=details)
+        details.update(kwargs.get("details") or {})
+        super().__init__(message, details=details, original_error=kwargs.get("original_error"))
 
 
 class StreamError(AppError):

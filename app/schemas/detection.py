@@ -1,8 +1,8 @@
-﻿# 检测任务与结果的 Pydantic 数据模型。
+# 检测任务与结果的 Pydantic 数据模型。
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 class DetectionTask(BaseModel):
     """检测任务输入模型"""
@@ -14,6 +14,12 @@ class DetectionTask(BaseModel):
     input_type: Optional[str] = Field(None, description="timeseries|image")
     question: Optional[str] = Field(None, description="User question for report generation")
     parameters: Dict[str, Any] = Field(default_factory=dict)
+
+    def __init__(self, **data: Any) -> None:
+        try:
+            super().__init__(**data)
+        except ValidationError as exc:
+            raise TypeError(str(exc)) from exc
 
 '''Start Time / End Time 的意义
 作为这次检测任务的时间窗口标记：告诉系统“这张图对应哪个时间段/巡检批次/工况区间”，方便追溯、对账、后续做历史对比。

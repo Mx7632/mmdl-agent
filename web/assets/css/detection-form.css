@@ -71,6 +71,47 @@
     color: #2563eb;
 }
 
+.image-preview-container {
+    display: none;
+    margin-top: 0.75rem;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px dashed #e2e8f0;
+    background: #f8fafc;
+}
+
+.image-preview-container.show {
+    display: block;
+}
+
+.image-preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    color: #64748b;
+    margin-bottom: 8px;
+}
+
+.image-preview-meta {
+    color: #94a3b8;
+}
+
+.image-preview-frame {
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: white;
+    overflow: hidden;
+}
+
+.image-preview-frame img {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 320px;
+    object-fit: contain;
+}
+
 /* Form Row (Multiple Columns) */
 .form-row {
     display: grid;

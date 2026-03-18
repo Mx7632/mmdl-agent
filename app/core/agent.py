@@ -1,12 +1,14 @@
-﻿# LangGraph 工作流构建与编译入口
+# LangGraph 工作流构建与编译入口
 from __future__ import annotations
+
+from typing import Any
 
 from langgraph.graph import StateGraph, END
 from app.memory.state import DetectionState
 from app.core.graph import load_data_node, anomaly_detect_node, summarize_node
 
 
-def build_graph() -> StateGraph:
+def build_graph() -> Any:
     """构建并编译检测工作流图"""
     graph = StateGraph(DetectionState)
     graph.add_node("load_data", load_data_node)
@@ -19,4 +21,3 @@ def build_graph() -> StateGraph:
     graph.add_edge("summarize", END)
 
     return graph.compile()
-

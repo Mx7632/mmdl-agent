@@ -114,6 +114,15 @@
                 <label for="image-input">Upload Image *</label>
                 <input type="file" id="image-input" name="image" accept="image/*" required>
                 <small style="color: #666;">Supported: JPG/PNG. The image will be sent to qwen3.5-plus for analysis.</small>
+                <div id="image-preview-container" class="image-preview-container">
+                    <div class="image-preview-header">
+                        <span>Preview</span>
+                        <span id="image-preview-meta" class="image-preview-meta"></span>
+                    </div>
+                    <div class="image-preview-frame">
+                        <img id="image-preview" alt="Image preview">
+                    </div>
+                </div>
             </div>
 
             <div style="display: flex; gap: 10px; margin-top: 30px;">
@@ -162,4 +171,3 @@
     <script src="assets/js/detection-form.js"></script>
 </body>
 </html>
-
