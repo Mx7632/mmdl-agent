@@ -51,7 +51,9 @@ IMAGE_REPORT_PROMPT = ChatPromptTemplate.from_messages(
                 "时间范围: {start_time} 至 {end_time}\n"
                 "用户问题: {question}\n\n"
                 "图像检测到的异常(JSON):\n"
-                "{anomalies}\n"
+                "{anomalies}\n\n"
+                "RAG 检索到的相似案例：\n"
+                "{rag_context}\n"
             ),
         ),
     ]
