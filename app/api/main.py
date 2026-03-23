@@ -13,7 +13,19 @@ from app.config.settings import settings
 from app.core.agent import build_graph
 from app.exceptions.base import AppError, DataMissingError, ResponseParseError
 from app.memory.state import DetectionState
-from app.schemas.detection import DetectionResult, DetectionTask
+from app.rag.service import get_rag_service
+from app.schemas.detection import (
+    DetectionResult,
+    DetectionTask,
+    RagBuildRequest,
+    RagBuildResponse,
+    RagImageQueryRequest,
+    RagIngestFeedbackRequest,
+    RagIngestFeedbackResponse,
+    RagQueryItem,
+    RagQueryRequest,
+    RagQueryResponse,
+)
 from app.utils.logging import TRACE_ID_HEADER, new_trace_id, set_trace_id, setup_logger
 
 app = FastAPI(title=settings.app_name)
@@ -58,6 +70,73 @@ async def root():
         "docs": "/docs",
         "openapi_schema": "/openapi.json",
     }
+
+
+@app.post("/v1/rag/build", response_model=RagBuildResponse)
+async def rag_build(payload: RagBuildRequest) -> RagBuildResponse:
+    service = get_rag_service()
+    result = service.build_from_dataset(
+        dataset_root=payload.dataset_root,
+        include_normal=payload.include_normal,
+    )
+    return RagBuildResponse(status="success", **result)
+
+
+@app.post("/v1/rag/query", response_model=RagQueryResponse)
+async def rag_query(payload: RagQueryRequest) -> RagQueryResponse:
+    service = get_rag_service()
+    rows = service.query_rows(
+        query_text=payload.query_text,
+        category=payload.category,
+        top_k=payload.top_k,
+    )
+    prompt_context = service.retriever.format_for_prompt(rows)
+    items = [RagQueryItem(**row) for row in rows]
+    return RagQueryResponse(
+        status="success",
+        count=len(items),
+        results=items,
+        prompt_context=prompt_context,
+    )
+
+
+@app.post("/v1/rag/query-image", response_model=RagQueryResponse)
+async def rag_query_image(payload: RagImageQueryRequest) -> RagQueryResponse:
+    service = get_rag_service()
+    rows = service.query_rows_by_image(
+        image_path=payload.image_path,
+        category=payload.category,
+        top_k=payload.top_k,
+    )
+    prompt_context = service.retriever.format_for_prompt(rows)
+    items = [RagQueryItem(**row) for row in rows]
+    return RagQueryResponse(
+        status="success",
+        count=len(items),
+        results=items,
+        prompt_context=prompt_context,
+    )
+
+
+@app.post("/v1/rag/ingest-feedback", response_model=RagIngestFeedbackResponse)
+async def rag_ingest_feedback(payload: RagIngestFeedbackRequest) -> RagIngestFeedbackResponse:
+    service = get_rag_service()
+    accepted = service.add_online_case(
+        image_path=payload.image_path,
+        category=payload.category,
+        user_description=payload.user_description,
+        model_confidence=payload.model_confidence,
+        is_anomaly=payload.is_anomaly,
+        anomaly_type=payload.anomaly_type,
+        severity=payload.severity,
+    )
+
+    return RagIngestFeedbackResponse(
+        status="success",
+        accepted=accepted,
+        learning_threshold=settings.rag_learning_threshold,
+        message=("样本已写入向量库" if accepted else "置信度低于阈值，已跳过写入"),
+    )
 
 
 @app.post("/v1/detect", response_model=DetectionResult)
@@ -118,6 +197,10 @@ async def detect(request: Request):
     parameters.setdefault("tool_type", "qwen3.5-plus")
     parameters["image_base64"] = image_b64
     parameters["image_mime"] = getattr(upload, "content_type", None) or "image/jpeg"
+    parameters.setdefault("image_path", upload.filename or "uploaded_image")
+    form_category = get_form_text("category").strip()
+    if form_category:
+        parameters.setdefault("category", form_category)
 
     task = DetectionTask(
         task_id=task_id,

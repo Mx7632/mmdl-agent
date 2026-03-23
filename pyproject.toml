@@ -23,6 +23,10 @@ dependencies = [
   "python-dotenv>=1.0",
   "orjson>=3.10",
   "langchain-openai>=0.1",
+  "chromadb>=0.4.0",
+  "pillow>=10.0",
+  "opencv-python>=4.8",
+  "numpy>=1.24",
 ]
 
 [project.optional-dependencies]
