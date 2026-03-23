@@ -37,5 +37,13 @@ class Settings(BaseSettings):
     # Vision LLM (qwen3.5-plus) config (for image anomaly detection)
     llm_vision_model: str = "qwen3.5-plus"  # TODO: Switching to local CV makes this unused.
 
+    # RAG 配置
+    rag_enabled: bool = True
+    rag_dataset_root: str = "data_sets/mvtec_anomaly_detection"
+    rag_vector_dir: str = "data/rag/chroma"
+    rag_metadata_path: str = "data/rag/dataset_metadata.json"
+    rag_top_k: int = 3
+    rag_learning_threshold: float = 0.85
+
 
 settings = Settings()
