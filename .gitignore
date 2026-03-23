@@ -17,3 +17,10 @@ venv/
 
 # IDE
 industrial_anomaly_agent.egg-info/
+
+_bmad/
+
+.cursor/
+
+#数据集
+data_sets/
