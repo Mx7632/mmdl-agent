@@ -76,6 +76,36 @@ class APIClient {
             body: task,
         });
     }
+
+    /**
+     * POST /v1/rag/build - Build vector index
+     */
+    async ragBuild(payload) {
+        return this.request('/v1/rag/build', {
+            method: 'POST',
+            body: payload,
+        });
+    }
+
+    /**
+     * POST /v1/rag/query - Query similar cases
+     */
+    async ragQuery(payload) {
+        return this.request('/v1/rag/query', {
+            method: 'POST',
+            body: payload,
+        });
+    }
+
+    /**
+     * POST /v1/rag/ingest-feedback - Ingest online feedback
+     */
+    async ragIngestFeedback(payload) {
+        return this.request('/v1/rag/ingest-feedback', {
+            method: 'POST',
+            body: payload,
+        });
+    }
 }
 
 // Create global instance
