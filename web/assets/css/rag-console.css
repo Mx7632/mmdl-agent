@@ -182,6 +182,42 @@
     color: #1f2937;
 }
 
+.build-progress-wrap {
+    margin: 0 20px 18px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.build-progress-head {
+    display: flex;
+    justify-content: space-between;
+    color: #334155;
+    font-size: 0.86rem;
+    margin-bottom: 8px;
+}
+
+.build-progress-bar {
+    height: 10px;
+    background: #e2e8f0;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.build-progress-fill {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, #06b6d4, #4f46e5);
+    transition: width 0.3s ease;
+}
+
+.build-progress-msg {
+    margin: 8px 0 0;
+    font-size: 0.85rem;
+    color: #475569;
+}
+
 @media (max-width: 900px) {
     .grid-2,
     .grid-3,

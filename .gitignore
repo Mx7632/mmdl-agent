@@ -3,7 +3,6 @@
 
 # 环境变量与本地配置
 .env
-.env.*
 
 # Python
 __pycache__/

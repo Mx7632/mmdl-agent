@@ -51,6 +51,28 @@ class RagBuildRequest(BaseModel):
     include_normal: bool = True
 
 
+class RagBuildStartResponse(BaseModel):
+    """RAG 建库启动响应"""
+
+    status: str
+    task_id: str
+    message: str
+
+
+class RagBuildStatusResponse(BaseModel):
+    """RAG 建库进度响应"""
+
+    status: str
+    task_id: str
+    phase: str
+    percent: int
+    message: str
+    processed: int = 0
+    total: int = 0
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
 class RagBuildResponse(BaseModel):
     """RAG 建库响应"""
 

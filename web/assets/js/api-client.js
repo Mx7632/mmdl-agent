@@ -88,6 +88,23 @@ class APIClient {
     }
 
     /**
+     * POST /v1/rag/build/start - Start async build job
+     */
+    async ragBuildStart(payload) {
+        return this.request('/v1/rag/build/start', {
+            method: 'POST',
+            body: payload,
+        });
+    }
+
+    /**
+     * GET /v1/rag/build/status/{taskId} - Poll build status
+     */
+    async ragBuildStatus(taskId) {
+        return this.request(`/v1/rag/build/status/${taskId}`);
+    }
+
+    /**
      * POST /v1/rag/query - Query similar cases
      */
     async ragQuery(payload) {

@@ -27,6 +27,7 @@ dependencies = [
   "pillow>=10.0",
   "opencv-python>=4.8",
   "numpy>=1.24",
+  "swagger-ui-bundle>=0.0.9",
 ]
 
 [project.optional-dependencies]

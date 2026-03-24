@@ -135,9 +135,17 @@ class VectorStore:
         self.upsert_case(metadata, enriched, source=source)
         return True
 
-    def batch_upsert(self, rows: List[tuple[ImageMetadata, str]], source: str = "dataset") -> None:
-        for metadata, description in rows:
+    def batch_upsert(
+        self,
+        rows: List[tuple[ImageMetadata, str]],
+        source: str = "dataset",
+        progress_callback: Optional[callable] = None,
+    ) -> None:
+        total = len(rows)
+        for idx, (metadata, description) in enumerate(rows, start=1):
             self.upsert_case(metadata, description, source=source)
+            if progress_callback:
+                progress_callback(idx, total)
 
     def query_text(
         self,

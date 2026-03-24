@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import base64
 import json
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.config.settings import settings
@@ -19,6 +23,8 @@ from app.schemas.detection import (
     DetectionTask,
     RagBuildRequest,
     RagBuildResponse,
+    RagBuildStartResponse,
+    RagBuildStatusResponse,
     RagImageQueryRequest,
     RagIngestFeedbackRequest,
     RagIngestFeedbackResponse,
@@ -28,7 +34,11 @@ from app.schemas.detection import (
 )
 from app.utils.logging import TRACE_ID_HEADER, new_trace_id, set_trace_id, setup_logger
 
-app = FastAPI(title=settings.app_name)
+app = FastAPI(
+    title=settings.app_name,
+    docs_url=None,
+    redoc_url=None,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,6 +49,50 @@ app.add_middleware(
 )
 
 logger = setup_logger(level=settings.log_level)
+
+
+_SWAGGER_STATIC_ROUTE = "/_swagger_static"
+_swagger_local_assets_ok = False
+
+
+def _mount_local_swagger_assets() -> None:
+    """Mount local swagger UI static assets if available."""
+    global _swagger_local_assets_ok
+
+    try:
+        import swagger_ui_bundle  # type: ignore
+
+        swagger_pkg_dir = Path(swagger_ui_bundle.__file__).resolve().parent
+        swagger_vendor_candidates = sorted((swagger_pkg_dir / "vendor").glob("swagger-ui-*"))
+        if not swagger_vendor_candidates:
+            raise FileNotFoundError(f"No swagger-ui vendor assets found under {swagger_pkg_dir / 'vendor'}")
+        swagger_assets_dir = swagger_vendor_candidates[-1]
+        app.mount(_SWAGGER_STATIC_ROUTE, StaticFiles(directory=str(swagger_assets_dir)), name="swagger_static")
+        _swagger_local_assets_ok = True
+        logger.info("Mounted local Swagger assets from %s", swagger_assets_dir)
+    except Exception as exc:  # pragma: no cover
+        _swagger_local_assets_ok = False
+        logger.warning("Local Swagger assets unavailable, fallback to default CDN docs: %s", exc)
+
+
+_mount_local_swagger_assets()
+
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=settings.app_name,
+        version="0.1.0",
+        description="Industrial anomaly detection API",
+        routes=app.routes,
+    )
+    schema["openapi"] = "3.0.3"
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
 
 
 @app.middleware("http")
@@ -72,6 +126,23 @@ async def root():
     }
 
 
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    if _swagger_local_assets_ok:
+        return get_swagger_ui_html(
+            openapi_url=app.openapi_url,
+            title=f"{settings.app_name} - Swagger UI",
+            swagger_js_url=f"{_SWAGGER_STATIC_ROUTE}/swagger-ui-bundle.js",
+            swagger_css_url=f"{_SWAGGER_STATIC_ROUTE}/swagger-ui.css",
+            swagger_favicon_url=f"{_SWAGGER_STATIC_ROUTE}/favicon-32x32.png",
+        )
+
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=f"{settings.app_name} - Swagger UI",
+    )
+
+
 @app.post("/v1/rag/build", response_model=RagBuildResponse)
 async def rag_build(payload: RagBuildRequest) -> RagBuildResponse:
     service = get_rag_service()
@@ -80,6 +151,32 @@ async def rag_build(payload: RagBuildRequest) -> RagBuildResponse:
         include_normal=payload.include_normal,
     )
     return RagBuildResponse(status="success", **result)
+
+
+@app.post("/v1/rag/build/start", response_model=RagBuildStartResponse)
+async def rag_build_start(payload: RagBuildRequest) -> RagBuildStartResponse:
+    service = get_rag_service()
+    task_id = service.start_build_job(
+        dataset_root=payload.dataset_root,
+        include_normal=payload.include_normal,
+    )
+    return RagBuildStartResponse(status="success", task_id=task_id, message="建库任务已启动")
+
+
+@app.get("/v1/rag/build/status/{task_id}", response_model=RagBuildStatusResponse)
+async def rag_build_status(task_id: str) -> RagBuildStatusResponse:
+    service = get_rag_service()
+    status = service.get_build_job_status(task_id)
+    if not status:
+        return RagBuildStatusResponse(
+            status="not_found",
+            task_id=task_id,
+            phase="unknown",
+            percent=0,
+            message="任务不存在",
+        )
+
+    return RagBuildStatusResponse(**status)
 
 
 @app.post("/v1/rag/query", response_model=RagQueryResponse)
