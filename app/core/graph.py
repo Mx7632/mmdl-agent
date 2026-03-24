@@ -50,10 +50,12 @@ async def anomaly_detect_node(state: DetectionState) -> DetectionState:
                 query_text = build_anomaly_query_text(state.result.anomalies)
                 if query_text:
                     category = state.task.parameters.get("category") if state.task.parameters else None
+                    image_path = state.task.parameters.get("image_path") if state.task.parameters else None
                     rag_context = get_rag_service().query_similar(
                         query_text=query_text,
                         category=category,
                         top_k=settings.rag_top_k,
+                        image_path=image_path,
                     )
                 else:
                     rag_context = "未生成有效异常查询，跳过 RAG 检索。"

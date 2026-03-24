@@ -25,6 +25,8 @@ from app.schemas.detection import (
     RagBuildResponse,
     RagBuildStartResponse,
     RagBuildStatusResponse,
+    RagGenerateDescriptionsRequest,
+    RagGenerateDescriptionsResponse,
     RagImageQueryRequest,
     RagIngestFeedbackRequest,
     RagIngestFeedbackResponse,
@@ -151,6 +153,17 @@ async def rag_build(payload: RagBuildRequest) -> RagBuildResponse:
         include_normal=payload.include_normal,
     )
     return RagBuildResponse(status="success", **result)
+
+
+@app.post("/v1/rag/generate-descriptions", response_model=RagGenerateDescriptionsResponse)
+async def rag_generate_descriptions(payload: RagGenerateDescriptionsRequest) -> RagGenerateDescriptionsResponse:
+    service = get_rag_service()
+    result = service.generate_anomaly_descriptions(
+        dataset_root=payload.dataset_root,
+        output_path=payload.output_path,
+        incremental=payload.incremental,
+    )
+    return RagGenerateDescriptionsResponse(status="success", **result)
 
 
 @app.post("/v1/rag/build/start", response_model=RagBuildStartResponse)
@@ -290,11 +303,17 @@ async def detect(request: Request):
     image_bytes = await upload.read()
     image_b64 = base64.b64encode(image_bytes).decode("ascii")
 
+    suffix = Path(upload.filename or "uploaded_image.jpg").suffix or ".jpg"
+    upload_cache_dir = Path("data/uploads")
+    upload_cache_dir.mkdir(parents=True, exist_ok=True)
+    cached_image_path = upload_cache_dir / f"{task_id}{suffix}"
+    cached_image_path.write_bytes(image_bytes)
+
     parameters = dict(parameters or {})
     parameters.setdefault("tool_type", "qwen3.5-plus")
     parameters["image_base64"] = image_b64
     parameters["image_mime"] = getattr(upload, "content_type", None) or "image/jpeg"
-    parameters.setdefault("image_path", upload.filename or "uploaded_image")
+    parameters.setdefault("image_path", str(cached_image_path))
     form_category = get_form_text("category").strip()
     if form_category:
         parameters.setdefault("category", form_category)

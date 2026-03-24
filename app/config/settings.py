@@ -42,8 +42,10 @@ class Settings(BaseSettings):
     rag_dataset_root: str = "data_sets/mvtec_anomaly_detection"
     rag_vector_dir: str = "data/rag/chroma"
     rag_metadata_path: str = "data/rag/dataset_metadata.json"
+    rag_descriptions_path: str = "data/rag/anomaly_descriptions.json"
     rag_top_k: int = 3
     rag_learning_threshold: float = 0.85
+    rag_multimodal_embedding_model: str = "multimodal-embedding-v1"
 
 
 settings = Settings()

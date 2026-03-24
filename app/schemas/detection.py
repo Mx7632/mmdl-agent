@@ -51,6 +51,26 @@ class RagBuildRequest(BaseModel):
     include_normal: bool = True
 
 
+class RagGenerateDescriptionsRequest(BaseModel):
+    """生成异常样本文本描述请求"""
+
+    dataset_root: Optional[str] = None
+    output_path: Optional[str] = None
+    incremental: bool = True
+
+
+class RagGenerateDescriptionsResponse(BaseModel):
+    """生成异常样本文本描述响应"""
+
+    status: str
+    dataset_root: str
+    output_path: str
+    total_anomaly_rows: int
+    generated: int
+    skipped: int = 0
+    incremental: bool = False
+
+
 class RagBuildStartResponse(BaseModel):
     """RAG 建库启动响应"""
 

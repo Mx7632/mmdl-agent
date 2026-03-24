@@ -1,6 +1,7 @@
 """RAG orchestration service for dataset indexing and online learning."""
 from __future__ import annotations
 
+import json
 import threading
 import uuid
 from pathlib import Path
@@ -85,10 +86,41 @@ class RagService:
                     "message": "正在生成样本文本描述...",
                 },
             )
-            payload = [(row, self.text_generator.generate(row)) for row in rows]
+
+            use_rule_only = total_rows > 500
+            if use_rule_only:
+                self._set_job(
+                    task_id,
+                    {
+                        "phase": "generating_text",
+                        "percent": 30,
+                        "processed": 0,
+                        "total": total_rows,
+                        "message": "样本量较大，使用规则模板生成描述...",
+                    },
+                )
+
+            payload: list[tuple[Any, str]] = []
+            for idx, row in enumerate(rows, start=1):
+                if use_rule_only:
+                    text = self.text_generator.generate_rule_only(row)
+                else:
+                    text = self.text_generator.generate(row)
+                payload.append((row, text))
+                gen_percent = 30 + int((idx / max(total_rows, 1)) * 30)
+                self._set_job(
+                    task_id,
+                    {
+                        "phase": "generating_text",
+                        "percent": min(gen_percent, 60),
+                        "processed": idx,
+                        "total": total_rows,
+                        "message": f"正在生成样本文本描述: {idx}/{total_rows}",
+                    },
+                )
 
             def upsert_progress(done: int, total: int) -> None:
-                percent = 30 + int((done / max(total, 1)) * 65)
+                percent = 60 + int((done / max(total, 1)) * 35)
                 self._set_job(
                     task_id,
                     {
@@ -153,26 +185,125 @@ class RagService:
             "stats": stats,
         }
 
+    def generate_anomaly_descriptions(
+        self,
+        dataset_root: Optional[str] = None,
+        output_path: Optional[str] = None,
+        incremental: bool = True,
+    ) -> Dict[str, Any]:
+        root = dataset_root or settings.rag_dataset_root
+        analyzer = DatasetAnalyzer(root)
+        analyzer.analyze()
+
+        rows = analyzer.get_anomalies()
+        use_rule_only = len(rows) > 500
+
+        output = Path(output_path or settings.rag_descriptions_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+
+        existing_records: list[dict[str, Any]] = []
+        existing_ids: set[str] = set()
+        if incremental and output.exists():
+            try:
+                with output.open("r", encoding="utf-8") as f:
+                    old_payload = json.load(f)
+                existing_records = list(old_payload.get("records", []))
+                existing_ids = {
+                    str(item.get("image_id"))
+                    for item in existing_records
+                    if isinstance(item, dict) and item.get("image_id")
+                }
+            except Exception:
+                existing_records = []
+                existing_ids = set()
+
+        new_records: list[dict[str, Any]] = []
+        skipped = 0
+        for row in rows:
+            if incremental and row.image_id in existing_ids:
+                skipped += 1
+                continue
+
+            description = self.text_generator.generate_rule_only(row) if use_rule_only else self.text_generator.generate(row)
+            new_records.append(
+                {
+                    "image_id": row.image_id,
+                    "image_path": row.image_path,
+                    "category": row.category,
+                    "split": row.split,
+                    "is_anomaly": row.is_anomaly,
+                    "anomaly_type": row.anomaly_type,
+                    "severity": row.severity,
+                    "description": description,
+                }
+            )
+
+        records = existing_records + new_records if incremental else new_records
+
+        payload = {
+            "dataset_root": str(Path(root)),
+            "total_anomaly_rows": len(rows),
+            "generated": len(new_records),
+            "skipped": skipped,
+            "incremental": incremental,
+            "records": records,
+        }
+        with output.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
+        return {
+            "dataset_root": str(Path(root)),
+            "output_path": str(output),
+            "total_anomaly_rows": len(rows),
+            "generated": len(new_records),
+            "skipped": skipped,
+            "incremental": incremental,
+        }
+
     def query_rows(self, query_text: str, category: Optional[str], top_k: Optional[int]) -> list[dict[str, Any]]:
         k = top_k or settings.rag_top_k
-        return self.retriever.retrieve_similar(
+        rows = self.retriever.retrieve_similar(
             query_description=query_text,
             top_k=k,
             category=category,
             only_anomaly=True,
         )
+        if not rows and category:
+            rows = self.retriever.retrieve_similar(
+                query_description=query_text,
+                top_k=k,
+                category=None,
+                only_anomaly=True,
+            )
+        return rows
 
     def query_rows_by_image(self, image_path: str, category: Optional[str], top_k: Optional[int]) -> list[dict[str, Any]]:
         k = top_k or settings.rag_top_k
-        return self.retriever.retrieve_similar_by_image(
+        rows = self.retriever.retrieve_similar_by_image(
             image_path=image_path,
             top_k=k,
             category=category,
             only_anomaly=True,
         )
+        if not rows and category:
+            rows = self.retriever.retrieve_similar_by_image(
+                image_path=image_path,
+                top_k=k,
+                category=None,
+                only_anomaly=True,
+            )
+        return rows
 
-    def query_similar(self, query_text: str, category: Optional[str], top_k: Optional[int]) -> str:
+    def query_similar(
+        self,
+        query_text: str,
+        category: Optional[str],
+        top_k: Optional[int],
+        image_path: Optional[str] = None,
+    ) -> str:
         rows = self.query_rows(query_text=query_text, category=category, top_k=top_k)
+        if not rows and image_path:
+            rows = self.query_rows_by_image(image_path=image_path, category=category, top_k=top_k)
         return self.retriever.format_for_prompt(rows)
 
     def add_online_case(

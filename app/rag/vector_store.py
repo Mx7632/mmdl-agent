@@ -1,4 +1,4 @@
-"""Vector storage and retrieval using Chroma."""
+"""Vector storage and retrieval using DashScope multimodal fused embeddings."""
 from __future__ import annotations
 
 import logging
@@ -6,67 +6,104 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import chromadb
-import cv2
-import numpy as np
-from langchain_openai import OpenAIEmbeddings
 
 from app.config.settings import settings
 from app.rag.dataset_analyzer import ImageMetadata
+
+try:  # pragma: no cover
+    from dashscope import MultiModalEmbedding
+except Exception:  # pragma: no cover
+    MultiModalEmbedding = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
 
 class VectorStore:
-    """Manage vector storage for anomaly images and text descriptions."""
+    """Manage fused multimodal vectors for anomaly retrieval."""
 
     def __init__(self, persist_dir: str | Path):
         self.persist_dir = Path(persist_dir)
         self.persist_dir.mkdir(parents=True, exist_ok=True)
 
         self.client = chromadb.PersistentClient(path=str(self.persist_dir))
-        self.text_collection = self.client.get_or_create_collection(
-            name="anomaly_cases_text",
-            metadata={"hnsw:space": "cosine"},
-        )
-        self.image_collection = self.client.get_or_create_collection(
-            name="anomaly_cases_image",
+        self.fused_collection = self.client.get_or_create_collection(
+            name="anomaly_cases_fused",
             metadata={"hnsw:space": "cosine"},
         )
 
-        self.embeddings: Optional[OpenAIEmbeddings] = None
-        if settings.openai_api_key:
-            self.embeddings = OpenAIEmbeddings(
-                model="text-embedding-3-small",
-                api_key=settings.openai_api_key,
-            )
+        self._mm_embedding_disabled = False
+        if not settings.openai_api_key:
+            self._mm_embedding_disabled = True
+            logger.warning("DashScope API key missing, multimodal vector retrieval will be unavailable")
+
+        if MultiModalEmbedding is None:
+            self._mm_embedding_disabled = True
+            logger.warning("dashscope SDK not installed, multimodal embedding unavailable")
+
+    def _to_file_uri(self, image_path: str) -> str:
+        path = Path(image_path)
+        if not path.exists():
+            return image_path
+        # DashScope SDK on Windows may mis-handle file:// URIs as '/E:/...'.
+        # Use normalized absolute local path instead.
+        return str(path.resolve()).replace("\\", "/")
+
+    def _extract_embedding(self, response: Any) -> Optional[List[float]]:
+        output = None
+        if isinstance(response, dict):
+            output = response.get("output")
         else:
-            logger.warning("OpenAI API key missing, vector retrieval will be unavailable")
+            output = getattr(response, "output", None)
 
-    def _embed_text(self, text: str) -> Optional[List[float]]:
-        if not self.embeddings:
+        if not isinstance(output, dict):
             return None
-        return self.embeddings.embed_query(text)
 
-    def _embed_image(self, image_path: str) -> Optional[List[float]]:
-        """Generate deterministic image feature embedding from histogram + edges."""
+        embeddings = output.get("embeddings") or output.get("results") or []
+        if not embeddings:
+            return None
+
+        first = embeddings[0] if isinstance(embeddings, list) else None
+        if not isinstance(first, dict):
+            return None
+
+        vec = first.get("embedding") or first.get("vector")
+        if not isinstance(vec, list):
+            return None
+
         try:
-            image = cv2.imread(image_path, cv2.IMREAD_COLOR)
-            if image is None:
-                return None
+            return [float(v) for v in vec]
+        except Exception:
+            return None
 
-            hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-            hist = cv2.calcHist([hsv], [0, 1, 2], None, [8, 4, 4], [0, 180, 0, 256, 0, 256])
-            hist = cv2.normalize(hist, hist).flatten()
+    def _embed_fused(self, *, image_path: Optional[str], text: Optional[str]) -> Optional[List[float]]:
+        if self._mm_embedding_disabled:
+            return None
+        if MultiModalEmbedding is None:
+            return None
 
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            edges = cv2.Canny(gray, 50, 150)
-            edge_ratio = float(np.count_nonzero(edges)) / float(edges.size)
+        payload: Dict[str, Any] = {}
+        if image_path:
+            payload["image"] = self._to_file_uri(image_path)
 
-            shape_ratio = [float(image.shape[0]) / max(1.0, float(image.shape[1]))]
-            feature = np.concatenate([hist.astype(np.float32), np.array([edge_ratio], dtype=np.float32), np.array(shape_ratio, dtype=np.float32)])
-            return feature.tolist()
+        content = (text or "").strip()
+        if content:
+            payload["text"] = content
+
+        if not payload:
+            return None
+
+        try:
+            response = MultiModalEmbedding.call(
+                model=settings.rag_multimodal_embedding_model,
+                api_key=settings.openai_api_key,
+                input=[payload],
+            )
+            vec = self._extract_embedding(response)
+            if vec is None:
+                logger.warning("Multimodal embedding response has no usable vector")
+            return vec
         except Exception as exc:
-            logger.warning("Failed to embed image %s: %s", image_path, exc)
+            logger.warning("Multimodal embedding failed: %s", exc)
             return None
 
     def _build_metadata(self, metadata: ImageMetadata, source: str) -> Dict[str, Any]:
@@ -82,24 +119,17 @@ class VectorStore:
         }
 
     def upsert_case(self, metadata: ImageMetadata, description: str, source: str = "dataset") -> None:
-        text_embedding = self._embed_text(description)
-        image_embedding = self._embed_image(metadata.image_path)
+        fused_embedding = self._embed_fused(image_path=metadata.image_path, text=description)
+        if fused_embedding is None:
+            logger.warning("Skip sample without multimodal embedding: %s", metadata.image_id)
+            return
 
-        if text_embedding is not None:
-            self.text_collection.upsert(
-                ids=[metadata.image_id],
-                embeddings=[text_embedding],
-                documents=[description],
-                metadatas=[self._build_metadata(metadata, source)],
-            )
-
-        if image_embedding is not None:
-            self.image_collection.upsert(
-                ids=[metadata.image_id],
-                embeddings=[image_embedding],
-                documents=[description],
-                metadatas=[self._build_metadata(metadata, source)],
-            )
+        self.fused_collection.upsert(
+            ids=[metadata.image_id],
+            embeddings=[fused_embedding],
+            documents=[description],
+            metadatas=[self._build_metadata(metadata, source)],
+        )
 
     def upsert_user_case(
         self,
@@ -155,7 +185,7 @@ class VectorStore:
         category: Optional[str] = None,
         only_anomaly: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
-        embedding = self._embed_text(query_text)
+        embedding = self._embed_fused(image_path=None, text=query_text)
         if embedding is None:
             return []
 
@@ -165,12 +195,11 @@ class VectorStore:
         if only_anomaly is not None:
             where["is_anomaly"] = {"$eq": only_anomaly}
 
-        results = self.text_collection.query(
+        results = self.fused_collection.query(
             query_embeddings=[embedding],
             n_results=top_k,
             where=where or None,
         )
-
         return self._format_query_results(results)
 
     def query_image(
@@ -181,7 +210,7 @@ class VectorStore:
         category: Optional[str] = None,
         only_anomaly: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
-        embedding = self._embed_image(image_path)
+        embedding = self._embed_fused(image_path=image_path, text=None)
         if embedding is None:
             return []
 
@@ -191,12 +220,11 @@ class VectorStore:
         if only_anomaly is not None:
             where["is_anomaly"] = {"$eq": only_anomaly}
 
-        results = self.image_collection.query(
+        results = self.fused_collection.query(
             query_embeddings=[embedding],
             n_results=top_k,
             where=where or None,
         )
-
         return self._format_query_results(results)
 
     def query(
@@ -233,4 +261,4 @@ class VectorStore:
         return output
 
     def count(self) -> int:
-        return max(self.text_collection.count(), self.image_collection.count())
+        return self.fused_collection.count()
