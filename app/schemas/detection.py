@@ -32,6 +32,8 @@ class DetectionResult(BaseModel):
     status: str = Field(..., description="success|failed")
     anomalies: List[Dict[str, Any]] = Field(default_factory=list)
     summary: Optional[str] = None
+    thought: Optional[str] = Field(None, description="The expert agent's reasoning process")
+    explanation: Optional[Dict[str, Any]] = Field(None, description="Detailed explanation of findings")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

@@ -177,6 +177,19 @@ class VectorStore:
             if progress_callback:
                 progress_callback(idx, total)
 
+    def _build_where_clause(self, category: Optional[str], only_anomaly: Optional[bool]) -> Optional[Dict[str, Any]]:
+        conditions = []
+        if category:
+            conditions.append({"category": {"$eq": category}})
+        if only_anomaly is not None:
+            conditions.append({"is_anomaly": {"$eq": only_anomaly}})
+
+        if not conditions:
+            return None
+        if len(conditions) == 1:
+            return conditions[0]
+        return {"$and": conditions}
+
     def query_text(
         self,
         *,
@@ -189,16 +202,12 @@ class VectorStore:
         if embedding is None:
             return []
 
-        where: Dict[str, Any] = {}
-        if category:
-            where["category"] = {"$eq": category}
-        if only_anomaly is not None:
-            where["is_anomaly"] = {"$eq": only_anomaly}
+        where = self._build_where_clause(category, only_anomaly)
 
         results = self.fused_collection.query(
             query_embeddings=[embedding],
             n_results=top_k,
-            where=where or None,
+            where=where,
         )
         return self._format_query_results(results)
 
@@ -214,16 +223,12 @@ class VectorStore:
         if embedding is None:
             return []
 
-        where: Dict[str, Any] = {}
-        if category:
-            where["category"] = {"$eq": category}
-        if only_anomaly is not None:
-            where["is_anomaly"] = {"$eq": only_anomaly}
+        where = self._build_where_clause(category, only_anomaly)
 
         results = self.fused_collection.query(
             query_embeddings=[embedding],
             n_results=top_k,
-            where=where or None,
+            where=where,
         )
         return self._format_query_results(results)
 

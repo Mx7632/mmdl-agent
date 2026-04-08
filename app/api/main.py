@@ -15,9 +15,11 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.config.settings import settings
 from app.core.agent import build_graph
+from app.core.qa_agent import build_qa_graph
 from app.exceptions.base import AppError, DataMissingError, ResponseParseError
 from app.memory.state import DetectionState
 from app.rag.service import get_rag_service
+from app.schemas.chat import ChatRequest, ChatResponse
 from app.schemas.detection import (
     DetectionResult,
     DetectionTask,
@@ -342,3 +344,86 @@ async def detect(request: Request):
         return result
 
     return DetectionResult(task_id=task.task_id, status="failed", anomalies=[])
+
+
+@app.post("/v1/chat", response_model=ChatResponse)
+async def chat(request: Request):
+    """
+    Autonomous Q&A endpoint with automatic planning and RAG.
+    Supports multipart/form-data with 'image' and 'question'.
+    """
+    content_type = (request.headers.get("content-type") or "").lower()
+    if "multipart/form-data" not in content_type:
+        # Also support JSON if no image is provided
+        try:
+            body = await request.json()
+            chat_req = ChatRequest(**body)
+        except Exception:
+            raise DataMissingError("Only multipart/form-data or valid JSON is supported for /v1/chat")
+    else:
+        form = await request.form()
+        
+        def get_form_text(key: str) -> str:
+            value = form.get(key)
+            return value if isinstance(value, str) else ""
+
+        task_id = get_form_text("task_id").strip() or f"chat-{new_trace_id()}"
+        question = get_form_text("question").strip()
+        category = get_form_text("category").strip() or None
+        
+        if not question:
+            raise DataMissingError("question is required")
+
+        image_b64 = None
+        image_mime = None
+        upload = form.get("image")
+        
+        parameters = {}
+        raw_params = form.get("parameters")
+        if raw_params:
+            try:
+                parameters = json.loads(raw_params) if isinstance(raw_params, str) else raw_params
+            except Exception:
+                pass
+
+        if isinstance(upload, StarletteUploadFile) and getattr(upload, "filename", None):
+            image_bytes = await upload.read()
+            image_b64 = base64.b64encode(image_bytes).decode("ascii")
+            image_mime = getattr(upload, "content_type", "image/jpeg")
+            
+            # 缓存图片供 RAG 使用
+            upload_cache_dir = Path("data/uploads")
+            upload_cache_dir.mkdir(parents=True, exist_ok=True)
+            cached_path = upload_cache_dir / f"{task_id}{Path(upload.filename).suffix or '.jpg'}"
+            cached_path.write_bytes(image_bytes)
+            parameters["image_path"] = str(cached_path)
+
+        chat_req = ChatRequest(
+            task_id=task_id,
+            question=question,
+            image_base64=image_b64,
+            image_mime=image_mime,
+            category=category,
+            parameters=parameters
+        )
+
+    graph = build_qa_graph()
+    initial_state = {
+        "request": chat_req,
+        "steps": [],
+        "rag_context": "",
+        "cv_result": None,
+        "final_answer": "",
+        "metadata": {}
+    }
+    
+    result_state = await graph.ainvoke(initial_state)
+    
+    return ChatResponse(
+        task_id=chat_req.task_id,
+        status="success",
+        steps=result_state["steps"],
+        answer=result_state["final_answer"],
+        rag_context=result_state["rag_context"],
+        metadata=result_state["metadata"]
+    )
