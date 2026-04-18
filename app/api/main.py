@@ -12,7 +12,17 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from app.config.settings import settings
 from app.core.agent import run_detection, continue_detection, get_pending_task, run_chat, generate_report
 from app.exceptions.base import AppError, DataMissingError, ResponseParseError
-from app.schemas.detection import DetectionTask
+from app.schemas.detection import DetectionResult, DetectionTask
+from app.schemas.detection import (
+    RagBuildRequest,
+    RagBuildResponse,
+    RagImageQueryRequest,
+    RagIngestFeedbackRequest,
+    RagIngestFeedbackResponse,
+    RagQueryItem,
+    RagQueryRequest,
+    RagQueryResponse,
+)
 from app.utils.logging import TRACE_ID_HEADER, new_trace_id, set_trace_id, setup_logger
 
 app = FastAPI(title=settings.app_name)
@@ -59,13 +69,95 @@ async def root():
     }
 
 
-@app.post("/v1/detect")
+# ── RAG 端点（来自 origin/main）───────────────────────────────────────────────
+
+
+@app.post("/v1/rag/build", response_model=RagBuildResponse)
+async def rag_build(payload: RagBuildRequest) -> RagBuildResponse:
+    from app.rag.service import get_rag_service
+
+    service = get_rag_service()
+    result = service.build_from_dataset(
+        dataset_root=payload.dataset_root,
+        include_normal=payload.include_normal,
+    )
+    return RagBuildResponse(status="success", **result)
+
+
+@app.post("/v1/rag/query", response_model=RagQueryResponse)
+async def rag_query(payload: RagQueryRequest) -> RagQueryResponse:
+    from app.rag.service import get_rag_service
+
+    service = get_rag_service()
+    rows = service.query_rows(
+        query_text=payload.query_text,
+        category=payload.category,
+        top_k=payload.top_k,
+    )
+    prompt_context = service.retriever.format_for_prompt(rows)
+    items = [RagQueryItem(**row) for row in rows]
+    return RagQueryResponse(
+        status="success",
+        count=len(items),
+        results=items,
+        prompt_context=prompt_context,
+    )
+
+
+@app.post("/v1/rag/query-image", response_model=RagQueryResponse)
+async def rag_query_image(payload: RagImageQueryRequest) -> RagQueryResponse:
+    from app.rag.service import get_rag_service
+
+    service = get_rag_service()
+    rows = service.query_rows_by_image(
+        image_path=payload.image_path,
+        category=payload.category,
+        top_k=payload.top_k,
+    )
+    prompt_context = service.retriever.format_for_prompt(rows)
+    items = [RagQueryItem(**row) for row in rows]
+    return RagQueryResponse(
+        status="success",
+        count=len(items),
+        results=items,
+        prompt_context=prompt_context,
+    )
+
+
+@app.post("/v1/rag/ingest-feedback", response_model=RagIngestFeedbackResponse)
+async def rag_ingest_feedback(payload: RagIngestFeedbackRequest) -> RagIngestFeedbackResponse:
+    from app.rag.service import get_rag_service
+
+    service = get_rag_service()
+    accepted = service.add_online_case(
+        image_path=payload.image_path,
+        category=payload.category,
+        user_description=payload.user_description,
+        model_confidence=payload.model_confidence,
+        is_anomaly=payload.is_anomaly,
+        anomaly_type=payload.anomaly_type,
+        severity=payload.severity,
+    )
+
+    return RagIngestFeedbackResponse(
+        status="success",
+        accepted=accepted,
+        learning_threshold=settings.rag_learning_threshold,
+        message=("样本已写入向量库" if accepted else "置信度低于阈值，已跳过写入"),
+    )
+
+
+# ── 检测端点（合并本地 + 远程逻辑）─────────────────────────────────────────────
+
+
+@app.post("/v1/detect", response_model=DetectionResult)
 async def detect(request: Request):
     """
     创建检测任务并执行循环工作流。
 
     首次调用返回结果；若置信度不足或需要用户澄清，
     返回 status=pending，前端需调用 /v1/continue 续传。
+    支持图片上传（多模态）或纯文本模式。
     """
     content_type = (request.headers.get("content-type") or "").lower()
 
