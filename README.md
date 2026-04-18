@@ -257,3 +257,107 @@ Content-Type: application/json
 - `app/api/main.py`: FastAPI 实例创建、路由注册、中间件配置
 
 ---
+
+## 🚀 v2 新增内容（2026-04）
+
+### 架构升级：链式流程 → 两阶段图
+
+原始链式流程（`load_data → anomaly_detect → summarize`）已重构为两阶段：
+
+| 阶段 | 状态 | 说明 |
+|------|------|------|
+| 循环自检图 | 已实现，未启用 | MAX_LOOP=3，置信度<0.7 或 unknown 触发循环，长期记忆参与决策 |
+| 对话图 | **当前使用** | 先回答，可多轮 chat，点击按钮触发报告生成 |
+
+### 新增后端文件
+
+| 文件 | 作用 |
+|------|------|
+| `app/core/answer_node.py` | 对话回答节点（只回答，不生成报告） |
+| `app/core/self_reflect.py` | 自检节点（循环图用） |
+| `app/core/wait_user.py` | 人工澄清节点 |
+| `app/core/supplement.py` | 补充分析节点 |
+| `app/core/agent.py` | 新增 `run_chat()`、`generate_report()` 方法 |
+| `app/memory/state.py` | 新增 `report_requested`、`loop_count`、`reflection_decision` 等字段 |
+
+### 新增 API 端点
+
+| 端点 | 方法 | 作用 |
+|------|------|------|
+| `/v1/detect` | POST | 上传图片+问题，返回简洁回答（无报告） |
+| `/v1/chat` | POST | 多轮对话，基于已有检测状态 |
+| `/v1/generate_report` | POST | 基于已有状态生成完整报告 |
+| `/v1/detect_with_report` | POST | 检测+报告一次性返回（可选） |
+
+### 前端聊天界面（`frontend_chat.html`）
+
+新增独立前端，完整交互流程：
+
+```
+上传图片 → 开始检测（/v1/detect）
+    → AI 返回答案 + 内嵌异常标签
+    → 用户可多轮提问（/v1/chat）
+    → 点击「📄 生成报告」（/v1/generate_report）
+        → loading 动画
+        → 报告卡片插入聊天记录 ✅（可反复点击查看）
+        → 侧边栏滑出查看完整报告
+    → 关闭侧边栏可继续聊天
+```
+
+**侧边栏特性：** backdrop 遮罩、右侧滑入动画、Esc 键关闭、Markdown 渲染、异常置信度标签。
+
+### 已知待改进项
+
+- `settings.py` 中 API Key 为硬编码，存在泄露风险，建议迁移至环境变量或密钥管理服务
+- 目前仅支持 `qwen3.5-plus` 模型
+- 记忆模块可进一步优化：语义搜索、记忆分层压缩、工具效果追踪、向量数据库集成
+
+### 本地运行
+
+```bash
+# 1. 进入项目目录
+cd D:\Graduation_project\MMDL
+
+# 2. 激活虚拟环境
+conda activate mmdl-agent
+
+# 3. 启动后端
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+
+# 4. 打开前端（任选一种）
+# 方式一：直接在浏览器打开 frontend_chat.html
+# 方式二：后端启动后访问 http://127.0.0.1:8000/frontend_chat.html
+
+# 5. API 测试
+# 检测（无报告）
+curl -X POST http://127.0.0.1:8000/v1/detect \
+  -F "task_id=test-001" \
+  -F "asset_id=asset-001" \
+  -F "start_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -F "end_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -F "question=这张图片有什么异常？" \
+  -F "image=@C:/Users/simmer/Pictures/Camera Roll/anomaly.jpg"
+
+# 生成报告
+curl -X POST http://127.0.0.1:8000/v1/generate_report \
+  -H "Content-Type: application/json" \
+  -d '{"task_id": "test-001"}'
+```
+
+### Git 操作说明
+
+```bash
+# 查看当前变更
+git status
+
+# 添加所有变更（含新文件）
+git add .
+
+# 提交（填写自己的信息）
+git commit -m "feat: 重构为对话图架构，新增聊天前端和报告侧边栏"
+
+# 推送到远程
+git push origin main
+```
+
+---

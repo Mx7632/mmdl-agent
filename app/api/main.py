@@ -10,10 +10,9 @@ from fastapi.responses import JSONResponse
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.config.settings import settings
-from app.core.agent import build_graph
+from app.core.agent import run_detection, continue_detection, get_pending_task, run_chat, generate_report
 from app.exceptions.base import AppError, DataMissingError, ResponseParseError
-from app.memory.state import DetectionState
-from app.schemas.detection import DetectionResult, DetectionTask
+from app.schemas.detection import DetectionTask
 from app.utils.logging import TRACE_ID_HEADER, new_trace_id, set_trace_id, setup_logger
 
 app = FastAPI(title=settings.app_name)
@@ -60,18 +59,18 @@ async def root():
     }
 
 
-@app.post("/v1/detect", response_model=DetectionResult)
+@app.post("/v1/detect")
 async def detect(request: Request):
     """
-    Create a detection task and run the workflow.
+    创建检测任务并执行循环工作流。
 
-    Image-only:
-    - multipart/form-data: image upload + question + params
+    首次调用返回结果；若置信度不足或需要用户澄清，
+    返回 status=pending，前端需调用 /v1/continue 续传。
     """
     content_type = (request.headers.get("content-type") or "").lower()
 
     if "multipart/form-data" not in content_type:
-        raise DataMissingError("Only multipart/form-data is supported for /v1/detect (image mode)")
+        raise DataMissingError("Only multipart/form-data is supported for /v1/detect")
 
     form = await request.form()
 
@@ -87,7 +86,7 @@ async def detect(request: Request):
     question = get_form_text("question").strip() or None
 
     if not task_id or not asset_id or not start_time or not end_time:
-        raise DataMissingError("task_id/asset_id/start_time/end_time are required for image detection")
+        raise DataMissingError("task_id/asset_id/start_time/end_time are required")
 
     raw_parameters = form.get("parameters")
     try:
@@ -97,7 +96,7 @@ async def detect(request: Request):
         elif isinstance(raw_parameters, str):
             parameters = json.loads(raw_parameters) if raw_parameters else {}
         elif isinstance(raw_parameters, dict):
-            parameters = raw_parameters
+            parameters = dict(raw_parameters)
         else:
             parameters = {}
     except Exception as e:
@@ -107,17 +106,17 @@ async def detect(request: Request):
             original_error=e,
         )
 
+    # 图片上传（可选，不传则为纯文本模式）
     upload = form.get("image")
-    if not isinstance(upload, StarletteUploadFile) or not getattr(upload, "filename", None):
-        raise DataMissingError("image file is required for image detection")
-
-    image_bytes = await upload.read()
-    image_b64 = base64.b64encode(image_bytes).decode("ascii")
-
-    parameters = dict(parameters or {})
-    parameters.setdefault("tool_type", "qwen3.5-plus")
-    parameters["image_base64"] = image_b64
-    parameters["image_mime"] = getattr(upload, "content_type", None) or "image/jpeg"
+    if isinstance(upload, StarletteUploadFile) and getattr(upload, "filename", None):
+        image_bytes = await upload.read()
+        image_b64 = base64.b64encode(image_bytes).decode("ascii")
+        parameters.setdefault("tool_type", "qwen3.5-plus")
+        parameters["image_base64"] = image_b64
+        parameters["image_mime"] = getattr(upload, "content_type", None) or "image/jpeg"
+        input_type = "image"
+    else:
+        input_type = "text"
 
     task = DetectionTask(
         task_id=task_id,
@@ -125,21 +124,169 @@ async def detect(request: Request):
         start_time=start_time,
         end_time=end_time,
         data_source=data_source,
-        input_type="image",
+        input_type=input_type,
         question=question,
         parameters=parameters,
     )
 
-    graph = build_graph()
-    state = DetectionState(task=task)
-    result_state = await graph.ainvoke(state)
+    result = await run_detection(task)
+    return result
 
-    if isinstance(result_state, dict):
-        result = result_state.get("result")
+
+@app.post("/v1/continue")
+async def continue_req(request: Request):
+    """
+    续传检测任务（用户澄清后调用）。
+    将用户回复注入当前挂起任务，继续执行工作流。
+    """
+    body = await request.json()
+    task_id = str(body.get("task_id", "")).strip()
+    user_reply = str(body.get("user_reply", "")).strip()
+
+    if not task_id:
+        raise DataMissingError("task_id is required")
+    if not user_reply:
+        raise DataMissingError("user_reply cannot be empty")
+
+    result = await continue_detection(task_id, user_reply)
+    return result
+
+
+@app.get("/v1/pending/{task_id}")
+async def pending(task_id: str):
+    """
+    查询挂起任务的澄清内容。
+    前端轮询此接口展示"等待用户输入"界面。
+    """
+    info = get_pending_task(task_id)
+    if info is None:
+        return JSONResponse(
+            status_code=404,
+            content={"code": "not_found", "message": f"未找到挂起任务: {task_id}"},
+        )
+    return info
+
+
+@app.post("/v1/chat")
+async def chat(request: Request):
+    """
+    多轮对话接口。
+    基于已有检测任务，回答用户的新问题。
+    """
+    body = await request.json()
+    task_id = str(body.get("task_id", "")).strip()
+    question = str(body.get("question", "")).strip()
+
+    if not task_id:
+        raise DataMissingError("task_id is required")
+    if not question:
+        raise DataMissingError("question cannot be empty")
+
+    result = await run_chat(task_id, question)
+    return result
+
+
+@app.post("/v1/generate_report")
+async def generate_report_endpoint(request: Request):
+    """
+    生成完整报告接口。
+    用户点击"生成报告"按钮后调用，返回完整检测报告。
+    """
+    body = await request.json()
+    task_id = str(body.get("task_id", "")).strip()
+
+    if not task_id:
+        raise DataMissingError("task_id is required")
+
+    result = await generate_report(task_id)
+    return result
+
+
+@app.post("/v1/detect_with_report")
+async def detect_with_report(request: Request):
+    """
+    检测+报告一次性接口。
+    首次上传图片时返回：答案 + 完整报告（前端以卡片形式嵌入）。
+    """
+    content_type = (request.headers.get("content-type") or "").lower()
+
+    if "multipart/form-data" not in content_type:
+        raise DataMissingError("Only multipart/form-data is supported for /v1/detect_with_report")
+
+    form = await request.form()
+
+    def get_form_text(key: str) -> str:
+        value = form.get(key)
+        return value if isinstance(value, str) else ""
+
+    task_id = get_form_text("task_id").strip()
+    asset_id = get_form_text("asset_id").strip()
+    start_time = get_form_text("start_time").strip()
+    end_time = get_form_text("end_time").strip()
+    data_source = get_form_text("data_source").strip() or None
+    question = get_form_text("question").strip() or None
+
+    if not task_id or not asset_id or not start_time or not end_time:
+        raise DataMissingError("task_id/asset_id/start_time/end_time are required")
+
+    raw_parameters = form.get("parameters")
+    try:
+        parameters: dict[str, Any]
+        if raw_parameters is None:
+            parameters = {}
+        elif isinstance(raw_parameters, str):
+            parameters = json.loads(raw_parameters) if raw_parameters else {}
+        elif isinstance(raw_parameters, dict):
+            parameters = dict(raw_parameters)
+        else:
+            parameters = {}
+    except Exception as e:
+        raise ResponseParseError(
+            "parameters must be valid JSON string",
+            raw_response=raw_parameters,
+            original_error=e,
+        )
+
+    # 图片上传
+    upload = form.get("image")
+    if isinstance(upload, StarletteUploadFile) and getattr(upload, "filename", None):
+        image_bytes = await upload.read()
+        image_b64 = base64.b64encode(image_bytes).decode("ascii")
+        parameters.setdefault("tool_type", "qwen3.5-plus")
+        parameters["image_base64"] = image_b64
+        parameters["image_mime"] = getattr(upload, "content_type", None) or "image/jpeg"
+        input_type = "image"
     else:
-        result = getattr(result_state, "result", None)
+        input_type = "text"
 
-    if result:
-        return result
+    task = DetectionTask(
+        task_id=task_id,
+        asset_id=asset_id,
+        start_time=start_time,
+        end_time=end_time,
+        data_source=data_source,
+        input_type=input_type,
+        question=question,
+        parameters=parameters,
+    )
 
-    return DetectionResult(task_id=task.task_id, status="failed", anomalies=[])
+    # 先执行检测
+    from app.core.agent import run_detection, generate_report as gen_report
+
+    # 执行检测（不走 report 流程）
+    detection_result = await run_detection(task)
+
+    if detection_result.get("status") == "pending":
+        return detection_result
+
+    # 已有检测结果，直接生成报告
+    if detection_result.get("status") == "success":
+        report_result = await gen_report(task_id)
+        # 合并：检测答案 + 完整报告
+        return {
+            **detection_result,
+            "summary": report_result.get("summary"),
+            "has_report": True,
+        }
+
+    return detection_result

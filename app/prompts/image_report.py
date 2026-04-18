@@ -50,6 +50,10 @@ IMAGE_REPORT_PROMPT = ChatPromptTemplate.from_messages(
                 "资产ID: {asset_id}\n"
                 "时间范围: {start_time} 至 {end_time}\n"
                 "用户问题: {question}\n\n"
+                "历史长期记忆（参考，仅用于同类异常线索与写作风格；如为空则忽略）：\n"
+                "{history}\n\n"
+                "用户对话补充（如为空则忽略）：\n"
+                "{dialogue}\n\n"
                 "图像检测到的异常(JSON):\n"
                 "{anomalies}\n"
             ),

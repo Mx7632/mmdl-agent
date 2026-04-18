@@ -16,4 +16,13 @@ __pycache__/
 venv/
 
 # IDE
+.idea/
+.vscode/
 industrial_anomaly_agent.egg-info/
+
+# 调试日志
+*.log
+debug*.log
+
+# 本地运行配置
+agent.env

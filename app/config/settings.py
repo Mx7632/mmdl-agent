@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     anomaly_detection_timeout: float = 30.0
 
     # LLM 配置（供 summarize_node 使用）
-    openai_api_key: str = "sk-c68a4a60a183496aad06b257b07eeed2"
+    openai_api_key: str = "sk-e47fe58e1afe4db2ba6d340373b48919"
     llm_model: str = "qwen3.5-plus"
     llm_temperature: float = 0.3
     llm_timeout: float = 60.0

@@ -1,90 +1,198 @@
+# LangGraph 循环工作流构建与编译入口
 from __future__ import annotations
 
-import logging
+from typing import Any, Literal
 
-from langchain_openai import ChatOpenAI
-from pydantic import SecretStr
-
-from app.config.settings import settings
-from app.exceptions.base import ConfigurationError, DataMissingError
+from langgraph.graph import StateGraph, END
 from app.memory.state import DetectionState
-from app.prompts.image_report import IMAGE_REPORT_PROMPT
-from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool
+from app.core.self_reflect import self_reflect_node
+from app.core.wait_user import wait_user_node
+from app.core.supplement import supplement_node
+from app.core.answer_node import answer_node
 
-logger = logging.getLogger(__name__)
-
-
-def _is_image_task(state: DetectionState) -> bool:
-    if getattr(state.task, "input_type", None) == "image":
-        return True
-    params = state.task.parameters or {}
-    return bool(params.get("image_base64"))
-
-
-async def load_data_node(state: DetectionState) -> DetectionState:
+# 节点函数（延迟导入，避免循环依赖）
+async def _load_data_node(state: DetectionState) -> DetectionState:
+    """数据加载节点。"""
     if not state.task:
+        from app.exceptions.base import DataMissingError
         raise DataMissingError("DetectionTask missing")
     state.context["loaded"] = True
-    state.logs.append("Data loaded")
+    state.logs.append("[数据加载] 任务数据已就绪")
     return state
 
 
-async def anomaly_detect_node(state: DetectionState) -> DetectionState:
+async def _anomaly_detect_node(state: DetectionState) -> DetectionState:
+    """异常检测节点（复用原有逻辑）。"""
+    from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool
+    from app.exceptions.base import ToolExecutionError
+    from app.memory.memory_manager import memory_manager
+    from app.memory.models import ToolContextMemory
+
     params = state.task.parameters or {}
     tool_type = params.get("tool_type")
-    if tool_type not in (None, "qwen3.5-plus", "qwen3.5-plus_image"):
-        # For now we only support image detection with qwen3.5-plus.
-        state.errors.append(f"unsupported_tool_type: {tool_type}")
-    tool = ImageAnomalyDetectionTool()
 
-    response = await tool.run(state.task)
+    if tool_type not in (None, "qwen3.5-plus", "qwen3.5-plus_image"):
+        state.errors.append(f"unsupported_tool_type: {tool_type}")
+
+    tool = ImageAnomalyDetectionTool()
+    try:
+        response = await tool.run(state.task)
+    except Exception as e:
+        raise ToolExecutionError(
+            tool.name, {"task_id": state.task.task_id}, e
+        )
+
     if response.success and response.result:
         state.result = response.result
-        state.logs.append(f"Anomaly detection completed using {tool.name}")
+        # 记录工具上下文记忆
+        memory_manager.add_tool_context(
+            ToolContextMemory(
+                task_id=state.task.task_id,
+                step_id=1,
+                tool_name=tool.name,
+                tool_input={"tool_type": tool_type},
+                tool_output={"status": response.result.status, "anomaly_count": len(response.result.anomalies or [])},
+            )
+        )
+        state.logs.append(f"[异常检测] 完成，检出 {len(response.result.anomalies)} 个异常")
     else:
         state.errors.append(response.error or "Unknown tool error")
-    return state
-
-
-async def summarize_node(state: DetectionState) -> DetectionState:
-    if not state.result:
-        state.logs.append("No result to summarize")
-        return state
-
-    if not settings.openai_api_key:
-        raise ConfigurationError("openai_api_key not configured", config_key="APP_OPENAI_API_KEY")
-
-    try:
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=settings.llm_temperature,
-            api_key=SecretStr(settings.openai_api_key),
-            timeout=settings.llm_timeout,
-            max_tokens=settings.llm_max_tokens,
-            base_url=settings.llm_base_url,
-            extra_body={"enable_thinking": False},
-        )
-
-        messages = IMAGE_REPORT_PROMPT.format_messages(
-            task_id=state.task.task_id,
-            asset_id=state.task.asset_id,
-            start_time=state.task.start_time,
-            end_time=state.task.end_time,
-            question=state.task.question or "",
-            anomalies=state.result.anomalies,
-        )
-
-        response = await llm.ainvoke(messages)
-        state.result.summary = getattr(response, "content", str(response))
-        state.logs.append("LLM summary generated")
-    except Exception as e:
-        logger.error(f"LLM invocation failed: {str(e)}")
-        # Degrade gracefully: return detection output even if report generation fails.
-        state.errors.append(f"summary_failed: {str(e)}")
-        state.result.summary = (
-            "报告生成失败（LLM 不可用或鉴权失败）。"
-        )
-        state.result.metadata = dict(state.result.metadata or {})
-        state.result.metadata["summary_failed"] = True
 
     return state
+
+
+# ---------------------------------------------------------------------------
+# 路由决策函数（条件边）
+# ---------------------------------------------------------------------------
+
+def _route_after_reflect(state: DetectionState) -> Literal["wait_user", "supplement", "answer"]:
+    """
+    自检节点后的条件路由：
+      need_user  → wait_user（用户澄清）
+      retry      → supplement（补充分析，重新回到异常检测区）
+      proceed    → answer（进入对话回答，不直接生成报告）
+    """
+    decision = state.reflection_decision or "proceed"
+    if decision == "need_user":
+        return "wait_user"
+    elif decision == "retry":
+        return "supplement"
+    else:
+        return "answer"
+
+
+def _route_after_supplement(state: DetectionState) -> Literal["self_reflect", "answer"]:
+    """
+    补充分析后的路由：
+      loop_count < MAX_LOOP → 回到 self_reflect 重新评估
+      否则强制进入 answer
+    """
+    from app.core.self_reflect import MAX_LOOP
+    if state.loop_count < MAX_LOOP:
+        return "self_reflect"
+    return "answer"
+
+
+def _route_after_wait_user(state: DetectionState) -> Literal["supplement", "answer"]:
+    """
+    用户澄清后的路由：
+      有补充信息 → supplement（基于用户回复深化分析）
+      无补充信息 → answer（进入对话回答）
+    """
+    has_reply = bool(
+        state.conversation_history
+        and any(m.get("role") == "user" for m in state.conversation_history)
+    )
+    return "supplement" if has_reply else "answer"
+
+
+def _route_after_answer(state: DetectionState) -> Literal["report", END]:
+    """
+    对话回答后的路由：
+      report_requested=True → report（生成完整报告）
+      否则 → END（结束，等待用户后续操作）
+    """
+    if state.report_requested:
+        return "report"
+    return END
+
+
+# ---------------------------------------------------------------------------
+# 图构建
+# ---------------------------------------------------------------------------
+
+def build_graph() -> Any:
+    """
+    构建并编译循环检测工作流图（支持对话+报告模式）。
+
+    节点执行顺序：
+      load_data → anomaly_detect → self_reflect
+                                              ↓
+                              need_user → wait_user → supplement → self_reflect
+                              retry     → supplement ↻
+                              proceed   → answer → [report → END | END]
+    """
+    graph = StateGraph(DetectionState)
+
+    # ── 注册节点 ──
+    graph.add_node("load_data", _load_data_node)
+    graph.add_node("anomaly_detect", _anomaly_detect_node)
+    graph.add_node("self_reflect", self_reflect_node)
+    graph.add_node("wait_user", wait_user_node)
+    graph.add_node("supplement", supplement_node)
+    graph.add_node("answer", answer_node)
+
+    # report_node 复用原有 summarize 逻辑
+    from app.core import _summarize_node
+    graph.add_node("report", _summarize_node)
+
+    # ── 固定边 ──
+    graph.set_entry_point("load_data")
+    graph.add_edge("load_data", "anomaly_detect")
+    graph.add_edge("anomaly_detect", "self_reflect")
+
+    # ── 条件边 ──
+    # self_reflect → [wait_user | supplement | answer]
+    graph.add_conditional_edges(
+        "self_reflect",
+        _route_after_reflect,
+        {
+            "wait_user": "wait_user",
+            "supplement": "supplement",
+            "answer": "answer",
+        },
+    )
+
+    # supplement → [self_reflect（循环）| answer]
+    graph.add_conditional_edges(
+        "supplement",
+        _route_after_supplement,
+        {
+            "self_reflect": "self_reflect",
+            "answer": "answer",  # 循环结束进入回答
+        },
+    )
+
+    # wait_user → [supplement | answer]
+    graph.add_conditional_edges(
+        "wait_user",
+        _route_after_wait_user,
+        {
+            "supplement": "supplement",
+            "answer": "answer",
+        },
+    )
+
+    # answer → [report | END]
+    graph.add_conditional_edges(
+        "answer",
+        _route_after_answer,
+        {
+            "report": "report",
+            END: END,
+        },
+    )
+
+    graph.add_edge("report", END)
+
+    return graph.compile()
