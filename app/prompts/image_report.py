@@ -50,7 +50,7 @@ IMAGE_REPORT_PROMPT = ChatPromptTemplate.from_messages(
                 "资产ID: {asset_id}\n"
                 "时间范围: {start_time} 至 {end_time}\n"
                 "用户问题: {question}\n\n"
-                "历史长期记忆（参考，仅用于同类异常线索与写作风格；如为空则忽略）：\n"
+                "【历史参考（三层记忆：中期同设备、长期积累、工具效果追踪；均空则忽略）】\n"
                 "{history}\n\n"
                 "用户对话补充（如为空则忽略）：\n"
                 "{dialogue}\n\n"

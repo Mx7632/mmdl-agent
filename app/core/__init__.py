@@ -42,13 +42,27 @@ async def _summarize_node(state: DetectionState) -> DetectionState:
         )
 
     user_id = (state.task.parameters or {}).get("user_id") or DEFAULT_USER_ID
+    asset_id = state.task.asset_id
 
-    # ── 获取长期记忆（用于报告写作参考）──
-    memories = memory_manager.get_long_term_memory(user_id)
-    history_text = (
-        "\n".join(f"- {m.memory_summary[:300]}" for m in memories[-5:])
-        or "（无历史检测记录）"
+    # ── 获取三层记忆上下文（【优化】统一入口）──
+    mem_ctx = memory_manager.build_memory_context(
+        user_id=user_id,
+        asset_id=asset_id,
+        task_id=state.task.task_id,
     )
+    short_term_text = mem_ctx["short_term"]
+    long_term_text = mem_ctx["long_term"]
+    tool_effect_text = mem_ctx["tool_effect"]
+
+    # ── 合并为历史参考文本 ──
+    history_parts = []
+    if asset_id and short_term_text != "（无历史检测记录）":
+        history_parts.append(f"【中期记忆（同设备近期检测）】\n{short_term_text}")
+    if long_term_text != "（无长期记忆）":
+        history_parts.append(f"【长期记忆】\n{long_term_text}")
+    if asset_id and tool_effect_text != "（无历史工具调用记录）":
+        history_parts.append(f"【工具效果追踪】\n{tool_effect_text}")
+    history_text = "\n\n".join(history_parts) or "（无历史检测记录）"
 
     # ── 获取对话历史（用于报告补充）──
     if state.conversation_history:
@@ -81,7 +95,8 @@ async def _summarize_node(state: DetectionState) -> DetectionState:
             question=state.task.question or "",
             anomalies=state.result.anomalies,
             history=history_text,
-            dialogue=dialogue_text,  # 新增：注入对话历史
+            dialogue=dialogue_text,
+            rag_context=state.context.get("rag_context", "（无 RAG 检索结果）"),
         )
 
         response = await llm.ainvoke(messages)
@@ -106,18 +121,34 @@ async def _summarize_node(state: DetectionState) -> DetectionState:
         state.errors.append(f"summary_failed: {e}")
         return state
 
-    # ── 写入长期记忆 ──
+    # ── 长期记忆写入 ──
     try:
+        asset_id = state.task.asset_id or "unknown"
         memory_summary = (state.result.summary or "").strip()[:1500]
         if memory_summary:
+            anomaly_types = list({
+                a.get("type", "未知") if isinstance(a, dict) else (a.type if hasattr(a, "type") else "未知")
+                for a in (state.result.anomalies or [])
+            })
             memory_manager.add_long_term_memory(
                 LongTermMemory(
                     user_id=user_id,
+                    asset_id=asset_id,
                     memory_summary=memory_summary,
+                    memory_details={
+                        "status": state.result.status,
+                        "anomalies": state.result.anomalies or [],
+                        "confidence": state.confidence,
+                        "loop_count": state.loop_count,
+                    },
+                    tags=anomaly_types,
                     related_tasks=[state.task.task_id],
                 )
             )
-            state.logs.append(f"[长期记忆] 已写入，摘要长度={len(memory_summary)}")
+            state.logs.append(
+                f"[长期记忆] 已写入，asset_id={asset_id}，"
+                f"标签={anomaly_types}，摘要长度={len(memory_summary)}"
+            )
     except Exception as e:
         logger.warning(f"[长期记忆] 写入失败: {e}")
         state.errors.append(f"memory_write_failed: {e}")

@@ -277,8 +277,15 @@ Content-Type: application/json
 | `app/core/self_reflect.py` | 自检节点（循环图用） |
 | `app/core/wait_user.py` | 人工澄清节点 |
 | `app/core/supplement.py` | 补充分析节点 |
+| `app/core/__init__.py` | 节点模块导出 |
 | `app/core/agent.py` | 新增 `run_chat()`、`generate_report()` 方法 |
 | `app/memory/state.py` | 新增 `report_requested`、`loop_count`、`reflection_decision` 等字段 |
+| `app/memory/memory_manager.py` | 记忆管理器（新增） |
+| `app/memory/models.py` | 记忆数据模型（新增） |
+| `app/memory/config.py` | 记忆配置（新增） |
+| `app/memory/LRU_cache.py` | LRU 缓存（新增） |
+| `app/memory/utils.py` | 记忆工具函数（新增） |
+| `app/memory/__init__.py` | 记忆模块导出 |
 
 ### 新增 API 端点
 

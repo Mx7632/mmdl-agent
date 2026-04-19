@@ -8,8 +8,9 @@
 
 from __future__ import annotations
 
+import copy
 import logging
-from typing import Any
+from typing import Any, Union
 
 from app.memory.state import DetectionState
 
@@ -66,18 +67,22 @@ async def wait_user_node(state: DetectionState) -> DetectionState:
 def build_continue_state(
     task_id: str,
     user_reply: str,
-    previous_state: DetectionState,
-) -> DetectionState:
+    previous_state: Union[DetectionState, dict],
+) -> dict:
     """
     在 API 收到用户回复后，构造一个新的检测状态（续传）。
-    将 previous_state 的所有上下文复制过来，只覆盖续传相关字段。
+    支持 dict 或 DetectionState 输入（checkpoint 现在存 dict）。
     """
-    new_state = previous_state.model_copy(deep=True)
-    new_state.user_reply = user_reply
-    new_state.conversation_history.append({
-        "role": "user",
-        "content": user_reply,
-    })
-    new_state.needs_user_input = False
-    new_state.logs.append(f"[续传] 用户回复已写入，task_id={task_id}")
-    return new_state
+    # 统一为 dict
+    if isinstance(previous_state, DetectionState):
+        state_dict = previous_state.model_dump()
+    else:
+        state_dict = copy.deepcopy(previous_state)
+
+    state_dict["user_reply"] = user_reply
+    state_dict["conversation_history"] = list(state_dict.get("conversation_history", []))
+    state_dict["conversation_history"].append({"role": "user", "content": user_reply})
+    state_dict["needs_user_input"] = False
+    state_dict["logs"] = list(state_dict.get("logs", []))
+    state_dict["logs"].append(f"[续传] 用户回复已写入，task_id={task_id}")
+    return state_dict

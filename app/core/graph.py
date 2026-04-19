@@ -44,16 +44,43 @@ async def _anomaly_detect_node(state: DetectionState) -> DetectionState:
 
     if response.success and response.result:
         state.result = response.result
-        # 记录工具上下文记忆
+        asset_id = state.task.asset_id
+
+        # ── 记录工具上下文记忆（含 asset_id，供效果追踪）──
         memory_manager.add_tool_context(
             ToolContextMemory(
                 task_id=state.task.task_id,
                 step_id=1,
+                asset_id=asset_id,  # 【优化】关联资产
                 tool_name=tool.name,
                 tool_input={"tool_type": tool_type},
-                tool_output={"status": response.result.status, "anomaly_count": len(response.result.anomalies or [])},
+                tool_output={
+                    "status": response.result.status,
+                    "anomaly_count": len(response.result.anomalies or []),
+                },
             )
         )
+
+        # ── 写中期记忆（ShortTermMemory）【优化新增】──
+        if state.result.anomalies:
+            from app.memory.models import ShortTermMemory
+            anomaly_types = [a.get("type", "未知") for a in state.result.anomalies]
+            short_mem = ShortTermMemory(
+                asset_id=asset_id or "",
+                user_id=(state.task.parameters or {}).get("user_id", "default_user"),
+                memory_summary=(
+                    f"检出 {len(state.result.anomalies)} 个异常："
+                    + "、".join(anomaly_types)
+                ),
+                memory_details={"anomalies": state.result.anomalies},
+                tags=anomaly_types,
+                anomaly_count=len(state.result.anomalies),
+            )
+            memory_manager.add_short_term_memory(short_mem)
+            state.logs.append(
+                f"[中期记忆] 已写入 asset_id={asset_id}，异常类型={anomaly_types}"
+            )
+
         state.logs.append(f"[异常检测] 完成，检出 {len(response.result.anomalies)} 个异常")
     else:
         state.errors.append(response.error or "Unknown tool error")

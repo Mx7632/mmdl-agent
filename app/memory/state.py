@@ -1,12 +1,14 @@
 """
 LangGraph 状态模型定义，贯穿整个检测流程。
 支持循环工作流：循环计数、置信度评估、用户输入挂起等。
+
+注意：所有字段均使用「后写覆盖」策略（不用 add），
+因为节点返回的是完整 state 对象（原地修改后返回），add 会导致日志/历史翻倍。
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Dict, List, Optional
-from operator import add
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -31,16 +33,16 @@ class DetectionState(BaseModel):
     task: DetectionTask
 
     # 上下文字典（合并策略）
-    context: Annotated[Dict[str, Any], merge_context] = Field(default_factory=dict)
-    # 日志 / 错误列表（追加策略）
-    logs: Annotated[List[str], add] = Field(default_factory=list)
-    errors: Annotated[List[str], add] = Field(default_factory=list)
+    context: Dict[str, Any] = Field(default_factory=dict)
+    # 日志 / 错误列表（后写覆盖，因为节点返回完整 state）
+    logs: List[str] = Field(default_factory=list)
+    errors: List[str] = Field(default_factory=list)
 
     # 检测结果
     result: Optional[DetectionResult] = None
 
-    # 对话历史，支持多轮交互
-    conversation_history: Annotated[List[Dict[str, str]], add] = Field(default_factory=list)
+    # 对话历史，支持多轮交互（后写覆盖，因为节点返回完整 state）
+    conversation_history: List[Dict[str, str]] = Field(default_factory=list)
 
     # ─── 循环控制字段 ───
     # 当前循环轮次（从 1 开始）

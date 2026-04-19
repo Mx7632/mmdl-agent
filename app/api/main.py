@@ -69,6 +69,12 @@ async def root():
     }
 
 
+@app.get("/health")
+async def health_check():
+    """健康检查端点，供前端轮询状态"""
+    return {"status": "ok", "timestamp": __import__("time").time()}
+
+
 # ── RAG 端点（来自 origin/main）───────────────────────────────────────────────
 
 
@@ -221,8 +227,13 @@ async def detect(request: Request):
         parameters=parameters,
     )
 
-    result = await run_detection(task)
-    return result
+    try:
+        result = await run_detection(task)
+        return result
+    except Exception as e:
+        import traceback
+        logger.error(f"[detect] run_detection failed: {e}\n{traceback.format_exc()}")
+        raise
 
 
 @app.post("/v1/continue")
