@@ -78,7 +78,13 @@ async def planner_node(state: DetectionState) -> DetectionState:
 
     # 3. 调用 LLM
     try:
-        response = await llm_with_tools.ainvoke(messages)
+        response = await llm_with_tools.ainvoke(
+            messages,
+            config={
+                "tags": ["planner_thought"],
+                "metadata": {"langgraph_node": "planner"}
+            }
+        )
         
         if response.tool_calls:
             state.tool_calls = response.tool_calls

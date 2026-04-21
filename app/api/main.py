@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import base64
 import json
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, File, UploadFile, BackgroundTasks, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
@@ -308,16 +310,12 @@ async def detect(request: Request):
 
     form = await request.form()
 
-    def get_form_text(key: str) -> str:
-        value = form.get(key)
-        return value if isinstance(value, str) else ""
-
-    task_id = get_form_text("task_id").strip()
-    asset_id = get_form_text("asset_id").strip()
-    start_time = get_form_text("start_time").strip()
-    end_time = get_form_text("end_time").strip()
-    data_source = get_form_text("data_source").strip() or None
-    question = get_form_text("question").strip() or None
+    task_id = get_form_text(form, "task_id").strip()
+    asset_id = get_form_text(form, "asset_id").strip()
+    start_time = get_form_text(form, "start_time").strip()
+    end_time = get_form_text(form, "end_time").strip()
+    data_source = get_form_text(form, "data_source").strip() or None
+    question = get_form_text(form, "question").strip() or None
 
     if not task_id or not asset_id or not start_time or not end_time:
         raise DataMissingError("task_id/asset_id/start_time/end_time are required")
@@ -439,6 +437,83 @@ async def generate_report_endpoint(request: Request):
 
     result = await generate_report(task_id)
     return result
+
+
+def get_form_text(form: Any, key: str) -> str:
+    """从 FormData 中安全提取文本内容。"""
+    value = form.get(key)
+    return value if isinstance(value, str) else ""
+
+
+@app.post("/v1/stream")
+async def stream_chat(request: Request):
+    """
+    流式对话接口 (SSE)。
+    支持实时输出规划过程和最终回答。
+    """
+    try:
+        form = await request.form()
+        task_id = get_form_text(form, "task_id") or f"chat-{int(time.time())}"
+        asset_id = get_form_text(form, "asset_id") or "EQUIP-001"
+        question = get_form_text(form, "question")
+        
+        logger.info(f"[stream_chat] Received request: task_id={task_id}, asset_id={asset_id}, question={question}")
+        
+        # 构造任务
+        parameters = {}
+        raw_params = form.get("parameters")
+        if raw_params and isinstance(raw_params, str):
+            try:
+                parameters = json.loads(raw_params)
+            except Exception as e:
+                logger.warning(f"Failed to parse parameters JSON: {e}")
+
+        # 处理图片
+        upload = form.get("image")
+        input_type = "text"
+        if isinstance(upload, StarletteUploadFile) and getattr(upload, "filename", None):
+            logger.info(f"[stream_chat] Image upload detected: {upload.filename}")
+            image_bytes = await upload.read()
+            parameters["image_base64"] = base64.b64encode(image_bytes).decode("ascii")
+            input_type = "image"
+
+        task = DetectionTask(
+            task_id=task_id,
+            asset_id=asset_id,
+            question=question,
+            input_type=input_type,
+            parameters=parameters,
+            start_time=datetime.now().isoformat(),
+            end_time=datetime.now().isoformat()
+        )
+
+        from app.core.agent import stream_detection
+        
+        async def wrapped_stream():
+            try:
+                async for chunk in stream_detection(task):
+                    yield chunk
+            except Exception as e:
+                import traceback
+                logger.error(f"[stream_chat] Error during streaming: {e}\n{traceback.format_exc()}")
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+        return StreamingResponse(
+            wrapped_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Content-Type": "text/event-stream",
+            }
+        )
+    except Exception as e:
+        import traceback
+        logger.error(f"[stream_chat] Setup Error: {e}\n{traceback.format_exc()}")
+        return JSONResponse(
+            status_code=500,
+            content={"code": "stream_setup_error", "message": str(e)}
+        )
 
 
 @app.post("/v1/detect_with_report")

@@ -102,25 +102,30 @@ async def self_reflect_node(state: DetectionState) -> DetectionState:
             config_key="APP_OPENAI_API_KEY",
         )
 
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=0.0,
-        api_key=SecretStr(settings.openai_api_key),
-        timeout=settings.llm_timeout,
-        max_tokens=400,
-        base_url=settings.llm_base_url,
-        extra_body={"enable_thinking": False},
-    )
-
-    prompt = _build_reflection_prompt(
-        anomalies=state.result.anomalies or [],
-        history_text=history_text,
-    )
-
     try:
-        response = await llm.ainvoke([{"role": "user", "content": prompt}])
-        raw = getattr(response, "content", "") or ""
-        parsed = _parse_json(raw)
+        llm = ChatOpenAI(
+            model=settings.llm_model,
+            temperature=0.0,
+            api_key=SecretStr(settings.openai_api_key),
+            timeout=settings.llm_timeout,
+            max_tokens=400,
+            base_url=settings.llm_base_url,
+            extra_body={"enable_thinking": False},
+        )
+
+        prompt = _build_reflection_prompt(
+            anomalies=state.result.anomalies or [],
+            history_text=history_text,
+        )
+
+        # 显式打上内部节点标签，防止流式输出到前端
+        response = await llm.ainvoke(
+            [{"role": "user", "content": prompt}],
+            config={"tags": ["internal_reflect"], "metadata": {"langgraph_node": "self_reflect"}}
+        )
+
+        from app.utils.json_parser import parse_json_safely
+        parsed = parse_json_safely(getattr(response, "content", "") or "")
     except Exception as e:
         logger.warning(f"[自检] LLM 调用失败，降级处理: {e}")
         parsed = None

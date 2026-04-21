@@ -40,9 +40,10 @@ ANSWER_PROMPT_TEMPLATE = """你是一名资深的工业可靠性与诊断专家�
 - 当前查询: {question}
 
 ## 回答规范 (Constraints)
-- **专业身份**：使用严谨的工业术语（如：工况、疲劳、劣化、偏差、特征值等），避免笼统的描述。
+- **拒绝技术废话**：严禁在回答中提及任何编程或数据处理细节，例如“JSON”、“anomalies 列表”、“字段”、“null”、“API”或具体的“Score 数值”。
+- **专业身份**：使用严谨的工业术语（如：工况、疲劳、劣化、偏差、特征值等），直接描述物理世界的观察结果。
 - **结构化输出**：回答应包含【状态判定】、【核心依据】及【后续建议】三个维度。
-- **去口语化**：禁止出现“你好”、“经分析”、“由于这是...”等助理式废话。直接切入技术诊断。
+- **去口语化**：禁止出现“你好”、“经分析”、“根据检测结果”、“结果显示”等助理式开场白。直接输出诊断结论。
 - **差异化处理**：
   - 如果检测到异常：指出具体位置、异常类型及其可能对生产造成的影响。
   - 如果未检测到异常：明确指出哪些关键特征表现正常，并结合历史规律给出预防性巡检建议。
@@ -114,7 +115,13 @@ async def answer_node(state: DetectionState) -> DetectionState:
             SystemMessage(content="你是一名资深的工业可靠性与诊断专家，专注于提供结构化、技术化的设备分析。"),
             HumanMessage(content=prompt),
         ]
-        response = await llm.ainvoke(messages)
+        response = await llm.ainvoke(
+            messages,
+            config={
+                "tags": ["final_answer"],
+                "metadata": {"langgraph_node": "answer"}
+            }
+        )
         raw_content = getattr(response, "content", None)
         logger.info(f"[answer_node] raw_content type={type(raw_content)}, repr={repr(raw_content)[:200]}")
         answer = (raw_content or "").strip()

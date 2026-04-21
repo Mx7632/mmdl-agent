@@ -220,6 +220,60 @@
      margin-bottom: 1em;
  }
 
+/* Streaming Progress */
+.streaming-progress {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 16px;
+    font-size: 0.8125rem;
+}
+
+.step-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    color: #475569;
+}
+
+.step-indicator.active {
+    color: #2563eb;
+}
+
+.step-indicator.active::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    background: #2563eb;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+.tool-indicator {
+    margin-top: 4px;
+    margin-left: 16px;
+    color: #64748b;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.thought-stream {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #f1f5f9;
+    color: #64748b;
+    font-style: italic;
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+
+@keyframes pulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(37, 99, 235, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+}
+
  .dot:nth-child(2) { animation-delay: -0.16s; }
 
  @keyframes bounce {
