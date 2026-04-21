@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """应用配置类"""
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="APP_")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="APP_", extra="ignore")
 
     # 应用基础配置
     app_name: str = "industrial-anomaly-agent"
@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     enable_tracing: bool = False
 
     # 异常检测服务配置（供 HttpAnomalyDetectionTool 使用）
-    anomaly_detection_url: str = "http://localhost:8080/"  #Todo 后期要修改的核心地方 
+    anomaly_detection_url: str = "http://localhost:8080/"  # TODO: 后续改为可配置/服务发现
     anomaly_detection_timeout: float = 30.0
 
     # LLM 配置（供 summarize_node 使用）
@@ -27,6 +27,16 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
     # Vision LLM (qwen3.5-plus) config (for image anomaly detection)
-    llm_vision_model: str = "qwen3.5-plus"    # TODO: When switching to local CV inference, this section becomes unused.
+    llm_vision_model: str = "qwen3.5-plus"  # TODO: Switching to local CV makes this unused.
+
+    # RAG 配置
+    rag_enabled: bool = True
+    rag_dataset_root: str = "data_sets/mvtec_anomaly_detection"
+    rag_vector_dir: str = "data/rag/chroma"
+    rag_metadata_path: str = "data/rag/dataset_metadata.json"
+    rag_descriptions_path: str = "data/rag/anomaly_descriptions.json"
+    rag_top_k: int = 3
+    rag_learning_threshold: float = 0.85
+    rag_multimodal_embedding_model: str = "multimodal-embedding-v1"
 
 settings = Settings()

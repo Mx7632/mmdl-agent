@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MMDL-Agent Dashboard</title>
+    <title>MMDL@NUAA Dashboard</title>
     <link rel="stylesheet" href="assets/css/style.css">
     <link rel="stylesheet" href="assets/css/dashboard.css">
 </head>
@@ -12,11 +12,13 @@
     <nav class="navbar">
         <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; padding: 0 20px; width: 100%;">
             <div style="display: flex; align-items: center; gap: 20px; flex: 1;">
-                <h1 style="margin: 0; font-size: 1.5rem; color: #2563eb;">🔍 MMDL-Agent</h1>
+                <h1 style="margin: 0; font-size: 1.5rem; color: #2563eb;">🔍 MMDL@NUAA</h1>
                 <span style="font-size: 0.9rem; color: #888;">Industrial Anomaly Detection</span>
             </div>
             <div style="display: flex; gap: 20px;">
                 <a href="index.html" style="color: #2563eb; text-decoration: none; font-weight: 500;">Dashboard</a>
+                <a href="chat.html" style="color: #666; text-decoration: none;">Q&A Chat</a>
+                <a href="expert_inspection.html" style="color: #666; text-decoration: none;">Expert Inspection</a>
                 <a href="detection.html" style="color: #666; text-decoration: none;">Detection</a>
                 <a href="rag.html" style="color: #666; text-decoration: none;">RAG Console</a>
                 <a href="#" style="color: #666; text-decoration: none;">Status</a>
@@ -70,14 +72,14 @@
         <section style="margin-bottom: 40px;">
             <h2 style="margin-bottom: 20px; font-size: 1.5rem;">Quick Actions</h2>
             <div class="quick-actions">
-                <button class="btn btn-primary" onclick="window.location.href='detection.html'">
-                    ➕ Start New Detection
+                <button class="btn btn-primary" onclick="window.location.href='chat.html'">
+                    💬 Autonomous Q&A Chat
                 </button>
-                <button class="btn btn-secondary" onclick="document.getElementById('recent-list').scrollIntoView({behavior:'smooth'})">
-                    📋 View History
+                <button class="btn btn-secondary" onclick="window.location.href='expert_inspection.html'">
+                    🤖 Expert Inspection
                 </button>
-                <button class="btn btn-outline" onclick="downloadReport()">
-                    📥 Download Report
+                <button class="btn btn-outline" onclick="window.location.href='detection.html'">
+                    ➕ Quick Detection
                 </button>
             </div>
         </section>
@@ -96,7 +98,7 @@
 
     <!-- Footer -->
     <footer class="footer">
-        <p>&copy; 2026 MMDL-Agent. All rights reserved.</p>
+        <p>&copy; 2026 MMDL@NUAA. All rights reserved.</p>
     </footer>
 
     <!-- API Client -->

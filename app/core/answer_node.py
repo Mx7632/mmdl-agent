@@ -25,27 +25,31 @@ from app.exceptions.base import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
-ANSWER_PROMPT_TEMPLATE = """你是工业图像异常检测专家。请基于以下检测结果，简洁回答用户的问题。
+ANSWER_PROMPT_TEMPLATE = """你是一名资深的工业可靠性与诊断专家（Reliability & Diagnosis Expert）。
+请基于提供的实时检测数据、历史记忆以及 RAG 检索到的技术上下文，对当前资产状态进行专业、严谨的分析评价。
 
-## 检测结果
+## 1. 实时检测数据 (JSON)
 {result_json}
 
-## 历史记忆参考（中期同设备 / 长期积累）【如有则参考，无则忽略】
+## 2. 知识上下文与记忆参考
 {memory_context}
 
-## 对话历史
-{conversation_history}
+## 3. 交互上下文 (Context)
+- 资产 ID: {asset_id}
+- 对话历史: {conversation_history}
+- 当前查询: {question}
 
-## 用户当前问题
-{question}
+## 回答规范 (Constraints)
+- **拒绝技术废话**：严禁在回答中提及任何编程或数据处理细节，例如“JSON”、“anomalies 列表”、“字段”、“null”、“API”或具体的“Score 数值”。
+- **专业身份**：使用严谨的工业术语（如：工况、疲劳、劣化、偏差、特征值等），直接描述物理世界的观察结果。
+- **结构化输出**：回答应包含【状态判定】、【核心依据】及【后续建议】三个维度。
+- **去口语化**：禁止出现“你好”、“经分析”、“根据检测结果”、“结果显示”等助理式开场白。直接输出诊断结论。
+- **差异化处理**：
+  - 如果检测到异常：指出具体位置、异常类型及其可能对生产造成的影响。
+  - 如果未检测到异常：明确指出哪些关键特征表现正常，并结合历史规律给出预防性巡检建议。
+- **引导性**：如果信息充足，主动告知用户可以点击“生成报告”获取包含 P0/P1/P2 处置方案的深度技术文档。
 
-## 回答要求
-1. 直接回答问题，不要生成完整报告格式
-2. 如果问题与检测结果无关，礼貌说明
-3. 回答控制在 200 字以内，简洁明了
-4. 如有必要，可以询问用户是否需要生成完整报告
-
-请直接输出回答内容："""
+请以纯文本或 Markdown 格式输出专业诊断意见："""
 
 
 async def answer_node(state: DetectionState) -> DetectionState:
@@ -88,6 +92,7 @@ async def answer_node(state: DetectionState) -> DetectionState:
         memory_context=memory_context_text,
         conversation_history=history_text or "（首次对话）",
         question=question,
+        asset_id=asset_id or "未知资产",
     )
 
     # ── 调用 LLM ──
@@ -107,10 +112,16 @@ async def answer_node(state: DetectionState) -> DetectionState:
             extra_body={"enable_thinking": False},
         )
         messages = [
-            SystemMessage(content="你是工业图像异常检测专家，擅长简洁回答用户问题。"),
+            SystemMessage(content="你是一名资深的工业可靠性与诊断专家，专注于提供结构化、技术化的设备分析。"),
             HumanMessage(content=prompt),
         ]
-        response = await llm.ainvoke(messages)
+        response = await llm.ainvoke(
+            messages,
+            config={
+                "tags": ["final_answer"],
+                "metadata": {"langgraph_node": "answer"}
+            }
+        )
         raw_content = getattr(response, "content", None)
         logger.info(f"[answer_node] raw_content type={type(raw_content)}, repr={repr(raw_content)[:200]}")
         answer = (raw_content or "").strip()

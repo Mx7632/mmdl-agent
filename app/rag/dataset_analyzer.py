@@ -36,7 +36,7 @@ class DatasetAnalyzer:
         self.metadata_list: List[ImageMetadata] = []
         self.categories: List[str] = []
 
-    def analyze(self) -> Dict[str, Any]:
+    def analyze(self, progress_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Scan dataset and classify images."""
         logger.info("Analyzing dataset at %s", self.dataset_root)
 
@@ -45,8 +45,11 @@ class DatasetAnalyzer:
         )
 
         self.metadata_list = []
-        for category in self.categories:
+        total_categories = len(self.categories)
+        for idx, category in enumerate(self.categories, start=1):
             self._process_category(category)
+            if progress_callback:
+                progress_callback(idx, total_categories, category)
 
         stats = self._compute_stats()
         logger.info("Analysis complete: total=%s anomalies=%s normal=%s", stats["total_images"], stats["anomalies"], stats["normal"])

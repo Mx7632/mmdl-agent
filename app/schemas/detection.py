@@ -33,6 +33,8 @@ class DetectionResult(BaseModel):
     answer: Optional[str] = Field(default=None, description="简洁的检测回答")
     anomalies: List[Dict[str, Any]] = Field(default_factory=list)
     summary: Optional[str] = None
+    thought: Optional[str] = Field(None, description="The expert agent's reasoning process")
+    explanation: Optional[Dict[str, Any]] = Field(None, description="Detailed explanation of findings")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -50,6 +52,48 @@ class RagBuildRequest(BaseModel):
 
     dataset_root: Optional[str] = None
     include_normal: bool = True
+
+
+class RagGenerateDescriptionsRequest(BaseModel):
+    """生成异常样本文本描述请求"""
+
+    dataset_root: Optional[str] = None
+    output_path: Optional[str] = None
+    incremental: bool = True
+
+
+class RagGenerateDescriptionsResponse(BaseModel):
+    """生成异常样本文本描述响应"""
+
+    status: str
+    dataset_root: str
+    output_path: str
+    total_anomaly_rows: int
+    generated: int
+    skipped: int = 0
+    incremental: bool = False
+
+
+class RagBuildStartResponse(BaseModel):
+    """RAG 建库启动响应"""
+
+    status: str
+    task_id: str
+    message: str
+
+
+class RagBuildStatusResponse(BaseModel):
+    """RAG 建库进度响应"""
+
+    status: str
+    task_id: str
+    phase: str
+    percent: int
+    message: str
+    processed: int = 0
+    total: int = 0
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
 
 
 class RagBuildResponse(BaseModel):

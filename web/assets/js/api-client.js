@@ -4,7 +4,11 @@
  */
 
 class APIClient {
-    constructor(baseURL = 'http://localhost:8000') {
+    constructor(baseURL = window.location.origin) {
+        // If running via file://, fallback to localhost:8000
+        if (baseURL === 'null' || baseURL.startsWith('file://')) {
+            baseURL = 'http://localhost:8000';
+        }
         this.baseURL = baseURL;
         this.headers = {
             'Content-Type': 'application/json',
@@ -85,6 +89,23 @@ class APIClient {
             method: 'POST',
             body: payload,
         });
+    }
+
+    /**
+     * POST /v1/rag/build/start - Start async build job
+     */
+    async ragBuildStart(payload) {
+        return this.request('/v1/rag/build/start', {
+            method: 'POST',
+            body: payload,
+        });
+    }
+
+    /**
+     * GET /v1/rag/build/status/{taskId} - Poll build status
+     */
+    async ragBuildStatus(taskId) {
+        return this.request(`/v1/rag/build/status/${taskId}`);
     }
 
     /**

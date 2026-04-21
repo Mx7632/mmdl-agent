@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>专家级工业质检 - MMDL-Agent</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="stylesheet" href="assets/css/detection-form.css">
+    <link rel="stylesheet" href="assets/css/expert-report.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body style="background-color: #f1f5f9;">
+    <nav class="navbar">
+        <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; padding: 0 20px; width: 100%;">
+            <div style="display: flex; align-items: center; gap: 20px; flex: 1;">
+                <h1 style="margin: 0; font-size: 1.5rem; color: #2563eb;">MMDL-Agent</h1>
+                <span style="font-size: 0.9rem; color: #64748b;">专家级工业异常检测系统</span>
+            </div>
+            <div style="display: flex; gap: 24px;">
+                <a href="index.html" style="color: #64748b; text-decoration: none; font-weight: 500;">仪表板</a>
+                <a href="expert_inspection.html" style="color: #2563eb; text-decoration: none; font-weight: 600;">专家质检</a>
+                <a href="detection.html" style="color: #64748b; text-decoration: none; font-weight: 500;">快速检测</a>
+                <a href="rag.html" style="color: #64748b; text-decoration: none; font-weight: 500;">知识库管理</a>
+            </div>
+        </div>
+    </nav>
+
+    <header style="background: #1e293b; color: white; padding: 48px 20px; text-align: center; border-bottom: 4px solid #2563eb;">
+        <div style="max-width: 1200px; margin: 0 auto;">
+            <div style="display: inline-flex; align-items: center; gap: 12px; margin-bottom: 16px; background: rgba(37, 99, 235, 0.2); padding: 8px 16px; border-radius: 999px; border: 1px solid rgba(37, 99, 235, 0.4);">
+                <i class="fas fa-robot" style="color: #3b82f6;"></i>
+                <span style="font-size: 0.875rem; font-weight: 600; color: #93c5fd; text-transform: uppercase; letter-spacing: 0.05em;">Industrial Inspection Agent v2.0</span>
+            </div>
+            <h1 style="margin: 0 0 16px 0; font-size: 2.5rem; font-weight: 800; letter-spacing: -0.025em;">资深工业质量检测专家系统</h1>
+            <p style="margin: 0 auto; max-width: 700px; font-size: 1.125rem; color: #94a3b8; line-height: 1.6;">
+                基于推理链（Chain-of-Thought）与多模态 RAG 技术，执行“观察-对比-校验-决策”闭环推理流程，提供精准的工业异常诊断与处置建议。
+            </p>
+        </div>
+    </header>
+
+    <main style="max-width: 1100px; margin: -30px auto 60px; padding: 0 20px;">
+        <!-- Error Message -->
+        <div id="error-message" style="
+            display: none;
+            padding: 16px 20px;
+            background: #fef2f2;
+            border-left: 4px solid #ef4444;
+            border-radius: 8px;
+            color: #991b1b;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            animation: slideUp 0.3s ease-out;
+        "></div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 30px; align-items: start;">
+            <!-- Left: Config & Upload -->
+            <section>
+                <form id="detection-form" class="expert-card" style="margin-bottom: 0; padding: 32px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 24px;">
+                        <i class="fas fa-sliders-h" style="color: #2563eb;"></i>
+                        <h2 style="margin: 0; font-size: 1.25rem; font-weight: 700;">检测任务配置</h2>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="task-id">任务流水号</label>
+                        <div style="position: relative;">
+                            <input type="text" id="task-id" name="task_id" readonly style="background: #f8fafc; padding-left: 35px; border-color: #e2e8f0; color: #64748b;">
+                            <i class="fas fa-hashtag" style="position: absolute; left: 12px; top: 12px; color: #94a3b8;"></i>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="asset-id">资产/设备编号 *</label>
+                        <div style="position: relative;">
+                            <input type="text" id="asset-id" name="asset_id" placeholder="例如: MOTOR-001, LINE-A-PUMP" required style="padding-left: 35px;">
+                            <i class="fas fa-box" style="position: absolute; left: 12px; top: 12px; color: #94a3b8;"></i>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="category-input">零件类别 (Category) *</label>
+                        <div style="position: relative;">
+                            <select id="category-input" name="category" required style="padding-left: 35px; width: 100%; height: 42px; border: 1px solid #d1d5db; border-radius: 6px; appearance: none; background: white;">
+                                <option value="bottle">瓶子 (Bottle)</option>
+                                <option value="cable">电缆 (Cable)</option>
+                                <option value="capsule">胶囊 (Capsule)</option>
+                                <option value="carpet">地毯 (Carpet)</option>
+                                <option value="grid">网格 (Grid)</option>
+                                <option value="hazelnut">榛子 (Hazelnut)</option>
+                                <option value="leather">皮革 (Leather)</option>
+                                <option value="metal_nut" selected>金属螺母 (Metal Nut)</option>
+                                <option value="pill">药片 (Pill)</option>
+                                <option value="screw">螺丝 (Screw)</option>
+                                <option value="tile">瓷砖 (Tile)</option>
+                                <option value="toothbrush">牙刷 (Toothbrush)</option>
+                                <option value="transistor">晶体管 (Transistor)</option>
+                                <option value="wood">木材 (Wood)</option>
+                                <option value="zipper">拉链 (Zipper)</option>
+                            </select>
+                            <i class="fas fa-tags" style="position: absolute; left: 12px; top: 12px; color: #94a3b8;"></i>
+                            <i class="fas fa-chevron-down" style="position: absolute; right: 12px; top: 12px; color: #94a3b8; pointer-events: none;"></i>
+                        </div>
+                        <small style="color: #64748b; margin-top: 4px; display: block;">零件类别决定了专家库检索的范围</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="question-input">具体检测诉求 / 异常线索</label>
+                        <textarea id="question-input" name="question" placeholder="例如：重点观察零件左侧是否有划痕？是否存在漏装？" rows="3" style="padding: 12px; border-radius: 6px;"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="image-input">待检图像上传 *</label>
+                        <div id="drop-zone" style="border: 2px dashed #cbd5e1; border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s; background: #f8fafc;">
+                            <input type="file" id="image-input" name="image" accept="image/*" required style="display: none;">
+                            <i class="fas fa-cloud-upload-alt" style="font-size: 2rem; color: #3b82f6; margin-bottom: 12px;"></i>
+                            <p style="margin: 0; font-weight: 500; color: #1e293b;">点击或拖拽图像到此处</p>
+                            <p style="margin: 4px 0 0 0; font-size: 0.875rem; color: #64748b;">支持 JPG, PNG, WEBP (最大 10MB)</p>
+                        </div>
+                        <div id="image-preview-container" class="image-preview-container" style="margin-top: 16px; display: none;">
+                            <div class="image-preview-header">
+                                <span style="font-weight: 600;">图像预览</span>
+                                <span id="image-preview-meta" class="image-preview-meta"></span>
+                            </div>
+                            <div class="image-preview-frame" style="border-radius: 6px; overflow: hidden; border: 1px solid #e2e8f0;">
+                                <img id="image-preview" alt="Image preview" style="max-width: 100%; display: block;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 12px; margin-top: 32px;">
+                        <button type="submit" class="btn btn-primary" style="flex: 2; height: 48px; font-weight: 600; font-size: 1rem; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.4);">
+                            <i class="fas fa-microscope" style="margin-right: 8px;"></i> 开始专家质检
+                        </button>
+                        <button type="reset" class="btn btn-outline" onclick="resetForm()" style="flex: 1; height: 48px; border-color: #cbd5e1; color: #475569;">
+                            重置
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Right: Results & Reasoning -->
+            <section id="results-section" style="display: none;">
+                <div class="expert-card animate-fade-in">
+                    <div class="expert-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="background: rgba(255, 255, 255, 0.2); width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                                <i class="fas fa-clipboard-check"></i>
+                            </div>
+                            <h2 id="result-task-id-header">检测结论 - TASK-001</h2>
+                        </div>
+                        <span id="status-badge" class="status-badge"></span>
+                    </div>
+
+                    <div class="expert-body">
+                        <!-- Reasoning Thought Chain -->
+                        <div class="thought-section">
+                            <div class="thought-header">
+                                <i class="fas fa-brain"></i>
+                                <span>专家推理链 (Thought Chain)</span>
+                            </div>
+                            <div id="expert-thought" class="thought-content"></div>
+                        </div>
+
+                        <!-- Findings Grid -->
+                        <div class="findings-grid">
+                            <div class="finding-item">
+                                <div class="finding-label"><i class="fas fa-search"></i> 视觉差异证据</div>
+                                <div id="visual-evidence" class="finding-value"></div>
+                            </div>
+                            <div class="finding-item">
+                                <div class="finding-label"><i class="fas fa-book"></i> 规程标准引用</div>
+                                <div id="standard-reference" class="finding-value"></div>
+                            </div>
+                            <div class="finding-item">
+                                <div class="finding-label"><i class="fas fa-exclamation-triangle"></i> 根本原因分析</div>
+                                <div id="root-cause" class="finding-value"></div>
+                            </div>
+                            <div class="finding-item" style="background: #fdf2f7; border-color: #fce7f3;">
+                                <div class="finding-label" style="color: #9d174d;"><i class="fas fa-percent"></i> 置信度评分</div>
+                                <div id="confidence-score" class="finding-value" style="font-size: 1.5rem; font-weight: 800; color: #9d174d;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Action Recommendation -->
+                        <div class="recommendation-box">
+                            <div class="finding-label"><i class="fas fa-tools"></i> 处置建议 (Action Recommendation)</div>
+                            <div id="action-recommendation" class="finding-value" style="font-weight: 600;"></div>
+                        </div>
+
+                        <!-- Full Summary Report -->
+                        <div class="summary-report">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                <h3 style="margin: 0;">诊断报告摘要</h3>
+                                <button onclick="downloadReport()" style="background: none; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.875rem; color: #475569;">
+                                    <i class="fas fa-download" style="margin-right: 4px;"></i> 导出报告
+                                </button>
+                            </div>
+                            <div id="report-summary" class="report-content"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" style="
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(15, 23, 42, 0.8);
+        backdrop-filter: blur(4px);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        gap: 24px;
+    ">
+        <div style="position: relative;">
+            <div class="spinner" style="width: 80px; height: 80px; border-width: 6px; border-color: #2563eb transparent #2563eb transparent;"></div>
+            <i class="fas fa-brain" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #3b82f6; font-size: 1.5rem; animation: pulse 1.5s infinite;"></i>
+        </div>
+        <div style="text-align: center; color: white;">
+            <p id="loading-status" style="font-size: 1.25rem; font-weight: 700; margin-bottom: 8px;">专家智能体正在分析中...</p>
+            <p style="color: #94a3b8; font-size: 0.875rem;">执行：像素对齐 -> 结构校验 -> 规程核对 -> 生成建议</p>
+        </div>
+    </div>
+
+    <footer class="footer" style="background: white; border-top: 1px solid #e2e8f0; padding: 40px 20px;">
+        <div style="max-width: 1200px; margin: 0 auto; text-align: center; color: #64748b;">
+            <p style="margin: 0;">&copy; 2024 MMDL-Agent Industrial Intelligence. Powered by LangChain & LangGraph.</p>
+        </div>
+    </footer>
+
+    <script src="assets/js/api-client.js"></script>
+    <script src="assets/js/expert-inspection.js"></script>
+</body>
+</html>

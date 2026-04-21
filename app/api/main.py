@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import base64
 import json
+import time
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, File, UploadFile, BackgroundTasks, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.config.settings import settings
@@ -16,6 +22,10 @@ from app.schemas.detection import DetectionResult, DetectionTask
 from app.schemas.detection import (
     RagBuildRequest,
     RagBuildResponse,
+    RagBuildStartResponse,
+    RagBuildStatusResponse,
+    RagGenerateDescriptionsRequest,
+    RagGenerateDescriptionsResponse,
     RagImageQueryRequest,
     RagIngestFeedbackRequest,
     RagIngestFeedbackResponse,
@@ -25,28 +35,109 @@ from app.schemas.detection import (
 )
 from app.utils.logging import TRACE_ID_HEADER, new_trace_id, set_trace_id, setup_logger
 
-app = FastAPI(title=settings.app_name)
+app = FastAPI(
+    title=settings.app_name,
+    docs_url=None,
+    redoc_url=None,
+)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# 挂载前端静态文件
+app.mount("/web", StaticFiles(directory="web"), name="web")
+# 也可以挂载数据文件（如图片预览）
+app.mount("/data/uploads", StaticFiles(directory="data/uploads"), name="uploads")
+
 logger = setup_logger(level=settings.log_level)
+
+
+_SWAGGER_STATIC_ROUTE = "/_swagger_static"
+_swagger_local_assets_ok = False
+
+
+def _mount_local_swagger_assets() -> None:
+    """Mount local swagger UI static assets if available."""
+    global _swagger_local_assets_ok
+
+    try:
+        import swagger_ui_bundle  # type: ignore
+
+        swagger_pkg_dir = Path(swagger_ui_bundle.__file__).resolve().parent
+        swagger_vendor_candidates = sorted((swagger_pkg_dir / "vendor").glob("swagger-ui-*"))
+        if not swagger_vendor_candidates:
+            raise FileNotFoundError(f"No swagger-ui vendor assets found under {swagger_pkg_dir / 'vendor'}")
+        swagger_assets_dir = swagger_vendor_candidates[-1]
+        app.mount(_SWAGGER_STATIC_ROUTE, StaticFiles(directory=str(swagger_assets_dir)), name="swagger_static")
+        _swagger_local_assets_ok = True
+        logger.info("Mounted local Swagger assets from %s", swagger_assets_dir)
+    except Exception as exc:  # pragma: no cover
+        _swagger_local_assets_ok = False
+        logger.warning("Local Swagger assets unavailable, fallback to default CDN docs: %s", exc)
+
+
+_mount_local_swagger_assets()
+
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=settings.app_name,
+        version="0.1.0",
+        description="Industrial anomaly detection API",
+        routes=app.routes,
+    )
+    schema["openapi"] = "3.0.3"
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
 
 
 @app.middleware("http")
 async def add_trace_id(request: Request, call_next):
-    trace_id = request.headers.get(TRACE_ID_HEADER) or new_trace_id()
-    request.state.trace_id = trace_id
-    set_trace_id(trace_id)
+    trace_id = "-"
+    try:
+        trace_id = request.headers.get(TRACE_ID_HEADER) or new_trace_id()
+        setattr(request.state, "trace_id", trace_id)
+        set_trace_id(trace_id)
+    except Exception as e:
+        logger.error(f"Middleware trace_id setup error: {e}")
 
-    response = await call_next(request)
-    response.headers[TRACE_ID_HEADER] = trace_id
-    return response
+    try:
+        response = await call_next(request)
+        response.headers[TRACE_ID_HEADER] = trace_id
+        
+        # 强制补充 CORS 头（防止 500 时 CORSMiddleware 失效）
+        origin = request.headers.get("origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "*"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+            
+        return response
+    except Exception as e:
+        import traceback
+        logger.error(f"Middleware execution error: {e}\n{traceback.format_exc()}")
+        
+        content = {"code": "internal_error", "message": str(e), "trace_id": trace_id}
+        response = JSONResponse(status_code=500, content=content)
+        
+        # 错误响应也必须带上 CORS 头
+        origin = request.headers.get("origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+        else:
+            response.headers["Access-Control-Allow-Origin"] = "*"
+            
+        return response
 
 
 @app.exception_handler(AppError)
@@ -54,7 +145,17 @@ async def app_error_handler(request: Request, exc: AppError):
     logger.error(f"{exc.code}: {exc.message}")
     return JSONResponse(
         status_code=exc.status_code,
-        content={"code": exc.code, "message": exc.message, "trace_id": request.state.trace_id},
+        content={"code": exc.code, "message": exc.message, "trace_id": getattr(request.state, "trace_id", "-")},
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    import traceback
+    logger.error(f"Unhandled Exception: {exc}\n{traceback.format_exc()}")
+    return JSONResponse(
+        status_code=500,
+        content={"code": "internal_error", "message": str(exc), "trace_id": getattr(request.state, "trace_id", "-")},
     )
 
 
@@ -88,6 +189,43 @@ async def rag_build(payload: RagBuildRequest) -> RagBuildResponse:
         include_normal=payload.include_normal,
     )
     return RagBuildResponse(status="success", **result)
+
+
+@app.post("/v1/rag/generate-descriptions", response_model=RagGenerateDescriptionsResponse)
+async def rag_generate_descriptions(payload: RagGenerateDescriptionsRequest) -> RagGenerateDescriptionsResponse:
+    service = get_rag_service()
+    result = service.generate_anomaly_descriptions(
+        dataset_root=payload.dataset_root,
+        output_path=payload.output_path,
+        incremental=payload.incremental,
+    )
+    return RagGenerateDescriptionsResponse(status="success", **result)
+
+
+@app.post("/v1/rag/build/start", response_model=RagBuildStartResponse)
+async def rag_build_start(payload: RagBuildRequest) -> RagBuildStartResponse:
+    service = get_rag_service()
+    task_id = service.start_build_job(
+        dataset_root=payload.dataset_root,
+        include_normal=payload.include_normal,
+    )
+    return RagBuildStartResponse(status="success", task_id=task_id, message="建库任务已启动")
+
+
+@app.get("/v1/rag/build/status/{task_id}", response_model=RagBuildStatusResponse)
+async def rag_build_status(task_id: str) -> RagBuildStatusResponse:
+    service = get_rag_service()
+    status = service.get_build_job_status(task_id)
+    if not status:
+        return RagBuildStatusResponse(
+            status="not_found",
+            task_id=task_id,
+            phase="unknown",
+            percent=0,
+            message="任务不存在",
+        )
+
+    return RagBuildStatusResponse(**status)
 
 
 @app.post("/v1/rag/query", response_model=RagQueryResponse)
@@ -172,16 +310,12 @@ async def detect(request: Request):
 
     form = await request.form()
 
-    def get_form_text(key: str) -> str:
-        value = form.get(key)
-        return value if isinstance(value, str) else ""
-
-    task_id = get_form_text("task_id").strip()
-    asset_id = get_form_text("asset_id").strip()
-    start_time = get_form_text("start_time").strip()
-    end_time = get_form_text("end_time").strip()
-    data_source = get_form_text("data_source").strip() or None
-    question = get_form_text("question").strip() or None
+    task_id = get_form_text(form, "task_id").strip()
+    asset_id = get_form_text(form, "asset_id").strip()
+    start_time = get_form_text(form, "start_time").strip()
+    end_time = get_form_text(form, "end_time").strip()
+    data_source = get_form_text(form, "data_source").strip() or None
+    question = get_form_text(form, "question").strip() or None
 
     if not task_id or not asset_id or not start_time or not end_time:
         raise DataMissingError("task_id/asset_id/start_time/end_time are required")
@@ -305,6 +439,83 @@ async def generate_report_endpoint(request: Request):
     return result
 
 
+def get_form_text(form: Any, key: str) -> str:
+    """从 FormData 中安全提取文本内容。"""
+    value = form.get(key)
+    return value if isinstance(value, str) else ""
+
+
+@app.post("/v1/stream")
+async def stream_chat(request: Request):
+    """
+    流式对话接口 (SSE)。
+    支持实时输出规划过程和最终回答。
+    """
+    try:
+        form = await request.form()
+        task_id = get_form_text(form, "task_id") or f"chat-{int(time.time())}"
+        asset_id = get_form_text(form, "asset_id") or "EQUIP-001"
+        question = get_form_text(form, "question")
+        
+        logger.info(f"[stream_chat] Received request: task_id={task_id}, asset_id={asset_id}, question={question}")
+        
+        # 构造任务
+        parameters = {}
+        raw_params = form.get("parameters")
+        if raw_params and isinstance(raw_params, str):
+            try:
+                parameters = json.loads(raw_params)
+            except Exception as e:
+                logger.warning(f"Failed to parse parameters JSON: {e}")
+
+        # 处理图片
+        upload = form.get("image")
+        input_type = "text"
+        if isinstance(upload, StarletteUploadFile) and getattr(upload, "filename", None):
+            logger.info(f"[stream_chat] Image upload detected: {upload.filename}")
+            image_bytes = await upload.read()
+            parameters["image_base64"] = base64.b64encode(image_bytes).decode("ascii")
+            input_type = "image"
+
+        task = DetectionTask(
+            task_id=task_id,
+            asset_id=asset_id,
+            question=question,
+            input_type=input_type,
+            parameters=parameters,
+            start_time=datetime.now().isoformat(),
+            end_time=datetime.now().isoformat()
+        )
+
+        from app.core.agent import stream_detection
+        
+        async def wrapped_stream():
+            try:
+                async for chunk in stream_detection(task):
+                    yield chunk
+            except Exception as e:
+                import traceback
+                logger.error(f"[stream_chat] Error during streaming: {e}\n{traceback.format_exc()}")
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+        return StreamingResponse(
+            wrapped_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Content-Type": "text/event-stream",
+            }
+        )
+    except Exception as e:
+        import traceback
+        logger.error(f"[stream_chat] Setup Error: {e}\n{traceback.format_exc()}")
+        return JSONResponse(
+            status_code=500,
+            content={"code": "stream_setup_error", "message": str(e)}
+        )
+
+
 @app.post("/v1/detect_with_report")
 async def detect_with_report(request: Request):
     """
@@ -373,23 +584,25 @@ async def detect_with_report(request: Request):
         parameters=parameters,
     )
 
-    # 先执行检测
-    from app.core.agent import run_detection, generate_report as gen_report
+    try:
+        # 执行检测（不走 report 流程）
+        detection_result = await run_detection(task)
 
-    # 执行检测（不走 report 流程）
-    detection_result = await run_detection(task)
+        if detection_result.get("status") == "pending":
+            return detection_result
 
-    if detection_result.get("status") == "pending":
+        # 已有检测结果，直接生成报告
+        if detection_result.get("status") == "success":
+            report_result = await generate_report(task_id)
+            # 合并：检测答案 + 完整报告
+            return {
+                **detection_result,
+                "summary": report_result.get("summary"),
+                "has_report": True,
+            }
+
         return detection_result
-
-    # 已有检测结果，直接生成报告
-    if detection_result.get("status") == "success":
-        report_result = await gen_report(task_id)
-        # 合并：检测答案 + 完整报告
-        return {
-            **detection_result,
-            "summary": report_result.get("summary"),
-            "has_report": True,
-        }
-
-    return detection_result
+    except Exception as e:
+        import traceback
+        logger.error(f"[detect_with_report] failed: {e}\n{traceback.format_exc()}")
+        raise

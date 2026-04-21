@@ -70,8 +70,8 @@ cd MMDL-Agent
 如果使用 **Anaconda**：
 
 ```bash
-conda create -n mmdl-agent python=3.11 #创建虚拟环境
-conda activate mmdl-agent #激活虚拟环境
+conda create -n MMDL-Agent python=3.12.12 #创建虚拟环境
+conda activate MMDL-Agent #激活虚拟环境
 ```
 
 或使用 **venv**：

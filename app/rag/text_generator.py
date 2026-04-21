@@ -37,6 +37,9 @@ class AnomalyTextGenerator:
                 return text
         return self._generate_with_rules(metadata)
 
+    def generate_rule_only(self, metadata: ImageMetadata) -> str:
+        return self._generate_with_rules(metadata)
+
     def _generate_with_llm(self, metadata: ImageMetadata) -> str:
         try:
             prompt = (
