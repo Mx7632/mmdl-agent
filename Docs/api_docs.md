@@ -70,40 +70,46 @@
 
 ## 3. 异常检测核心接口
 
-### 3.1 执行异常检测任务
+### 3.1 执行异常检测任务 (同步)
 - **路径**: `POST /v1/detect`
 - **功能**: 项目核心入口。接收多模态数据，通过 LangGraph 工作流进行检测与诊断。
 - **请求方式**: `multipart/form-data`
 - **主要参数**:
-  - `image`: 上传的图片文件
+  - `image`: 上传的图片文件 (可选)
   - `task_id`: 任务标识
   - `asset_id`: 资产标识
   - `start_time`, `end_time`: 监测时间段
   - `question`: 用户针对该检测提出的具体问题 (可选)
   - `parameters`: JSON 字符串，包含额外参数 (如 `tool_type`)
 - **执行流程**: 
-  1. 解析并缓存图片
-  2. 构建 `DetectionTask` 模型
-  3. 调用 LangGraph 工作流（数据加载 -> 异常检测 -> LLM 诊断）
+  1. 解析图片并转换为 Base64。
+  2. 构建 `DetectionState`。
+  3. 进入 **Planner -> Executor -> Consolidate** 循环工作流。
+  4. Planner 根据问题动态决定调用哪些工具（视觉、时序、RAG）。
 - **响应 (`DetectionResult`)**: 
-  - `status`: success/failed
+  - `status`: success/failed/pending (pending 表示需要用户澄清)
+  - `answer`: 诊断结论
   - `anomalies`: 检测到的异常列表
-  - `thought`: 专家智能体的推理过程（Thought Chain）
-  - `explanation`: 详细的发现说明（视觉证据、标准引用、原因分析、处置建议）
-  - `summary`: 为运维工程师生成的 Markdown 摘要报告
 
-### 3.2 智能问答接口 (Autonomous Q&A)
-- **路径**: `POST /v1/chat`
-- **功能**: 具备自动规划能力的 Q&A 接口。Agent 会根据用户的问题和图片，自动拆解步骤、调用 RAG 和 CV 工具，并生成最终分析报告。
-- **请求方式**: `multipart/form-data` 或 `application/json`
-- **主要参数**:
-  - `question`: 用户的问题或指令 (必填)
-  - `image`: 上传的图片文件 (可选)
-  - `category`: 零件类别 (用于 RAG 检索优化)
-- **响应 (`ChatResponse`)**:
-  - `steps`: 自动拆解的执行步骤及其结果
-  - `answer`: 最终的综合分析报告 (Markdown)
-  - `rag_context`: 检索到的相关知识上下文
+### 3.2 任务续传接口
+- **路径**: `POST /v1/continue`
+- **功能**: 当 `status=pending` 时，用户提交澄清信息后调用，继续执行工作流。
+- **请求参数**: `task_id`, `user_reply`
+
+### 3.3 流式对话接口 (SSE)
+- **路径**: `POST /v1/stream`
+- **功能**: 实时输出 Agent 的规划过程、工具调用情况和最终回答。
+- **请求方式**: `multipart/form-data` (参数同 `/v1/detect`)
+- **响应类型**: `text/event-stream`
+- **事件类型**:
+  - `node_start`: 节点开始（planner, executor 等）
+  - `tool_start/end`: 工具执行状态
+  - `stream`: 内容流 (subtype: `thought` 或 `answer`)
+  - `final_result`: 任务完成标识
+
+### 3.4 报告生成接口
+- **路径**: `POST /v1/generate_report`
+- **功能**: 基于已有检测结果生成深度技术报告。
 
 ---
 
