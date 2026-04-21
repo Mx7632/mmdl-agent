@@ -26,7 +26,7 @@ class TimeSeriesDetectInput(BaseModel):
 class ImageDetectInput(BaseModel):
     task_id: str = Field(..., description="任务唯一标识符")
     asset_id: str = Field(..., description="工业资产或设备 ID")
-    image_base64: str = Field(..., description="Base64 编码的图像数据")
+    image_base64: Optional[str] = Field(None, description="Base64 编码的图像数据。如果任务已附带图片，该参数可省略。")
     question: Optional[str] = Field(None, description="针对图像的特定问题")
     parameters: Dict[str, Any] = Field(default_factory=dict, description="视觉模型参数")
 

@@ -474,8 +474,13 @@ async def stream_chat(request: Request):
         if isinstance(upload, StarletteUploadFile) and getattr(upload, "filename", None):
             logger.info(f"[stream_chat] Image upload detected: {upload.filename}")
             image_bytes = await upload.read()
-            parameters["image_base64"] = base64.b64encode(image_bytes).decode("ascii")
+            image_b64 = base64.b64encode(image_bytes).decode("ascii")
+            parameters["image_base64"] = image_b64
+            parameters["image_mime"] = getattr(upload, "content_type", None) or "image/jpeg"
             input_type = "image"
+            logger.info(f"[stream_chat] Image processed, base64 length: {len(image_b64)}")
+        else:
+            logger.info("[stream_chat] No image upload detected in current request")
 
         task = DetectionTask(
             task_id=task_id,

@@ -23,16 +23,16 @@ PLANNER_SYSTEM_PROMPT = """你是一个专业的工业异常检测调度专家�
 你的任务是根据用户提出的问题和设备上下文，编排合适的工具来完成诊断。
 
 可用工具：
-1. timeseries_anomaly_detection: 分析时序数据（振动、压力、温度等）。
-2. visual_anomaly_detection: 分析图像数据（缺陷、仪表、环境）。
-3. knowledge_retrieval: 检索专家知识库、手册、相似案例。
+1. timeseries_anomaly_detection: 分析传感器数值序列、振动数据、压力、温度等时序数据。
+2. visual_anomaly_detection: 分析工业设备图像、照片。用于识别表面缺陷、破损、漏油、仪表读数异常、环境风险等。
+3. knowledge_retrieval: 检索工业领域专家知识库、设备手册、历史故障案例、相似异常样本。
 
 规划策略：
-- 如果问题涉及具体指标异常，优先调用 timeseries 工具。
-- 如果提供了图像数据或涉及外观检查，优先调用 visual 工具。
-- 如果需要判断异常原因、风险等级或维修建议，务必调用 knowledge_retrieval 工具。
-- 你可以一次性决定调用多个工具，也可以根据上一步的执行结果（Observation）逐步推进。
-- 如果你认为信息已经足够回答用户，请输出你的分析结论，不再调用工具。
+- **图像优先**：如果任务上下文中显示【已附带图像】，且用户问题涉及“看看”、“图像里有什么”、“有没有异常”、“检查照片”等，必须调用 `visual_anomaly_detection`。
+- **数据互补**：如果问题涉及具体指标（如振动高、压力大），调用 `timeseries` 工具。
+- **深度诊断**：如果需要判断异常原因、风险等级或维修建议，务必调用 `knowledge_retrieval` 工具。
+- **多步决策**：你可以一次性决定调用多个工具，也可以根据上一步的执行结果（Observation）逐步推进。
+- **直接回答**：如果你认为信息已经足够回答用户，请输出你的分析结论，不再调用工具。
 
 当前任务上下文：
 - Asset ID: {asset_id}
@@ -40,7 +40,7 @@ PLANNER_SYSTEM_PROMPT = """你是一个专业的工业异常检测调度专家�
 """
 
 async def planner_node(state: DetectionState) -> DetectionState:
-    """规划器节点：决定下一步行动。"""
+    """规划器 node：决定下一步行动。"""
     if state.loop_count >= 3: # 熔断限制
         state.logs.append("[Planner] 达到最大编排深度，停止规划")
         state.reflection_decision = "proceed"
@@ -59,18 +59,30 @@ async def planner_node(state: DetectionState) -> DetectionState:
     llm_with_tools = llm.bind_tools(tools)
 
     # 2. 构造消息列表
+    has_image = bool(state.task.parameters.get("image_base64"))
+    image_info = "【重要提示：当前任务已附带工业现场图像，如需分析图像内容，请务必调用 visual_anomaly_detection 工具】" if has_image else "（注：当前任务未提供图像数据）"
+
     system_msg = PLANNER_SYSTEM_PROMPT.format(
         asset_id=state.task.asset_id,
         start_time=state.task.start_time,
         end_time=state.task.end_time
-    )
+    ) + f"\n\n实时环境信息：\n{image_info}"
     
     messages = [
         {"role": "system", "content": system_msg},
-        {"role": "user", "content": f"用户问题：{state.task.question}"}
     ]
 
-    # 注入中间步骤
+    # 注入历史对话背景
+    if state.conversation_history:
+        # 只保留最近几轮对话，避免上下文过长
+        recent_history = state.conversation_history[-6:] if len(state.conversation_history) > 6 else state.conversation_history
+        for msg in recent_history[:-1]: # 除了最后一条（当前问题）
+            messages.append(msg)
+
+    # 注入当前用户提问
+    messages.append({"role": "user", "content": f"当前提问：{state.task.question}"})
+
+    # 注入当前问题的中间步骤（如果有）
     for action, observation in state.intermediate_steps:
         # 这里简化处理，将 action 转为消息
         messages.append({"role": "assistant", "content": None, "tool_calls": [action]})

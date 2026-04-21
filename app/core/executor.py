@@ -37,6 +37,19 @@ async def executor_node(state: DetectionState) -> DetectionState:
             observation = f"Error: Tool {tool_name} not found."
         else:
             try:
+                # 【重要修复】自动补全工具调用所需的通用参数
+                if "task_id" not in tool_args:
+                    tool_args["task_id"] = state.task.task_id
+                if "asset_id" not in tool_args:
+                    tool_args["asset_id"] = state.task.asset_id
+                
+                # 【重要修复】如果调用视觉检测且未传图片，从 state 中补全
+                if tool_name == "visual_anomaly_detection" and not tool_args.get("image_base64"):
+                    image_data = state.task.parameters.get("image_base64")
+                    if image_data:
+                        tool_args["image_base64"] = image_data
+                        state.logs.append("[Executor] 已自动从任务上下文中注入图像数据")
+
                 state.logs.append(f"[Executor] 运行工具: {tool_name}...")
                 observation = await tools[tool_name].arun(tool_args)
             except Exception as e:
