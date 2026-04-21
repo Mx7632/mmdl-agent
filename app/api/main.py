@@ -42,10 +42,15 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 挂载前端静态文件
+app.mount("/web", StaticFiles(directory="web"), name="web")
+# 也可以挂载数据文件（如图片预览）
+app.mount("/data/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 
 logger = setup_logger(level=settings.log_level)
 
@@ -96,13 +101,41 @@ app.openapi = custom_openapi
 
 @app.middleware("http")
 async def add_trace_id(request: Request, call_next):
-    trace_id = request.headers.get(TRACE_ID_HEADER) or new_trace_id()
-    request.state.trace_id = trace_id
-    set_trace_id(trace_id)
+    trace_id = "-"
+    try:
+        trace_id = request.headers.get(TRACE_ID_HEADER) or new_trace_id()
+        setattr(request.state, "trace_id", trace_id)
+        set_trace_id(trace_id)
+    except Exception as e:
+        logger.error(f"Middleware trace_id setup error: {e}")
 
-    response = await call_next(request)
-    response.headers[TRACE_ID_HEADER] = trace_id
-    return response
+    try:
+        response = await call_next(request)
+        response.headers[TRACE_ID_HEADER] = trace_id
+        
+        # 强制补充 CORS 头（防止 500 时 CORSMiddleware 失效）
+        origin = request.headers.get("origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "*"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+            
+        return response
+    except Exception as e:
+        import traceback
+        logger.error(f"Middleware execution error: {e}\n{traceback.format_exc()}")
+        
+        content = {"code": "internal_error", "message": str(e), "trace_id": trace_id}
+        response = JSONResponse(status_code=500, content=content)
+        
+        # 错误响应也必须带上 CORS 头
+        origin = request.headers.get("origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+        else:
+            response.headers["Access-Control-Allow-Origin"] = "*"
+            
+        return response
 
 
 @app.exception_handler(AppError)
@@ -110,7 +143,17 @@ async def app_error_handler(request: Request, exc: AppError):
     logger.error(f"{exc.code}: {exc.message}")
     return JSONResponse(
         status_code=exc.status_code,
-        content={"code": exc.code, "message": exc.message, "trace_id": request.state.trace_id},
+        content={"code": exc.code, "message": exc.message, "trace_id": getattr(request.state, "trace_id", "-")},
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    import traceback
+    logger.error(f"Unhandled Exception: {exc}\n{traceback.format_exc()}")
+    return JSONResponse(
+        status_code=500,
+        content={"code": "internal_error", "message": str(exc), "trace_id": getattr(request.state, "trace_id", "-")},
     )
 
 
@@ -466,23 +509,25 @@ async def detect_with_report(request: Request):
         parameters=parameters,
     )
 
-    # 先执行检测
-    from app.core.agent import run_detection, generate_report as gen_report
+    try:
+        # 执行检测（不走 report 流程）
+        detection_result = await run_detection(task)
 
-    # 执行检测（不走 report 流程）
-    detection_result = await run_detection(task)
+        if detection_result.get("status") == "pending":
+            return detection_result
 
-    if detection_result.get("status") == "pending":
+        # 已有检测结果，直接生成报告
+        if detection_result.get("status") == "success":
+            report_result = await generate_report(task_id)
+            # 合并：检测答案 + 完整报告
+            return {
+                **detection_result,
+                "summary": report_result.get("summary"),
+                "has_report": True,
+            }
+
         return detection_result
-
-    # 已有检测结果，直接生成报告
-    if detection_result.get("status") == "success":
-        report_result = await gen_report(task_id)
-        # 合并：检测答案 + 完整报告
-        return {
-            **detection_result,
-            "summary": report_result.get("summary"),
-            "has_report": True,
-        }
-
-    return detection_result
+    except Exception as e:
+        import traceback
+        logger.error(f"[detect_with_report] failed: {e}\n{traceback.format_exc()}")
+        raise

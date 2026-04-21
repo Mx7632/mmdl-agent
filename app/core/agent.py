@@ -20,6 +20,7 @@ from app.core.wait_user import build_continue_state
 from app.memory.checkpoint import MemoryCheckpointStore
 from app.memory.state import DetectionState
 from app.schemas.detection import DetectionTask
+from app.exceptions.base import TaskNotFoundError, AppError
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +50,8 @@ def _restore_state(state_dict: dict) -> DetectionState:
     try:
         return DetectionState.model_validate(state_dict)
     except Exception as e:
-        logger.error(f"[Agent] 状态恢复失败: {e}")
-        raise ValueError(f"任务状态损坏，无法恢复: {e}")
+        logger.error(f"[Agent] 状态恢复失败: {e}. State data: {state_dict.keys()}")
+        raise AppError(f"任务状态损坏，无法恢复: {e}")
 
 
 async def run_detection(task: DetectionTask) -> dict[str, Any]:
@@ -58,13 +59,19 @@ async def run_detection(task: DetectionTask) -> dict[str, Any]:
     执行检测任务（主入口）。
     首次检测：走完整图 → 返回 answer，不生成报告。
     """
-    logger.info(f"[run_detection] START task_id={task.task_id}, question={task.question}")
-    graph = build_graph()
-    state = DetectionState(task=task, stage="chat")
+    try:
+        logger.info(f"[run_detection] START task_id={task.task_id}, question={task.question}")
+        graph = build_graph()
+        state = DetectionState(task=task, stage="chat")
 
-    # ── 执行图（支持中途挂起），返回原始 dict ──
-    logger.info(f"[run_detection] calling _run_with_suspend...")
-    result_dict = await _run_with_suspend(graph, state)
+        # ── 执行图（支持中途挂起），返回原始 dict ──
+        logger.info(f"[run_detection] calling _run_with_suspend...")
+        result_dict = await _run_with_suspend(graph, state)
+        logger.info(f"[run_detection] graph execution finished")
+    except Exception as e:
+        import traceback
+        logger.error(f"[run_detection] CRITICAL ERROR: {e}\n{traceback.format_exc()}")
+        raise
     logger.info(
         f"[run_detection] _run_with_suspend returned, "
         f"keys={list(result_dict.keys()) if isinstance(result_dict, dict) else 'NOT_DICT'}"
@@ -124,7 +131,7 @@ async def run_chat(task_id: str, question: str) -> dict[str, Any]:
     """
     previous_state = _checkpoint_store.load(task_id)
     if previous_state is None:
-        raise ValueError(f"未找到任务: {task_id}，请先调用 /v1/detect 进行检测")
+        raise TaskNotFoundError(f"未找到任务: {task_id}，请先上传图片进行检测")
 
     # 从 dict 恢复 DetectionState
     state = _restore_state(previous_state)
@@ -162,12 +169,19 @@ async def generate_report(task_id: str) -> dict[str, Any]:
     """
     previous_state = _checkpoint_store.load(task_id)
     if previous_state is None:
-        raise ValueError(f"未找到任务: {task_id}，请先调用 /v1/detect 进行检测")
+        raise TaskNotFoundError(f"未找到任务: {task_id}，请先上传图片进行检测")
 
     state = _restore_state(previous_state)
 
+    # 允许在没有异常结果时生成“一切正常”的报告
     if not state.result:
-        raise ValueError(f"任务 {task_id} 没有检测结果，无法生成报告")
+        from app.schemas.detection import DetectionResult
+        state.result = DetectionResult(
+            task_id=task_id,
+            status="success",
+            anomalies=[],
+            summary="未发现明显异常。"
+        )
 
     state.report_requested = True
     state.stage = "report"
@@ -201,7 +215,7 @@ async def continue_detection(task_id: str, user_reply: str) -> dict[str, Any]:
     """
     previous_state = _checkpoint_store.load(task_id)
     if previous_state is None:
-        raise ValueError(f"未找到挂起的任务: {task_id}")
+        raise TaskNotFoundError(f"未找到挂起的任务: {task_id}")
 
     continued_state = build_continue_state(task_id, user_reply, previous_state)
     continued_state["needs_user_input"] = False

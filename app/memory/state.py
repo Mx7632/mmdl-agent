@@ -41,6 +41,14 @@ class DetectionState(BaseModel):
     # 检测结果
     result: Optional[DetectionResult] = None
 
+    # ─── 动态编排相关字段 ───
+    # 已执行的工具步骤：List[Tuple[AgentAction, str]] (action, observation)
+    intermediate_steps: List[Any] = Field(default_factory=list)
+    # 待执行的工具调用
+    tool_calls: List[Dict[str, Any]] = Field(default_factory=list)
+    # 工具执行结果汇总
+    tool_outputs: List[Dict[str, Any]] = Field(default_factory=list)
+
     # 对话历史，支持多轮交互（后写覆盖，因为节点返回完整 state）
     conversation_history: List[Dict[str, str]] = Field(default_factory=list)
 

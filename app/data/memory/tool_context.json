@@ -1,17 +1,1 @@
-[
-    {
-        "task_id": "1",
-        "step_id": 1,
-        "asset_id": "1",
-        "tool_name": "qwen3.5-plus_image_anomaly_detection",
-        "tool_input": {
-            "tool_type": "qwen3.5-plus"
-        },
-        "tool_output": {
-            "status": "success",
-            "anomaly_count": 1
-        },
-        "create_time": "2026-04-19 11:16:48",
-        "expire_time": "2026-04-19 11:21:48"
-    }
-]
+[]

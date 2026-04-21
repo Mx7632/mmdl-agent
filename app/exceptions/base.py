@@ -44,6 +44,13 @@ class DataMissingError(AppError):
     status_code = 422
 
 
+class TaskNotFoundError(AppError):
+    """找不到指定的任务或任务已过期"""
+
+    code = "task_not_found"
+    status_code = 404
+
+
 class ExternalServiceError(AppError):
     """外部算法服务失败或不可用。"""
 

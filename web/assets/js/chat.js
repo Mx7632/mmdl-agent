@@ -3,9 +3,13 @@
  * Handles autonomous Q&A interaction
  */
 
+const api = new APIClient(); // 使用封装好的 APIClient
+
 let chatState = {
     selectedImage: null,
-    isProcessing: false
+    isProcessing: false,
+    currentTaskId: null, // 追踪当前任务 ID，支持多轮对话
+    assetId: 'EQUIP-001' // 默认资产 ID
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -79,47 +83,76 @@ async function handleChatSubmit() {
     const input = document.getElementById('chat-input');
     let question = input.value.trim();
     
-    // 如果没有文字也没有图片，则不提交
     if (!question && !chatState.selectedImage) return;
-    
     if (chatState.isProcessing) return;
 
-    // 如果只有图片没有文字，提供默认问题
     const displayQuestion = question || (chatState.selectedImage ? "请分析这张图片中的工业异常情况。" : "");
     const apiQuestion = question || "请分析这张图片中的工业异常情况。";
 
-    // 1. Add User Message to UI
     appendMessage('user', displayQuestion, chatState.selectedImage);
     
-    // 2. Clear input and show loading
     input.value = '';
     input.style.height = 'auto';
     setProcessing(true);
 
     try {
-        // 3. Prepare Data
-        const formData = new FormData();
-        formData.append('question', apiQuestion);
-        formData.append('task_id', `chat-${Date.now()}`);
+        let result;
         
-        const category = document.getElementById('category-select').value;
-        if (category) formData.append('category', category);
-        
-        if (chatState.selectedImage) {
-            formData.append('image', chatState.selectedImage);
+        // 如果是新任务（有图片，或者还没有 taskId）
+        if (chatState.selectedImage || !chatState.currentTaskId) {
+            const taskId = `chat-${Date.now()}`;
+            const formData = new FormData();
+            formData.append('task_id', taskId);
+            formData.append('asset_id', chatState.assetId);
+            formData.append('question', apiQuestion);
+            formData.append('start_time', new Date(Date.now() - 3600000).toISOString());
+            formData.append('end_time', new Date().toISOString());
+            
+            const category = document.getElementById('category-select').value;
+            if (category) {
+                formData.append('parameters', JSON.stringify({ category }));
+            }
+            
+            if (chatState.selectedImage) {
+                formData.append('image', chatState.selectedImage);
+            }
+
+            // 调用 detect_with_report 接口（支持 FormData）
+            const response = await fetch(`${api.baseURL}/v1/detect_with_report`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.message || '检测任务启动失败');
+            }
+            result = await response.json();
+            
+            // 保存任务 ID 供后续对话
+            chatState.currentTaskId = result.task_id;
+            // 清除已发送的图片
+            chatState.selectedImage = null;
+            document.getElementById('image-preview-area').style.display = 'none';
+        } 
+        else {
+            // 已有任务，进行多轮对话（使用 JSON）
+            const response = await fetch(`${api.baseURL}/v1/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    task_id: chatState.currentTaskId,
+                    question: apiQuestion
+                })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.message || '对话请求失败');
+            }
+            result = await response.json();
         }
-
-        // 4. Call API
-        const response = await fetch('http://localhost:8000/v1/chat', {
-            method: 'POST',
-            body: formData
-        });
-
-        if (!response.ok) throw new Error('请求失败');
         
-        const result = await response.json();
-        
-        // 5. Add Agent Message to UI
         appendAgentMessage(result);
 
     } catch (error) {
@@ -222,10 +255,13 @@ function scrollToBottom() {
 }
 
 function clearChat() {
-    const container = document.getElementById('chat-messages');
-    container.innerHTML = `
+    document.getElementById('chat-messages').innerHTML = `
         <div class="message-bubble message-agent">
-            对话已清空。您可以重新上传图片或提问。
+            你好！我是 MMDL@NUAA 工业智能助手。您可以重新上传图片或提问。
         </div>
     `;
+    chatState.currentTaskId = null;
+    chatState.selectedImage = null;
+    document.getElementById('image-preview-area').style.display = 'none';
+    document.getElementById('chat-image-input').value = '';
 }
