@@ -1,174 +1,225 @@
+# LangGraph 循环工作流构建与编译入口
 from __future__ import annotations
 
-import json
-import logging
+from typing import Any, Literal
 
-from langchain_openai import ChatOpenAI
-from pydantic import SecretStr
-
-from app.config.settings import settings
-from app.exceptions.base import ConfigurationError, DataMissingError
+from langgraph.graph import StateGraph, END
 from app.memory.state import DetectionState
-from app.prompts.expert_inspection import EXPERT_INSPECTION_PROMPT
-from app.prompts.image_report import IMAGE_REPORT_PROMPT
-from app.rag.service import build_anomaly_query_text, get_rag_service
-from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool
+from app.core.self_reflect import self_reflect_node
+from app.core.wait_user import wait_user_node
+from app.core.supplement import supplement_node
+from app.core.answer_node import answer_node
 
-logger = logging.getLogger(__name__)
-
-
-def _is_image_task(state: DetectionState) -> bool:
-    if getattr(state.task, "input_type", None) == "image":
-        return True
-    params = state.task.parameters or {}
-    return bool(params.get("image_base64"))
-
-
-async def load_data_node(state: DetectionState) -> DetectionState:
+# 节点函数（延迟导入，避免循环依赖）
+async def _load_data_node(state: DetectionState) -> DetectionState:
+    """数据加载节点。"""
     if not state.task:
+        from app.exceptions.base import DataMissingError
         raise DataMissingError("DetectionTask missing")
     state.context["loaded"] = True
-    state.logs.append("Data loaded")
+    state.logs.append("[数据加载] 任务数据已就绪")
     return state
 
 
-async def anomaly_detect_node(state: DetectionState) -> DetectionState:
+async def _anomaly_detect_node(state: DetectionState) -> DetectionState:
+    """异常检测节点（复用原有逻辑）。"""
+    from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool
+    from app.exceptions.base import ToolExecutionError
+    from app.memory.memory_manager import memory_manager
+    from app.memory.models import ToolContextMemory
+
     params = state.task.parameters or {}
     tool_type = params.get("tool_type")
-    if tool_type not in (None, "qwen3.5-plus", "qwen3.5-plus_image"):
-        # For now we only support image detection with qwen3.5-plus.
-        state.errors.append(f"unsupported_tool_type: {tool_type}")
-    tool = ImageAnomalyDetectionTool()
 
-    response = await tool.run(state.task)
+    if tool_type not in (None, "qwen3.5-plus", "qwen3.5-plus_image"):
+        state.errors.append(f"unsupported_tool_type: {tool_type}")
+
+    tool = ImageAnomalyDetectionTool()
+    try:
+        response = await tool.run(state.task)
+    except Exception as e:
+        raise ToolExecutionError(
+            tool.name, {"task_id": state.task.task_id}, e
+        )
+
     if response.success and response.result:
         state.result = response.result
-        state.logs.append(f"Anomaly detection completed using {tool.name}")
+        asset_id = state.task.asset_id
 
-        # RAG: 根据检测结果检索相似工业异常案例
-        rag_context = ""
-        if settings.rag_enabled:
-            try:
-                query_text = build_anomaly_query_text(state.result.anomalies)
-                if query_text:
-                    category = state.task.parameters.get("category") if state.task.parameters else None
-                    image_path = state.task.parameters.get("image_path") if state.task.parameters else None
-                    rag_context = get_rag_service().query_similar(
-                        query_text=query_text,
-                        category=category,
-                        top_k=settings.rag_top_k,
-                        image_path=image_path,
-                    )
-                else:
-                    rag_context = "未生成有效异常查询，跳过 RAG 检索。"
-            except Exception as exc:
-                rag_context = "RAG 检索失败，已跳过。"
-                state.errors.append(f"rag_failed: {exc}")
+        # ── 记录工具上下文记忆（含 asset_id，供效果追踪）──
+        memory_manager.add_tool_context(
+            ToolContextMemory(
+                task_id=state.task.task_id,
+                step_id=1,
+                asset_id=asset_id,  # 【优化】关联资产
+                tool_name=tool.name,
+                tool_input={"tool_type": tool_type},
+                tool_output={
+                    "status": response.result.status,
+                    "anomaly_count": len(response.result.anomalies or []),
+                },
+            )
+        )
 
-        state.context["rag_context"] = rag_context
+        # ── 写中期记忆（ShortTermMemory）【优化新增】──
+        if state.result.anomalies:
+            from app.memory.models import ShortTermMemory
+            anomaly_types = [a.get("type", "未知") for a in state.result.anomalies]
+            short_mem = ShortTermMemory(
+                asset_id=asset_id or "",
+                user_id=(state.task.parameters or {}).get("user_id", "default_user"),
+                memory_summary=(
+                    f"检出 {len(state.result.anomalies)} 个异常："
+                    + "、".join(anomaly_types)
+                ),
+                memory_details={"anomalies": state.result.anomalies},
+                tags=anomaly_types,
+                anomaly_count=len(state.result.anomalies),
+            )
+            memory_manager.add_short_term_memory(short_mem)
+            state.logs.append(
+                f"[中期记忆] 已写入 asset_id={asset_id}，异常类型={anomaly_types}"
+            )
+
+        state.logs.append(f"[异常检测] 完成，检出 {len(response.result.anomalies)} 个异常")
     else:
         state.errors.append(response.error or "Unknown tool error")
-    return state
-
-
-async def summarize_node(state: DetectionState) -> DetectionState:
-    if not state.result:
-        state.logs.append("No result to summarize")
-        return state
-
-    if not settings.openai_api_key:
-        raise ConfigurationError("openai_api_key not configured", config_key="APP_OPENAI_API_KEY")
-
-    try:
-        # 使用 Qwen 3.5 Plus 时启用思维链或结构化输出（如有支持）
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=settings.llm_temperature,
-            api_key=SecretStr(settings.openai_api_key),
-            timeout=settings.llm_timeout,
-            max_tokens=settings.llm_max_tokens,
-            base_url=settings.llm_base_url,
-            # Qwen 3.5 Plus 支持 JSON 模式或结构化输出
-            model_kwargs={"response_format": {"type": "json_object"}}
-        )
-
-        # 准备 RAG 上下文
-        rag_context = state.context.get("rag_context", "未启用 RAG 检索。")
-        
-        # 库 A：历史案例（由 RAG 检索得到）
-        library_a = rag_context
-        
-        # 库 B：领域知识库/规程库（目前使用内置标准，后续可扩展为独立 RAG 集合）
-        library_b = (
-            "1. 视觉检测规程：所有零件表面应无肉眼可见的划痕（长度>1mm）、污染或破损。\n"
-            "2. 结构校验标准：关键部件（如螺栓、垫圈）必须安装到位，偏移量需控制在 0.5mm 以内。\n"
-            "3. 缺陷分类规范：物理破损（划痕、裂纹）、逻辑偏差（漏装、错装）、外观污染（油污、锈迹）。"
-        )
-
-        params = state.task.parameters or {}
-        object_category = params.get("category", "未指定类别")
-
-        messages = EXPERT_INSPECTION_PROMPT.format_messages(
-            object_category=object_category,
-            library_a=library_a,
-            library_b=library_b,
-            task_id=state.task.task_id,
-            asset_id=state.task.asset_id,
-            anomalies=state.result.anomalies,
-            question=state.task.question or "无具体问题",
-        )
-
-        response = await llm.ainvoke(messages)
-        content = response.content
-        if isinstance(content, str):
-            try:
-                # 尝试解析 JSON
-                parsed = json.loads(content)
-                state.result.thought = parsed.get("thought")
-                state.result.explanation = parsed.get("explanation")
-                
-                # 更新主状态和摘要
-                res_data = parsed.get("result", {})
-                state.result.status = res_data.get("status", state.result.status).lower()
-                state.result.summary = (
-                    f"### 专家判定: {res_data.get('status')}\n"
-                    f"**缺陷类型**: {res_data.get('defect_type')}\n"
-                    f"**置信度**: {res_data.get('confidence_score')}\n\n"
-                    f"#### 视觉证据\n{state.result.explanation.get('visual_evidence', '')}\n\n"
-                    f"#### 原因分析\n{state.result.explanation.get('root_cause_analysis', '')}\n\n"
-                    f"#### 处置建议\n{state.result.explanation.get('action_recommendation', '')}"
-                )
-            except Exception as json_err:
-                logger.warning(f"Failed to parse LLM JSON response: {json_err}. Raw: {content}")
-                state.result.summary = content
-
-        state.logs.append("Expert LLM reasoning completed")
-
-        # 高置信度样本自动增量入库（用户后续可用）
-        if settings.rag_enabled:
-            try:
-                params = state.task.parameters or {}
-                image_path = params.get("image_path", "")
-                category = params.get("category", "unknown")
-                if image_path and state.result.anomalies:
-                    top_score = max(float(a.get("score", 0.0)) for a in state.result.anomalies)
-                    if state.task.question:
-                        get_rag_service().add_online_case(
-                            image_path=image_path,
-                            category=category,
-                            user_description=state.task.question,
-                            model_confidence=top_score,
-                            is_anomaly=True,
-                            anomaly_type=state.result.anomalies[0].get("type"),
-                            severity="unknown",
-                        )
-            except Exception as exc:
-                state.errors.append(f"rag_online_ingest_failed: {exc}")
-    except Exception as e:
-        logger.error(f"LLM invocation failed: {str(e)}")
-        state.errors.append(f"summary_failed: {str(e)}")
-        state.result.summary = "报告生成失败（LLM 不可用或鉴权失败）。"
-        state.result.metadata = dict(state.result.metadata or {})
-        state.result.metadata["summary_failed"] = True
 
     return state
+
+
+# ---------------------------------------------------------------------------
+# 路由决策函数（条件边）
+# ---------------------------------------------------------------------------
+
+def _route_after_reflect(state: DetectionState) -> Literal["wait_user", "supplement", "answer"]:
+    """
+    自检节点后的条件路由：
+      need_user  → wait_user（用户澄清）
+      retry      → supplement（补充分析，重新回到异常检测区）
+      proceed    → answer（进入对话回答，不直接生成报告）
+    """
+    decision = state.reflection_decision or "proceed"
+    if decision == "need_user":
+        return "wait_user"
+    elif decision == "retry":
+        return "supplement"
+    else:
+        return "answer"
+
+
+def _route_after_supplement(state: DetectionState) -> Literal["self_reflect", "answer"]:
+    """
+    补充分析后的路由：
+      loop_count < MAX_LOOP → 回到 self_reflect 重新评估
+      否则强制进入 answer
+    """
+    from app.core.self_reflect import MAX_LOOP
+    if state.loop_count < MAX_LOOP:
+        return "self_reflect"
+    return "answer"
+
+
+def _route_after_wait_user(state: DetectionState) -> Literal["supplement", "answer"]:
+    """
+    用户澄清后的路由：
+      有补充信息 → supplement（基于用户回复深化分析）
+      无补充信息 → answer（进入对话回答）
+    """
+    has_reply = bool(
+        state.conversation_history
+        and any(m.get("role") == "user" for m in state.conversation_history)
+    )
+    return "supplement" if has_reply else "answer"
+
+
+def _route_after_answer(state: DetectionState) -> Literal["report", END]:
+    """
+    对话回答后的路由：
+      report_requested=True → report（生成完整报告）
+      否则 → END（结束，等待用户后续操作）
+    """
+    if state.report_requested:
+        return "report"
+    return END
+
+
+# ---------------------------------------------------------------------------
+# 图构建
+# ---------------------------------------------------------------------------
+
+def build_graph() -> Any:
+    """
+    构建并编译循环检测工作流图（支持对话+报告模式）。
+
+    节点执行顺序：
+      load_data → anomaly_detect → self_reflect
+                                              ↓
+                              need_user → wait_user → supplement → self_reflect
+                              retry     → supplement ↻
+                              proceed   → answer → [report → END | END]
+    """
+    graph = StateGraph(DetectionState)
+
+    # ── 注册节点 ──
+    graph.add_node("load_data", _load_data_node)
+    graph.add_node("anomaly_detect", _anomaly_detect_node)
+    graph.add_node("self_reflect", self_reflect_node)
+    graph.add_node("wait_user", wait_user_node)
+    graph.add_node("supplement", supplement_node)
+    graph.add_node("answer", answer_node)
+
+    # report_node 复用原有 summarize 逻辑
+    from app.core import _summarize_node
+    graph.add_node("report", _summarize_node)
+
+    # ── 固定边 ──
+    graph.set_entry_point("load_data")
+    graph.add_edge("load_data", "anomaly_detect")
+    graph.add_edge("anomaly_detect", "self_reflect")
+
+    # ── 条件边 ──
+    # self_reflect → [wait_user | supplement | answer]
+    graph.add_conditional_edges(
+        "self_reflect",
+        _route_after_reflect,
+        {
+            "wait_user": "wait_user",
+            "supplement": "supplement",
+            "answer": "answer",
+        },
+    )
+
+    # supplement → [self_reflect（循环）| answer]
+    graph.add_conditional_edges(
+        "supplement",
+        _route_after_supplement,
+        {
+            "self_reflect": "self_reflect",
+            "answer": "answer",  # 循环结束进入回答
+        },
+    )
+
+    # wait_user → [supplement | answer]
+    graph.add_conditional_edges(
+        "wait_user",
+        _route_after_wait_user,
+        {
+            "supplement": "supplement",
+            "answer": "answer",
+        },
+    )
+
+    # answer → [report | END]
+    graph.add_conditional_edges(
+        "answer",
+        _route_after_answer,
+        {
+            "report": "report",
+            END: END,
+        },
+    )
+
+    graph.add_edge("report", END)
+
+    return graph.compile()

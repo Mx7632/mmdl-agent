@@ -1,0 +1,216 @@
+[
+    {
+        "asset_id": "2",
+        "user_id": "default_user",
+        "memory_summary": "检出 1 个异常：fabric_hole",
+        "memory_details": {
+            "anomalies": [
+                {
+                    "type": "fabric_hole",
+                    "score": 0.98,
+                    "details": "Detected a distinct hole in the center of the knitted fabric patch with frayed edges and broken yarn loops.",
+                    "bbox": [
+                        450,
+                        310,
+                        600,
+                        470
+                    ]
+                }
+            ]
+        },
+        "tags": [
+            "fabric_hole"
+        ],
+        "anomaly_count": 1,
+        "create_time": "2026-04-18 16:56:05",
+        "expire_time": "2026-04-25 16:56:05"
+    },
+    {
+        "asset_id": "test-clean",
+        "user_id": "default_user",
+        "memory_summary": "检出 1 个异常：fabric_hole",
+        "memory_details": {
+            "anomalies": [
+                {
+                    "type": "fabric_hole",
+                    "score": 0.98,
+                    "details": "Detected a distinct hole in the center of the knitted fabric with frayed edges and broken yarn loops.",
+                    "bbox": "[450, 310, 600, 490]"
+                }
+            ]
+        },
+        "tags": [
+            "fabric_hole"
+        ],
+        "anomaly_count": 1,
+        "create_time": "2026-04-18 16:59:00",
+        "expire_time": "2026-04-25 16:59:00"
+    },
+    {
+        "asset_id": "1",
+        "user_id": "default_user",
+        "memory_summary": "检出 1 个异常：fabric_hole",
+        "memory_details": {
+            "anomalies": [
+                {
+                    "type": "fabric_hole",
+                    "score": 0.98,
+                    "details": "Detected a distinct hole in the center of the knitted fabric with frayed edges and broken yarn loops.",
+                    "bbox": [
+                        450,
+                        310,
+                        600,
+                        490
+                    ]
+                }
+            ]
+        },
+        "tags": [
+            "fabric_hole"
+        ],
+        "anomaly_count": 1,
+        "create_time": "2026-04-18 17:02:03",
+        "expire_time": "2026-04-25 17:02:03"
+    },
+    {
+        "asset_id": "test-001",
+        "user_id": "default_user",
+        "memory_summary": "检出 1 个异常：fabric_hole",
+        "memory_details": {
+            "anomalies": [
+                {
+                    "type": "fabric_hole",
+                    "score": 0.98,
+                    "details": "Detected a distinct hole in the center of the knitted fabric patch with frayed edges and broken yarn loops.",
+                    "bbox": [
+                        450,
+                        310,
+                        600,
+                        470
+                    ]
+                }
+            ]
+        },
+        "tags": [
+            "fabric_hole"
+        ],
+        "anomaly_count": 1,
+        "create_time": "2026-04-18 18:07:27",
+        "expire_time": "2026-04-25 18:07:27"
+    },
+    {
+        "asset_id": "test-001",
+        "user_id": "default_user",
+        "memory_summary": "检出 1 个异常：hole",
+        "memory_details": {
+            "anomalies": [
+                {
+                    "type": "hole",
+                    "score": 0.95,
+                    "details": "织物表面存在明显破洞，边缘有脱线和纤维断裂现象",
+                    "bbox": "[420,310,620,480]"
+                }
+            ]
+        },
+        "tags": [
+            "hole"
+        ],
+        "anomaly_count": 1,
+        "create_time": "2026-04-18 18:08:28",
+        "expire_time": "2026-04-25 18:08:28"
+    },
+    {
+        "asset_id": "test-001",
+        "user_id": "default_user",
+        "memory_summary": "检出 1 个异常：structural_damage",
+        "memory_details": {
+            "anomalies": [
+                {
+                    "type": "structural_damage",
+                    "score": 0.98,
+                    "details": "Detected a hole with frayed edges in the center of the knitted fabric component, indicating material failure or puncture.",
+                    "bbox": [
+                        450,
+                        310,
+                        620,
+                        490
+                    ]
+                }
+            ]
+        },
+        "tags": [
+            "structural_damage"
+        ],
+        "anomaly_count": 1,
+        "create_time": "2026-04-18 18:25:06",
+        "expire_time": "2026-04-25 18:25:06"
+    },
+    {
+        "asset_id": "1",
+        "user_id": "default_user",
+        "memory_summary": "检出 1 个异常：structural_damage",
+        "memory_details": {
+            "anomalies": [
+                {
+                    "type": "structural_damage",
+                    "score": 0.98,
+                    "details": "Detected a hole in the fabric with frayed edges and broken yarn loops.",
+                    "bbox": [
+                        450,
+                        320,
+                        610,
+                        490
+                    ]
+                }
+            ]
+        },
+        "tags": [
+            "structural_damage"
+        ],
+        "anomaly_count": 1,
+        "create_time": "2026-04-19 09:44:35",
+        "expire_time": "2026-04-26 09:44:35"
+    },
+    {
+        "asset_id": "test-asset-001",
+        "user_id": "default_user",
+        "memory_summary": "检出 1 个异常：fabric_hole",
+        "memory_details": {
+            "anomalies": [
+                {
+                    "type": "fabric_hole",
+                    "score": 0.98,
+                    "details": "Detected a distinct hole in the center of the knitted fabric patch with frayed edges and broken yarn loops.",
+                    "bbox": "[450, 310, 620, 490]"
+                }
+            ]
+        },
+        "tags": [
+            "fabric_hole"
+        ],
+        "anomaly_count": 1,
+        "create_time": "2026-04-19 09:54:00",
+        "expire_time": "2026-04-26 09:54:00"
+    },
+    {
+        "asset_id": "asset-001",
+        "user_id": "default_user",
+        "memory_summary": "检出 1 个异常：fabric_hole",
+        "memory_details": {
+            "anomalies": [
+                {
+                    "type": "fabric_hole",
+                    "score": 0.98,
+                    "details": "Detected a distinct hole in the center of the knitted fabric with frayed edges and broken yarn loops.",
+                    "bbox": "[450, 320, 610, 480]"
+                }
+            ]
+        },
+        "tags": [
+            "fabric_hole"
+        ],
+        "anomaly_count": 1,
+        "create_time": "2026-04-19 10:15:21",
+        "expire_time": "2026-04-26 10:15:21"
+    }
+]

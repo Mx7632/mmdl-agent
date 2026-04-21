@@ -30,6 +30,7 @@ class DetectionResult(BaseModel):
 
     task_id: str
     status: str = Field(..., description="success|failed")
+    answer: Optional[str] = Field(default=None, description="简洁的检测回答")
     anomalies: List[Dict[str, Any]] = Field(default_factory=list)
     summary: Optional[str] = None
     thought: Optional[str] = Field(None, description="The expert agent's reasoning process")

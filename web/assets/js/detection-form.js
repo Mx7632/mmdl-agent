@@ -14,7 +14,7 @@ let formState = {
  */
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Initializing detection form...');
-    
+
     setupFormListeners();
     autofillTaskId();
 });
@@ -260,7 +260,7 @@ function getFormData() {
 function displayResult(result) {
     const resultsSection = document.getElementById('results-section');
     const resultCard = document.getElementById('result-card');
-    
+
     if (!resultsSection || !resultCard) {
         console.warn('Results section not found in DOM');
         return;
@@ -388,7 +388,7 @@ function displayResult(result) {
     // Show results section with animation
     resultsSection.style.display = 'block';
     resultsSection.style.animation = 'slideIn 0.3s ease';
-    
+
     // Scroll to results
     setTimeout(() => {
         resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -400,7 +400,7 @@ function displayResult(result) {
  */
 function showError(message) {
     const errorDiv = document.getElementById('error-message');
-    
+
     if (errorDiv) {
         errorDiv.textContent = message;
         errorDiv.style.display = 'block';
@@ -410,7 +410,7 @@ function showError(message) {
         if (typeof showToast === 'function') {
             showToast(message, 'error');
         }
-        
+
         // Auto-hide after 5 seconds
         setTimeout(() => {
             errorDiv.style.display = 'none';
@@ -423,7 +423,7 @@ function showError(message) {
  */
 function showLoading(show) {
     formState.isLoading = show;
-    
+
     const overlay = document.getElementById('loading-overlay');
     const submitBtn = document.querySelector('button[type="submit"]');
 
