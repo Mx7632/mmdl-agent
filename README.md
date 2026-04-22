@@ -20,8 +20,8 @@ MMDL-Agent/
 │   ├── test_memory.py            # 记忆与检查点测试
 │   └── test_exceptions.py        # 异常体系测试
 ├── web/                          # 前端 Web 界面
-│   ├── index.html                # 仪表板主页
-│   ├── detection.html            # 检测任务表单页
+│   ├── index.html                # 核心前端工作台
+│   ├── detection.html            # 兼容跳转页（重定向到 index.html）
 │   └── assets/                   # 静态资源（CSS/JS）
 └── app/                          # 核心后端框架
     ├── api/
@@ -143,7 +143,7 @@ curl http://127.0.0.1:8000/
 | **数据模型** | 请求/响应 Pydantic Schema | `app/schemas/detection.py` |
 | **日志工具** | 追踪 ID、结构化日志 | `app/utils/logging.py` |
 | **测试套件** | 单元测试与集成测试 | `tests/`, `TESTING.md` |
-| **Web 前端** | 可视化仪表板与表单 | `web/index.html`, `web/detection.html`, `web/assets/*` |
+| **Web 前端** | 单页核心检测流程与兼容跳转页 | `web/index.html`, `web/*.html`, `web/assets/*` |
 
 ### 异常体系
 
@@ -296,22 +296,21 @@ Content-Type: application/json
 | `/v1/generate_report` | POST | 基于已有状态生成完整报告 |
 | `/v1/detect_with_report` | POST | 检测+报告一次性返回（可选） |
 
-### 前端聊天界面（`frontend_chat.html`）
+### 前端核心工作台（`web/index.html`）
 
-新增独立前端，完整交互流程：
+前端已收敛为单页核心流程，完整交互路径如下：
 
 ```
 上传图片 → 开始检测（/v1/detect）
     → AI 返回答案 + 内嵌异常标签
     → 用户可多轮提问（/v1/chat）
-    → 点击「📄 生成报告」（/v1/generate_report）
-        → loading 动画
-        → 报告卡片插入聊天记录 ✅（可反复点击查看）
-        → 侧边栏滑出查看完整报告
-    → 关闭侧边栏可继续聊天
+    → 提交追问（/v1/chat）或人工澄清（/v1/continue）
+    → 点击「生成报告」（/v1/generate_report）
+        → 结果区直接更新完整报告
+        → 页面内保留任务时间线与异常摘要
 ```
 
-**侧边栏特性：** backdrop 遮罩、右侧滑入动画、Esc 键关闭、Markdown 渲染、异常置信度标签。
+兼容考虑下，`frontend_chat.html`、`chat.html`、`detection.html`、`expert_inspection.html`、`rag.html` 已改为跳转页，统一回到 `index.html`。
 
 ### 已知待改进项
 
@@ -332,8 +331,8 @@ conda activate mmdl-agent
 python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 
 # 4. 打开前端（任选一种）
-# 方式一：直接在浏览器打开 frontend_chat.html
-# 方式二：后端启动后访问 http://127.0.0.1:8000/frontend_chat.html
+# 方式一：直接在浏览器打开 web/index.html
+# 方式二：后端启动后访问 http://127.0.0.1:8000/web/index.html
 
 # 5. API 测试
 # 检测（无报告）
