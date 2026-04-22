@@ -17,9 +17,6 @@ web/
 ├── expert_inspection.html     # 兼容跳转页 -> index.html
 ├── frontend_chat.html         # 兼容跳转页 -> index.html
 ├── rag.html                   # 兼容跳转页 -> index.html
-├── assets/
-│   ├── css/                   # 历史样式资源，当前主入口未直接依赖
-│   └── js/                    # 历史脚本资源，当前主入口未直接依赖
 └── README.md
 ```
 
@@ -94,8 +91,8 @@ python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 
 ## 后续建议
 
-如果后面还要继续精简，可以考虑：
+如果后面还要继续完善，可以考虑：
 
-- 删除未再使用的历史 `assets/css` 和 `assets/js`
-- 把 `web/README.md` 中的兼容跳转页策略写进版本更新日志
+- 把兼容跳转页策略写进版本更新日志
 - 为 `index.html` 增加一次真实浏览器联调验收
+- 根据真实使用情况再决定是否保留所有兼容跳转页

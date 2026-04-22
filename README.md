@@ -21,8 +21,7 @@ MMDL-Agent/
 │   └── test_exceptions.py        # 异常体系测试
 ├── web/                          # 前端 Web 界面
 │   ├── index.html                # 核心前端工作台
-│   ├── detection.html            # 兼容跳转页（重定向到 index.html）
-│   └── assets/                   # 静态资源（CSS/JS）
+│   └── detection.html            # 兼容跳转页（重定向到 index.html）
 └── app/                          # 核心后端框架
     ├── api/
     │   └── main.py              # HTTP 路由与中间件
@@ -143,7 +142,7 @@ curl http://127.0.0.1:8000/
 | **数据模型** | 请求/响应 Pydantic Schema | `app/schemas/detection.py` |
 | **日志工具** | 追踪 ID、结构化日志 | `app/utils/logging.py` |
 | **测试套件** | 单元测试与集成测试 | `tests/`, `TESTING.md` |
-| **Web 前端** | 单页核心检测流程与兼容跳转页 | `web/index.html`, `web/*.html`, `web/assets/*` |
+| **Web 前端** | 单页核心检测流程与兼容跳转页 | `web/index.html`, `web/*.html` |
 
 ### 异常体系
 
