@@ -33,21 +33,24 @@ def _route_after_supervisor_plan(state: DetectionState) -> Literal["supervisor_e
     return "supervisor_merge"
 
 
-def _route_after_reflect(state: DetectionState) -> Literal["wait_user", "supervisor_plan", "answer"]:
-    decision = state.reflection_decision or "proceed"
-    if decision == "need_user":
+def _route_after_supervisor_merge(state: DetectionState) -> Literal["wait_user", "self_reflect"]:
+    clarification_ctx = state.shared_context.clarification
+    if state.needs_user_input and clarification_ctx and clarification_ctx.pending_question:
         return "wait_user"
-    if decision == "retry":
+    return "self_reflect"
+
+
+def _route_after_reflect(state: DetectionState) -> Literal["supervisor_plan", "answer"]:
+    decision = state.reflection_decision or "proceed"
+    if decision in {"need_user", "retry"}:
         return "supervisor_plan"
     return "answer"
 
 
-def _route_after_wait_user(state: DetectionState) -> Literal["supervisor_plan", "answer"]:
-    has_reply = bool(
-        state.conversation_history
-        and any(message.get("role") == "user" for message in state.conversation_history)
-    )
-    return "supervisor_plan" if has_reply else "answer"
+def _route_after_wait_user(state: DetectionState) -> Literal["supervisor_plan", END]:
+    if state.context.get("user_reply_received"):
+        return "supervisor_plan"
+    return END
 
 
 def _route_after_answer(state: DetectionState) -> Literal["report", END]:
@@ -71,7 +74,6 @@ def build_graph(*, checkpointer: Any = None, store: Any = None) -> Any:
     graph.set_entry_point("load_data")
     graph.add_edge("load_data", "supervisor_plan")
     graph.add_edge("supervisor_execute", "supervisor_merge")
-    graph.add_edge("supervisor_merge", "self_reflect")
     graph.add_edge("report", END)
 
     graph.add_conditional_edges(
@@ -84,10 +86,18 @@ def build_graph(*, checkpointer: Any = None, store: Any = None) -> Any:
     )
 
     graph.add_conditional_edges(
+        "supervisor_merge",
+        _route_after_supervisor_merge,
+        {
+            "wait_user": "wait_user",
+            "self_reflect": "self_reflect",
+        },
+    )
+
+    graph.add_conditional_edges(
         "self_reflect",
         _route_after_reflect,
         {
-            "wait_user": "wait_user",
             "supervisor_plan": "supervisor_plan",
             "answer": "answer",
         },
@@ -98,7 +108,7 @@ def build_graph(*, checkpointer: Any = None, store: Any = None) -> Any:
         _route_after_wait_user,
         {
             "supervisor_plan": "supervisor_plan",
-            "answer": "answer",
+            END: END,
         },
     )
 

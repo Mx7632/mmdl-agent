@@ -16,7 +16,6 @@ def _ensure_result(state: DetectionState) -> DetectionResult:
 
 
 async def supervisor_plan_node(state: DetectionState) -> DetectionState:
-    """Supervisor decides which specialist agents to invoke next."""
     supervisor = get_supervisor_agent()
     planned_agents = supervisor.plan(state)
     state.context["planned_agents"] = planned_agents
@@ -25,7 +24,6 @@ async def supervisor_plan_node(state: DetectionState) -> DetectionState:
 
 
 async def supervisor_execute_node(state: DetectionState) -> DetectionState:
-    """Execute planned specialist agents and persist their envelopes into shared state."""
     planned_agents: list[str] = list(state.context.get("planned_agents") or [])
     agents = get_specialist_agents()
 
@@ -44,10 +42,10 @@ async def supervisor_execute_node(state: DetectionState) -> DetectionState:
         state.active_agent = agent_name
         state.logs.append(f"[Supervisor] Running agent: {agent_name}")
 
-        if agent_name == "report":
+        if agent_name in {"report", "clarification"}:
             envelope = await agent.run(state)  # type: ignore[attr-defined]
         elif agent_name == "knowledge":
-            anomalies = (state.shared_context.get("vision") or {}).get("anomalies", [])
+            anomalies = (state.shared_context.vision.anomalies if state.shared_context.vision else [])
             if not anomalies:
                 anomalies = state.agent_outputs.get("vision", {}).get("payload", {}).get("anomalies", [])
             envelope = await agent.run(state.task, anomalies=anomalies)  # type: ignore[attr-defined]
@@ -61,6 +59,8 @@ async def supervisor_execute_node(state: DetectionState) -> DetectionState:
                 "status": envelope.status,
                 "summary": envelope.summary,
                 "confidence": envelope.confidence,
+                "requires_human": envelope.requires_human,
+                "next_recommendation": envelope.next_recommendation,
             }
         )
 
@@ -69,20 +69,15 @@ async def supervisor_execute_node(state: DetectionState) -> DetectionState:
 
 
 async def supervisor_merge_node(state: DetectionState) -> DetectionState:
-    """Merge specialist agent outputs back into the existing DetectionState shape."""
     result = _ensure_result(state)
     vision_output = state.agent_outputs.get("vision") or {}
-    report_output = state.agent_outputs.get("report") or {}
     knowledge_output = state.agent_outputs.get("knowledge") or {}
+    clarification_output = state.agent_outputs.get("clarification") or {}
+    report_output = state.agent_outputs.get("report") or {}
 
     if vision_output:
         payload = vision_output.get("payload", {})
-        state.tool_outputs.append(
-            {
-                "tool": "vision_agent",
-                "anomalies": payload.get("anomalies", []),
-            }
-        )
+        state.tool_outputs.append({"tool": "vision_agent", "anomalies": payload.get("anomalies", [])})
         state.shared_context["vision"] = payload
         result.anomalies = list(payload.get("anomalies", []))
         if payload.get("answer"):
@@ -94,6 +89,14 @@ async def supervisor_merge_node(state: DetectionState) -> DetectionState:
         payload = knowledge_output.get("payload", {})
         state.shared_context["knowledge"] = payload
         state.context["rag_context"] = payload.get("prompt_context", state.context.get("rag_context"))
+
+    if clarification_output:
+        payload = clarification_output.get("payload", {})
+        state.shared_context["clarification"] = payload
+        state.context["pending_clarification"] = payload.get("pending_clarification")
+        state.context["pending_question"] = payload.get("pending_question")
+        state.unknown_anomaly_types = payload.get("unknown_anomaly_types", state.unknown_anomaly_types)
+        state.needs_user_input = bool(payload.get("requires_human", True))
 
     if report_output:
         payload = report_output.get("payload", {})

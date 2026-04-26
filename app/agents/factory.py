@@ -7,6 +7,7 @@ def get_supervisor_agent() -> SupervisorAgent:
 
 
 def get_specialist_agents() -> dict[str, object]:
+    from app.agents.clarification import ClarificationAgent
     from app.agents.knowledge import KnowledgeAgent
     from app.agents.report import ReportAgent
     from app.agents.vision import VisionAgent
@@ -14,5 +15,6 @@ def get_specialist_agents() -> dict[str, object]:
     return {
         "vision": VisionAgent(),
         "knowledge": KnowledgeAgent(),
+        "clarification": ClarificationAgent(),
         "report": ReportAgent(),
     }

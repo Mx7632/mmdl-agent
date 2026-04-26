@@ -21,13 +21,13 @@ def _ensure_result_from_shared_context(state: DetectionState) -> DetectionResult
     if state.result is None:
         state.result = DetectionResult(task_id=state.task.task_id, status="success")
 
-    vision_payload = state.shared_context.get("vision") or {}
-    if vision_payload.get("anomalies") and not state.result.anomalies:
-        state.result.anomalies = list(vision_payload.get("anomalies", []))
-    if vision_payload.get("metadata"):
-        state.result.metadata.update(vision_payload["metadata"])
-    if vision_payload.get("answer") and not state.result.answer:
-        state.result.answer = vision_payload["answer"]
+    vision_ctx = state.shared_context.vision
+    if vision_ctx and vision_ctx.anomalies and not state.result.anomalies:
+        state.result.anomalies = list(vision_ctx.anomalies)
+    if vision_ctx and vision_ctx.metadata:
+        state.result.metadata.update(vision_ctx.metadata)
+    if vision_ctx and vision_ctx.answer and not state.result.answer:
+        state.result.answer = vision_ctx.answer
 
     return state.result
 
@@ -77,10 +77,10 @@ async def generate_report_state(state: DetectionState) -> DetectionState:
     else:
         dialogue_text = "（无对话补充）"
 
-    knowledge_payload = state.shared_context.get("knowledge") or {}
-    rag_context = knowledge_payload.get("prompt_context") or state.context.get(
-        "rag_context",
-        "（无 RAG 检索结果）",
+    rag_context = (
+        state.shared_context.knowledge.prompt_context
+        if state.shared_context.knowledge and state.shared_context.knowledge.prompt_context
+        else state.context.get("rag_context", "（无 RAG 检索结果）")
     )
 
     llm = ChatOpenAI(

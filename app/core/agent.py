@@ -22,6 +22,15 @@ from app.schemas.detection import DetectionTask
 logger = logging.getLogger(__name__)
 
 
+def _extract_pending_context(state_dict: dict[str, Any]) -> tuple[str | None, str | None]:
+    ctx = state_dict.get("context", {}) or {}
+    shared_context = state_dict.get("shared_context", {}) or {}
+    clarification = shared_context.get("clarification", {}) if isinstance(shared_context, dict) else {}
+    pending_clarification = clarification.get("pending_clarification") or ctx.get("pending_clarification")
+    pending_question = clarification.get("pending_question") or ctx.get("pending_question")
+    return pending_clarification, pending_question
+
+
 async def get_pending_task(task_id: str) -> Optional[dict]:
     """Return the pending clarification payload for a suspended task."""
     state, _ = await load_state_values(task_id)
@@ -29,13 +38,14 @@ async def get_pending_task(task_id: str) -> Optional[dict]:
         return None
     if not state.get("needs_user_input", False):
         return None
-    ctx = state.get("context", {})
+    pending_clarification, pending_question = _extract_pending_context(state)
     return {
         "task_id": task_id,
-        "pending_clarification": ctx.get("pending_clarification"),
-        "pending_question": ctx.get("pending_question"),
+        "pending_clarification": pending_clarification,
+        "pending_question": pending_question,
         "conversation_history": list(state.get("conversation_history", [])),
         "loop_count": state.get("loop_count", 0),
+        "agent_trace": list(state.get("agent_trace", [])),
     }
 
 
@@ -94,7 +104,9 @@ def _prepare_followup_state(
     state.agent_outputs = {}
     state.agent_trace = []
     state.active_agent = None
-    state.shared_context = {}
+    from app.orchestration import SharedContext
+
+    state.shared_context = SharedContext()
     state.loop_count = 0
     state.reflection_decision = None
     state.needs_user_input = False
@@ -131,15 +143,16 @@ async def run_detection(task: DetectionTask) -> dict[str, Any]:
 
     needs_suspend = result_dict.get("needs_user_input") and not result_dict.get("user_reply")
     if needs_suspend:
-        ctx = result_dict.get("context", {})
+        pending_clarification, pending_question = _extract_pending_context(result_dict)
         return {
             "status": "pending",
             "task_id": task.task_id,
             "message": "Additional user clarification is required before continuing.",
-            "pending_clarification": ctx.get("pending_clarification"),
-            "pending_question": ctx.get("pending_question"),
+            "pending_clarification": pending_clarification,
+            "pending_question": pending_question,
             "loop_count": result_dict.get("loop_count", 0),
             "conversation_history": list(result_dict.get("conversation_history", [])),
+            "agent_trace": list(result_dict.get("agent_trace", [])),
         }
 
     answer = result_dict.get("context", {}).get(
@@ -164,6 +177,7 @@ async def run_detection(task: DetectionTask) -> dict[str, Any]:
             "loop_count": result_dict.get("loop_count", 0),
             "confidence": result_dict.get("confidence", 0.0),
             "result_metadata": result_metadata,
+            "agent_trace": list(result_dict.get("agent_trace", [])),
         },
     }
 
@@ -188,18 +202,19 @@ async def run_chat(task_id: str, question: str) -> dict[str, Any]:
 
     needs_suspend = result_dict.get("needs_user_input") and not result_dict.get("user_reply")
     if needs_suspend:
-        ctx = result_dict.get("context", {})
+        pending_clarification, pending_question = _extract_pending_context(result_dict)
         return {
             "status": "pending",
             "task_id": task_id,
             "message": "Additional user clarification is required before continuing.",
-            "pending_clarification": ctx.get("pending_clarification"),
-            "pending_question": ctx.get("pending_question"),
+            "pending_clarification": pending_clarification,
+            "pending_question": pending_question,
             "conversation_history": list(result_dict.get("conversation_history", [])),
             "metadata": {
                 "logs": list(result_dict.get("logs", [])),
                 "loop_count": result_dict.get("loop_count", 0),
                 "confidence": result_dict.get("confidence", 0.0),
+                "agent_trace": list(result_dict.get("agent_trace", [])),
             },
         }
 
@@ -220,6 +235,7 @@ async def run_chat(task_id: str, question: str) -> dict[str, Any]:
             "loop_count": result_dict.get("loop_count", 0),
             "confidence": result_dict.get("confidence", 0.0),
             "result_metadata": result_metadata,
+            "agent_trace": list(result_dict.get("agent_trace", [])),
         },
     }
 
@@ -262,6 +278,7 @@ async def generate_report(task_id: str) -> dict[str, Any]:
             "logs": list(state.logs),
             "loop_count": state.loop_count,
             "result_metadata": result.metadata if result else {},
+            "agent_trace": list(state.agent_trace),
         },
     }
 
@@ -283,15 +300,16 @@ async def continue_detection(task_id: str, user_reply: str) -> dict[str, Any]:
 
     needs_suspend = result_dict.get("needs_user_input") and not result_dict.get("user_reply")
     if needs_suspend:
-        ctx = result_dict.get("context", {})
+        pending_clarification, pending_question = _extract_pending_context(result_dict)
         return {
             "status": "pending",
             "task_id": task_id,
             "message": "More user clarification is still required.",
-            "pending_clarification": ctx.get("pending_clarification"),
-            "pending_question": ctx.get("pending_question"),
+            "pending_clarification": pending_clarification,
+            "pending_question": pending_question,
             "loop_count": result_dict.get("loop_count", 0),
             "conversation_history": list(result_dict.get("conversation_history", [])),
+            "agent_trace": list(result_dict.get("agent_trace", [])),
         }
 
     answer = result_dict.get("context", {}).get("answer", "")
@@ -308,6 +326,7 @@ async def continue_detection(task_id: str, user_reply: str) -> dict[str, Any]:
             "logs": list(result_dict.get("logs", [])),
             "loop_count": result_dict.get("loop_count", 0),
             "result_metadata": result_metadata,
+            "agent_trace": list(result_dict.get("agent_trace", [])),
         },
     }
 

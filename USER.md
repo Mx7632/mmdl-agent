@@ -129,3 +129,30 @@
   - `python -m pytest tests/test_phase1_multi_agent.py -q`
   - `python -m pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_image_anomaly_detection_router.py tests/test_graph_runtime.py tests/test_checkpoint_store.py -q`
   - 结果：`22 passed`
+
+### 2026-04-26 | 多 Agent Phase 3：澄清 Agent、共享上下文 Schema、可中断挂起链路
+
+- 完成内容：
+  - 新增 `ClarificationAgent`，当 `self_reflect` 判断需要人工补充时，由主控先生成结构化澄清请求，再进入等待用户节点。
+  - 新增 `app/orchestration/context.py`，将 `shared_context` 结构化为 `vision/knowledge/report/clarification` 四类上下文模型。
+  - 重写 graph 路由，使 `wait_user` 成为真正可中断节点：首次挂起直接结束，用户回复后再回到 supervisor 继续编排。
+  - `get_pending_task`、`run_detection`、`run_chat`、`continue_detection`、`generate_report` 统一暴露 `agent_trace`，便于前端展示和排障。
+  - 修正 `build_continue_state` 逻辑，避免继续执行时重复把用户回复直接写入历史，改为交由 `wait_user_node` 消费。
+- 影响范围：
+  - `app/orchestration/context.py`
+  - `app/memory/state.py`
+  - `app/agents/clarification/`
+  - `app/agents/factory.py`
+  - `app/agents/supervisor/agent.py`
+  - `app/core/supervisor.py`
+  - `app/core/graph.py`
+  - `app/core/wait_user.py`
+  - `app/core/agent.py`
+  - `app/core/answer_node.py`
+  - `app/core/self_reflect.py`
+  - `app/agents/report/service.py`
+  - `tests/test_phase1_multi_agent.py`
+- 验证结果：
+  - `python -m pytest tests/test_phase1_multi_agent.py -q`
+  - `python -m pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_image_anomaly_detection_router.py tests/test_graph_runtime.py tests/test_checkpoint_store.py -q`
+  - 结果：`24 passed`

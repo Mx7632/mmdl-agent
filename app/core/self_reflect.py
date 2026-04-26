@@ -23,11 +23,11 @@ def _ensure_result_from_shared_context(state: DetectionState) -> DetectionResult
     if state.result is None:
         state.result = DetectionResult(task_id=state.task.task_id, status="success")
 
-    vision_payload = state.shared_context.get("vision") or {}
-    if vision_payload.get("anomalies") and not state.result.anomalies:
-        state.result.anomalies = list(vision_payload.get("anomalies", []))
-    if vision_payload.get("metadata"):
-        state.result.metadata.update(vision_payload["metadata"])
+    vision_ctx = state.shared_context.vision
+    if vision_ctx and vision_ctx.anomalies and not state.result.anomalies:
+        state.result.anomalies = list(vision_ctx.anomalies)
+    if vision_ctx and vision_ctx.metadata:
+        state.result.metadata.update(vision_ctx.metadata)
 
     return state.result
 
@@ -66,10 +66,6 @@ async def self_reflect_node(state: DetectionState) -> DetectionState:
         return state
 
     result = _ensure_result_from_shared_context(state)
-    if not result:
-        state.reflection_decision = "proceed"
-        return state
-
     user_id = (state.task.parameters or {}).get("user_id", "default_user")
     long_term_memories = memory_manager.get_long_term_memory(user_id)
     history_text = "\n".join(f"- {item.memory_summary[:200]}" for item in long_term_memories[-3:])

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from app.agents.factory import get_supervisor_agent
 from app.agents.report.service import generate_report_state
 from app.core.answer_node import answer_node
+from app.core.agent import get_pending_task
 from app.core.supervisor import supervisor_execute_node, supervisor_merge_node, supervisor_plan_node
 from app.memory.state import DetectionState
 from app.orchestration.envelope import AgentEnvelope
@@ -13,7 +16,7 @@ from app.schemas.detection import DetectionResult, DetectionTask
 
 def build_state(question: str = "请分析图像异常") -> DetectionState:
     task = DetectionTask(
-        task_id="phase2-001",
+        task_id="phase3-001",
         asset_id="asset-001",
         start_time="2026-04-26T00:00:00Z",
         end_time="2026-04-26T00:01:00Z",
@@ -44,6 +47,18 @@ def test_supervisor_fallback_adds_knowledge_for_reasoning_questions(monkeypatch:
     assert "knowledge" in planned
 
 
+def test_supervisor_prefers_clarification_when_waiting_for_user(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("app.agents.supervisor.agent.settings.openai_api_key", "")
+    supervisor = get_supervisor_agent()
+    state = build_state()
+    state.needs_user_input = True
+    state.unknown_anomaly_types = ["裂纹边界不清晰"]
+
+    planned = supervisor.plan(state)
+
+    assert planned == ["clarification"]
+
+
 def test_supervisor_prefers_llm_structured_plan(monkeypatch: pytest.MonkeyPatch):
     class FakeResponse:
         content = '{"planned_agents":["vision","knowledge"],"reason":"need retrieval"}'
@@ -64,8 +79,7 @@ def test_supervisor_prefers_llm_structured_plan(monkeypatch: pytest.MonkeyPatch)
     assert state.context["supervisor_reason"] == "need retrieval"
 
 
-@pytest.mark.asyncio
-async def test_supervisor_execute_and_merge(monkeypatch: pytest.MonkeyPatch):
+def test_supervisor_execute_and_merge(monkeypatch: pytest.MonkeyPatch):
     state = build_state("请分析异常原因")
 
     async def fake_vision_run(self, task):
@@ -102,25 +116,27 @@ async def test_supervisor_execute_and_merge(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("app.agents.knowledge.agent.KnowledgeAgent.run", fake_knowledge_run)
     monkeypatch.setattr("app.agents.supervisor.agent.settings.openai_api_key", "")
 
-    state = await supervisor_plan_node(state)
-    assert state.context["planned_agents"] == ["vision", "knowledge"]
+    async def runner():
+        planned_state = await supervisor_plan_node(state)
+        assert planned_state.context["planned_agents"] == ["vision", "knowledge"]
 
-    state = await supervisor_execute_node(state)
-    assert "vision" in state.agent_outputs
-    assert "knowledge" in state.agent_outputs
-    assert len(state.agent_trace) == 2
-    assert state.loop_count == 1
+        executed_state = await supervisor_execute_node(planned_state)
+        assert "vision" in executed_state.agent_outputs
+        assert "knowledge" in executed_state.agent_outputs
+        assert len(executed_state.agent_trace) == 2
+        assert executed_state.loop_count == 1
 
-    state = await supervisor_merge_node(state)
-    assert state.tool_outputs[0]["tool"] == "vision_agent"
-    assert state.tool_outputs[0]["anomalies"][0]["type"] == "scratch"
-    assert state.context["rag_context"] == "similar case context"
-    assert state.result.anomalies[0]["type"] == "scratch"
-    assert state.result.answer == "vision answer"
+        merged_state = await supervisor_merge_node(executed_state)
+        assert merged_state.tool_outputs[0]["tool"] == "vision_agent"
+        assert merged_state.tool_outputs[0]["anomalies"][0]["type"] == "scratch"
+        assert merged_state.context["rag_context"] == "similar case context"
+        assert merged_state.result.anomalies[0]["type"] == "scratch"
+        assert merged_state.result.answer == "vision answer"
+
+    asyncio.run(runner())
 
 
-@pytest.mark.asyncio
-async def test_answer_node_prefers_shared_context(monkeypatch: pytest.MonkeyPatch):
+def test_answer_node_prefers_shared_context(monkeypatch: pytest.MonkeyPatch):
     class FakeResponse:
         content = "结构化诊断回答"
 
@@ -139,7 +155,7 @@ async def test_answer_node_prefers_shared_context(monkeypatch: pytest.MonkeyPatc
     }
     state.shared_context["knowledge"] = {"prompt_context": "retrieved knowledge"}
 
-    updated = await answer_node(state)
+    updated = asyncio.run(answer_node(state))
 
     assert updated.context["answer"] == "结构化诊断回答"
     assert updated.result.anomalies[0]["type"] == "dent"
@@ -147,8 +163,7 @@ async def test_answer_node_prefers_shared_context(monkeypatch: pytest.MonkeyPatc
     assert updated.current_step == 2
 
 
-@pytest.mark.asyncio
-async def test_generate_report_state_prefers_shared_context(monkeypatch: pytest.MonkeyPatch):
+def test_generate_report_state_prefers_shared_context(monkeypatch: pytest.MonkeyPatch):
     class FakeResponse:
         content = "完整报告内容"
 
@@ -167,9 +182,44 @@ async def test_generate_report_state_prefers_shared_context(monkeypatch: pytest.
     state.shared_context["knowledge"] = {"prompt_context": "case context"}
     state.conversation_history.append({"role": "user", "content": "请给出完整报告"})
 
-    updated = await generate_report_state(state)
+    updated = asyncio.run(generate_report_state(state))
 
     assert updated.result.summary == "完整报告内容"
     assert updated.result.anomalies[0]["type"] == "crack"
     assert updated.result.metadata["selected_backend"] == "anomalygpt"
-    assert updated.shared_context["report"]["summary"] == "完整报告内容"
+    assert updated.shared_context.report.summary == "完整报告内容"
+
+
+def test_clarification_merge_and_pending_lookup(monkeypatch: pytest.MonkeyPatch):
+    state = build_state()
+    state.needs_user_input = True
+    state.unknown_anomaly_types = ["边界不清晰", "位置不确定"]
+    monkeypatch.setattr("app.agents.supervisor.agent.settings.openai_api_key", "")
+
+    async def runner():
+        planned_state = await supervisor_plan_node(state)
+        assert planned_state.context["planned_agents"] == ["clarification"]
+
+        executed_state = await supervisor_execute_node(planned_state)
+        merged_state = await supervisor_merge_node(executed_state)
+        assert merged_state.shared_context.clarification is not None
+        assert merged_state.shared_context.clarification.pending_question
+        assert merged_state.context["pending_question"]
+
+        async def fake_load_state_values(task_id: str):
+            return merged_state.model_dump(), "memory"
+
+        monkeypatch.setattr("app.core.agent.load_state_values", fake_load_state_values)
+        pending = await get_pending_task(merged_state.task.task_id)
+        assert pending is not None
+        assert pending["pending_question"] == merged_state.context["pending_question"]
+        assert pending["agent_trace"][0]["agent"] == "clarification"
+
+        async def fake_missing_state_values(task_id: str):
+            return None, "memory"
+
+        monkeypatch.setattr("app.core.agent.load_state_values", fake_missing_state_values)
+        pending = await get_pending_task("missing-task")
+        assert pending is None
+
+    asyncio.run(runner())
