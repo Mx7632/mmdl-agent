@@ -366,3 +366,29 @@ git push origin main
 ```
 
 ---
+
+## Vision Backend Routing
+
+- Default image inspection still uses the Qwen vision model configured by `APP_LLM_VISION_MODEL`.
+- Set `APP_VISION_DETECTOR_BACKEND=anomalygpt` to make uploaded images prefer the specialist backend by default.
+- Set `APP_PROFESSIONAL_VISION_DETECTOR_URL` to the HTTP endpoint of your specialist model service.
+- You can also override the backend per request with `parameters.tool_type`, for example `qwen3.5-plus` or `anomalygpt`.
+
+## Local AnomalyGPT Service
+
+- A local sidecar service scaffold is provided under `services/anomalygpt_local`.
+- It is designed for the official [AnomalyGPT GitHub](https://github.com/CASIA-LMC-Lab/AnomalyGPT) repository cloned on your own machine.
+- Deployment guide: [services/anomalygpt_local/README.md](/E:/Computer/Projects/20_products/anomaly-detection/mmdl-agent/services/anomalygpt_local/README.md)
+- Docker compose sidecar is also included under `services/anomalygpt_local/docker-compose.yml`.
+- Typical project-side config:
+
+```env
+APP_VISION_DETECTOR_BACKEND=anomalygpt
+APP_PROFESSIONAL_VISION_DETECTOR_TYPE=anomalygpt
+APP_PROFESSIONAL_VISION_DETECTOR_URL=http://127.0.0.1:9001/detect
+```
+
+## Development Journal
+
+- Ongoing delivery notes are tracked in [USER.md](/E:/Computer/Projects/20_products/anomaly-detection/mmdl-agent/USER.md).
+- Rule: after each module or milestone is completed, update `USER.md` before the next Git commit.

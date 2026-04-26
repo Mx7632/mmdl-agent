@@ -1,115 +1,187 @@
 """
-智能规划器节点 (Planner Node)
-职责：
-  1. 分析用户问题和任务上下文
-  2. 决定是否需要调用工具（时序检测、视觉检测、知识检索）
-  3. 生成工具调用指令或最终回答决策
+Planner node for ReAct-style tool orchestration.
 """
+
 from __future__ import annotations
 
+import json
 import logging
-from typing import List, Dict, Any
+from typing import Any
 
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 from app.config.settings import settings
-from app.memory.state import DetectionState
 from app.core.tools import get_industrial_tools
+from app.memory.state import DetectionState
 
 logger = logging.getLogger(__name__)
 
-PLANNER_SYSTEM_PROMPT = """你是一个专业的工业异常检测调度专家。
-你的任务是根据用户提出的问题和设备上下文，编排合适的工具来完成诊断。
+MAX_HISTORY_MESSAGES = 6
+MAX_QUESTION_CHARS = 2000
+MAX_TOOL_OBSERVATION_CHARS = 6000
+MAX_DIRECT_THOUGHT_CHARS = 4000
 
-可用工具：
-1. timeseries_anomaly_detection: 分析传感器数值序列、振动数据、压力、温度等时序数据。
-2. visual_anomaly_detection: 分析工业设备图像、照片。用于识别表面缺陷、破损、漏油、仪表读数异常、环境风险等。
-3. knowledge_retrieval: 检索工业领域专家知识库、设备手册、历史故障案例、相似异常样本。
+PLANNER_SYSTEM_PROMPT = """
+You are a planner for industrial anomaly diagnosis tasks.
 
-规划策略：
-- **图像优先**：如果任务上下文中显示【已附带图像】，且用户问题涉及“看看”、“图像里有什么”、“有没有异常”、“检查照片”等，必须调用 `visual_anomaly_detection`。
-- **数据互补**：如果问题涉及具体指标（如振动高、压力大），调用 `timeseries` 工具。
-- **深度诊断**：如果需要判断异常原因、风险等级或维修建议，务必调用 `knowledge_retrieval` 工具。
-- **多步决策**：你可以一次性决定调用多个工具，也可以根据上一步的执行结果（Observation）逐步推进。
-- **直接回答**：如果你认为信息已经足够回答用户，请输出你的分析结论，不再调用工具。
+Your job:
+1. Understand the user's current question and the available context.
+2. Decide whether tool calls are needed.
+3. If tools are needed, choose the most suitable tool and arguments.
+4. If the information is already sufficient, do not invent tool calls.
 
-当前任务上下文：
+Available tools:
+- timeseries_anomaly_detection: analyze time-series or sensor anomalies.
+- visual_anomaly_detection: detect whether an image contains industrial anomalies.
+- visual_anomaly_localization: locate where the anomaly appears in the image and return bounding boxes or coarse regions.
+- knowledge_retrieval: retrieve similar cases, manuals, and handling suggestions.
+
+Planning rules:
+- If the task has an image and the user asks whether there is a defect, abnormal appearance, leakage, damage, or another visual issue, prefer visual_anomaly_detection.
+- If the user explicitly asks where the anomaly is, which region is affected, asks for a bbox, highlighted area, location, position, or mask, prefer visual_anomaly_localization.
+- If the user asks about causes, mechanisms, risks, maintenance, or similar historical cases, prefer knowledge_retrieval.
+- If previous tool output is insufficient, you may call additional tools.
+
+Current task context:
 - Asset ID: {asset_id}
-- Time Range: {start_time} 至 {end_time}
+- Time Range: {start_time} to {end_time}
+- Has Image: {has_image}
 """
 
+
+def _truncate_text(text: Any, limit: int) -> str:
+    """Return a bounded string representation."""
+    if text is None:
+        return ""
+    value = str(text)
+    if len(value) <= limit:
+        return value
+    return value[:limit] + f"\n...[truncated {len(value) - limit} chars]"
+
+
+def _compact_observation(observation: Any) -> str:
+    """Reduce tool observations to a planner-friendly summary."""
+    if observation is None:
+        return ""
+
+    text = str(observation)
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return _truncate_text(text, MAX_TOOL_OBSERVATION_CHARS)
+
+    if not isinstance(parsed, dict):
+        return _truncate_text(text, MAX_TOOL_OBSERVATION_CHARS)
+
+    compact: dict[str, Any] = {}
+    if "status" in parsed:
+        compact["status"] = parsed.get("status")
+    if "answer" in parsed:
+        compact["answer"] = _truncate_text(parsed.get("answer"), 1200)
+    if "summary" in parsed:
+        compact["summary"] = _truncate_text(parsed.get("summary"), 1200)
+    if "anomalies" in parsed:
+        anomalies = parsed.get("anomalies") or []
+        compact["anomaly_count"] = len(anomalies)
+        compact["anomalies"] = anomalies[:5]
+    if "metadata" in parsed and isinstance(parsed["metadata"], dict):
+        metadata = dict(parsed["metadata"])
+        metadata.pop("image_base64", None)
+        compact["metadata"] = metadata
+
+    if not compact:
+        compact = parsed
+
+    compact_text = json.dumps(compact, ensure_ascii=False, indent=2)
+    return _truncate_text(compact_text, MAX_TOOL_OBSERVATION_CHARS)
+
+
 async def planner_node(state: DetectionState) -> DetectionState:
-    """规划器 node：决定下一步行动。"""
-    if state.loop_count >= 3: # 熔断限制
-        state.logs.append("[Planner] 达到最大编排深度，停止规划")
+    """Analyze the current turn and decide whether tools should be called."""
+    if state.loop_count >= 3:
+        state.logs.append("[Planner] Reached max planning depth, proceed to answer")
         state.reflection_decision = "proceed"
         return state
 
-    state.logs.append(f"[Planner] 开始分析任务，当前步骤: {len(state.intermediate_steps) + 1}")
+    state.logs.append(f"[Planner] Start planning round {len(state.intermediate_steps) + 1}")
 
-    # 1. 准备 LLM
     llm = ChatOpenAI(
         model=settings.llm_model,
         temperature=0,
         api_key=SecretStr(settings.openai_api_key),
-        base_url=settings.llm_base_url
+        base_url=settings.llm_base_url,
+        timeout=settings.llm_timeout,
     )
-    tools = get_industrial_tools()
-    llm_with_tools = llm.bind_tools(tools)
+    llm_with_tools = llm.bind_tools(get_industrial_tools())
 
-    # 2. 构造消息列表
-    has_image = bool(state.task.parameters.get("image_base64"))
-    image_info = "【重要提示：当前任务已附带工业现场图像，如需分析图像内容，请务必调用 visual_anomaly_detection 工具】" if has_image else "（注：当前任务未提供图像数据）"
-
+    has_image = bool((state.task.parameters or {}).get("image_base64"))
     system_msg = PLANNER_SYSTEM_PROMPT.format(
         asset_id=state.task.asset_id,
         start_time=state.task.start_time,
-        end_time=state.task.end_time
-    ) + f"\n\n实时环境信息：\n{image_info}"
-    
-    messages = [
-        {"role": "system", "content": system_msg},
-    ]
+        end_time=state.task.end_time,
+        has_image="yes" if has_image else "no",
+    )
 
-    # 注入历史对话背景
-    if state.conversation_history:
-        # 只保留最近几轮对话，避免上下文过长
-        recent_history = state.conversation_history[-6:] if len(state.conversation_history) > 6 else state.conversation_history
-        for msg in recent_history[:-1]: # 除了最后一条（当前问题）
-            messages.append(msg)
+    messages: list[Any] = [SystemMessage(content=system_msg)]
 
-    # 注入当前用户提问
-    messages.append({"role": "user", "content": f"当前提问：{state.task.question}"})
+    recent_history = state.conversation_history[-MAX_HISTORY_MESSAGES:]
+    for msg in recent_history[:-1]:
+        role = msg.get("role")
+        content = _truncate_text(msg.get("content", ""), 1200)
+        if not content:
+            continue
+        if role == "assistant":
+            messages.append(AIMessage(content=content))
+        else:
+            messages.append(HumanMessage(content=content))
 
-    # 注入当前问题的中间步骤（如果有）
-    for action, observation in state.intermediate_steps:
-        # 这里简化处理，将 action 转为消息
-        messages.append({"role": "assistant", "content": None, "tool_calls": [action]})
-        messages.append({"role": "tool", "content": observation, "tool_call_id": action["id"]})
+    current_question = _truncate_text(state.task.question or "", MAX_QUESTION_CHARS)
+    messages.append(HumanMessage(content=f"Current user question:\n{current_question}"))
 
-    # 3. 调用 LLM
+    for action, observation in state.intermediate_steps[-3:]:
+        messages.append(
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": action["id"],
+                        "name": action["name"],
+                        "args": action.get("args", {}),
+                    }
+                ],
+            )
+        )
+        messages.append(
+            ToolMessage(
+                content=_compact_observation(observation),
+                tool_call_id=action["id"],
+            )
+        )
+
     try:
         response = await llm_with_tools.ainvoke(
             messages,
             config={
                 "tags": ["planner_thought"],
-                "metadata": {"langgraph_node": "planner"}
-            }
+                "metadata": {"langgraph_node": "planner"},
+            },
         )
-        
+
         if response.tool_calls:
             state.tool_calls = response.tool_calls
-            state.reflection_decision = "retry" # 意味着需要去执行工具
-            state.logs.append(f"[Planner] 决定调用工具: {[tc['name'] for tc in response.tool_calls]}")
+            state.reflection_decision = "retry"
+            state.logs.append(
+                f"[Planner] Selected tools: {[tool_call['name'] for tool_call in response.tool_calls]}"
+            )
         else:
-            state.reflection_decision = "proceed" # 意味着可以直接回答
-            state.context["planner_thought"] = response.content
-            state.logs.append("[Planner] 信息已充足，准备回答")
-            
-    except Exception as e:
-        logger.error(f"[Planner] 规划失败: {e}")
-        state.errors.append(f"Planner error: {str(e)}")
+            state.reflection_decision = "proceed"
+            state.context["planner_thought"] = _truncate_text(response.content, MAX_DIRECT_THOUGHT_CHARS)
+            state.logs.append("[Planner] Information is sufficient, proceed to answer")
+    except Exception as exc:
+        logger.error("[Planner] Planning failed: %s", exc)
+        state.errors.append(f"Planner error: {str(exc)}")
         state.reflection_decision = "proceed"
 
     return state

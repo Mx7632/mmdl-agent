@@ -79,7 +79,7 @@ def build_continue_state(
     else:
         state_dict = copy.deepcopy(previous_state)
 
-    state_dict["user_reply"] = user_reply
+    state_dict["user_reply"] = None
     state_dict["conversation_history"] = list(state_dict.get("conversation_history", []))
     state_dict["conversation_history"].append({"role": "user", "content": user_reply})
     state_dict["needs_user_input"] = False

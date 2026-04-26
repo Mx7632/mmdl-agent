@@ -12,20 +12,18 @@ import logging
 from typing import Any, AsyncGenerator, Optional
 
 from app.core import build_graph
+from app.core.runtime import graph_session, load_state_values, persist_runtime_state
 from app.core.wait_user import build_continue_state
 from app.exceptions.base import AppError, TaskNotFoundError
-from app.memory.checkpoint import MemoryCheckpointStore
 from app.memory.state import DetectionState
 from app.schemas.detection import DetectionTask
 
 logger = logging.getLogger(__name__)
 
-_checkpoint_store = MemoryCheckpointStore()
 
-
-def get_pending_task(task_id: str) -> Optional[dict]:
+async def get_pending_task(task_id: str) -> Optional[dict]:
     """Return the pending clarification payload for a suspended task."""
-    state = _checkpoint_store.load(task_id)
+    state, _ = await load_state_values(task_id)
     if state is None:
         return None
     if not state.get("needs_user_input", False):
@@ -60,6 +58,17 @@ def _extract_anomalies(result_obj: Any) -> list[Any]:
     return []
 
 
+def _extract_result_metadata(result_obj: Any) -> dict[str, Any]:
+    """Extract result metadata from either a dict result or a Pydantic model."""
+    if result_obj is None:
+        return {}
+    if isinstance(result_obj, dict):
+        return result_obj.get("metadata", {}) or {}
+    if hasattr(result_obj, "metadata"):
+        return result_obj.metadata or {}
+    return {}
+
+
 def _prepare_followup_state(
     previous_state: dict,
     *,
@@ -81,6 +90,10 @@ def _prepare_followup_state(
     state.intermediate_steps = []
     state.tool_calls = []
     state.tool_outputs = []
+    state.agent_outputs = {}
+    state.agent_trace = []
+    state.active_agent = None
+    state.shared_context = {}
     state.loop_count = 0
     state.reflection_decision = None
     state.needs_user_input = False
@@ -97,11 +110,13 @@ async def run_detection(task: DetectionTask) -> dict[str, Any]:
     """
     try:
         logger.info(f"[run_detection] START task_id={task.task_id}, question={task.question}")
-        graph = build_graph()
         state = DetectionState(task=task, stage="chat")
-        logger.info("[run_detection] calling _run_with_suspend...")
-        result_dict = await _run_with_suspend(graph, state)
-        logger.info("[run_detection] graph execution finished")
+        async with graph_session(task.task_id) as (graph, config, backend):
+            logger.info("[run_detection] checkpoint backend=%s", backend)
+            logger.info("[run_detection] calling _run_with_suspend...")
+            result_dict = await _run_with_suspend(graph, state, config=config)
+            persist_runtime_state(task.task_id, result_dict, backend=backend)
+            logger.info("[run_detection] graph execution finished")
     except Exception as e:
         import traceback
 
@@ -115,7 +130,6 @@ async def run_detection(task: DetectionTask) -> dict[str, Any]:
 
     needs_suspend = result_dict.get("needs_user_input") and not result_dict.get("user_reply")
     if needs_suspend:
-        _checkpoint_store.save(result_dict)
         ctx = result_dict.get("context", {})
         return {
             "status": "pending",
@@ -127,13 +141,12 @@ async def run_detection(task: DetectionTask) -> dict[str, Any]:
             "conversation_history": list(result_dict.get("conversation_history", [])),
         }
 
-    _checkpoint_store.save(result_dict)
-
     answer = result_dict.get("context", {}).get(
         "answer",
         "An anomaly was detected. You can continue asking questions or generate a report.",
     )
     anomalies = _extract_anomalies(result_dict.get("result"))
+    result_metadata = _extract_result_metadata(result_dict.get("result"))
 
     ans_for_log = repr(answer[:50]) if answer else "(empty)"
     logger.info(
@@ -149,6 +162,7 @@ async def run_detection(task: DetectionTask) -> dict[str, Any]:
             "logs": list(result_dict.get("logs", [])),
             "loop_count": result_dict.get("loop_count", 0),
             "confidence": result_dict.get("confidence", 0.0),
+            "result_metadata": result_metadata,
         },
     }
 
@@ -160,17 +174,19 @@ async def run_chat(task_id: str, question: str) -> dict[str, Any]:
     Each follow-up turn is treated as a fresh agent run, so planner/executor can
     re-plan retrieval and tool usage in ReAct style.
     """
-    previous_state = _checkpoint_store.load(task_id)
+    previous_state, _ = await load_state_values(task_id)
     if previous_state is None:
         raise TaskNotFoundError(f"Task {task_id} was not found. Please run detection first.")
 
-    graph = build_graph()
     state = _prepare_followup_state(previous_state, question=question)
-    result_dict = await _run_with_suspend(graph, state)
+    async with graph_session(task_id) as (graph, config, backend):
+        logger.info("[run_chat] checkpoint backend=%s", backend)
+        await graph.aupdate_state(config, state.model_dump())
+        result_dict = await _run_with_suspend(graph, None, config=config)
+        persist_runtime_state(task_id, result_dict, backend=backend)
 
     needs_suspend = result_dict.get("needs_user_input") and not result_dict.get("user_reply")
     if needs_suspend:
-        _checkpoint_store.save(result_dict)
         ctx = result_dict.get("context", {})
         return {
             "status": "pending",
@@ -186,13 +202,12 @@ async def run_chat(task_id: str, question: str) -> dict[str, Any]:
             },
         }
 
-    _checkpoint_store.save(result_dict)
-
     answer = result_dict.get("context", {}).get(
         "answer",
         "Sorry, an error occurred while generating the answer. Please try again.",
     )
     anomalies = _extract_anomalies(result_dict.get("result"))
+    result_metadata = _extract_result_metadata(result_dict.get("result"))
     return {
         "task_id": task_id,
         "status": "success",
@@ -203,13 +218,14 @@ async def run_chat(task_id: str, question: str) -> dict[str, Any]:
             "logs": list(result_dict.get("logs", [])),
             "loop_count": result_dict.get("loop_count", 0),
             "confidence": result_dict.get("confidence", 0.0),
+            "result_metadata": result_metadata,
         },
     }
 
 
 async def generate_report(task_id: str) -> dict[str, Any]:
     """Generate a full report directly from an existing task state."""
-    previous_state = _checkpoint_store.load(task_id)
+    previous_state, _ = await load_state_values(task_id)
     if previous_state is None:
         raise TaskNotFoundError(f"Task {task_id} was not found. Please run detection first.")
 
@@ -231,7 +247,9 @@ async def generate_report(task_id: str) -> dict[str, Any]:
     from app.core import _summarize_node
 
     state = await _summarize_node(state)
-    _checkpoint_store.save(state.model_dump())
+    async with graph_session(task_id) as (graph, config, backend):
+        await graph.aupdate_state(config, state.model_dump())
+        persist_runtime_state(task_id, state.model_dump(), backend=backend)
 
     result = state.result
     return {
@@ -244,25 +262,28 @@ async def generate_report(task_id: str) -> dict[str, Any]:
         "metadata": {
             "logs": list(state.logs),
             "loop_count": state.loop_count,
+            "result_metadata": result.metadata if result else {},
         },
     }
 
 
 async def continue_detection(task_id: str, user_reply: str) -> dict[str, Any]:
     """Continue a suspended task after the user provides clarification."""
-    previous_state = _checkpoint_store.load(task_id)
+    previous_state, _ = await load_state_values(task_id)
     if previous_state is None:
         raise TaskNotFoundError(f"Suspended task not found: {task_id}")
 
     continued_state = build_continue_state(task_id, user_reply, previous_state)
     continued_state["needs_user_input"] = False
 
-    graph = build_graph()
-    result_dict = await _run_with_suspend(graph, continued_state)
+    async with graph_session(task_id) as (graph, config, backend):
+        logger.info("[continue_detection] checkpoint backend=%s", backend)
+        await graph.aupdate_state(config, continued_state)
+        result_dict = await _run_with_suspend(graph, None, config=config)
+        persist_runtime_state(task_id, result_dict, backend=backend)
 
     needs_suspend = result_dict.get("needs_user_input") and not result_dict.get("user_reply")
     if needs_suspend:
-        _checkpoint_store.save(result_dict)
         ctx = result_dict.get("context", {})
         return {
             "status": "pending",
@@ -274,9 +295,9 @@ async def continue_detection(task_id: str, user_reply: str) -> dict[str, Any]:
             "conversation_history": list(result_dict.get("conversation_history", [])),
         }
 
-    _checkpoint_store.save(result_dict)
     answer = result_dict.get("context", {}).get("answer", "")
     anomalies = _extract_anomalies(result_dict.get("result"))
+    result_metadata = _extract_result_metadata(result_dict.get("result"))
     return {
         "task_id": task_id,
         "status": "success",
@@ -287,6 +308,7 @@ async def continue_detection(task_id: str, user_reply: str) -> dict[str, Any]:
         "metadata": {
             "logs": list(result_dict.get("logs", [])),
             "loop_count": result_dict.get("loop_count", 0),
+            "result_metadata": result_metadata,
         },
     }
 
@@ -294,49 +316,53 @@ async def continue_detection(task_id: str, user_reply: str) -> dict[str, Any]:
 async def stream_detection(task: DetectionTask) -> AsyncGenerator[str, None]:
     """Execute detection/chat in streaming mode and emit SSE events."""
     try:
-        graph = build_graph()
+        async with graph_session(task.task_id) as (graph, config, backend):
+            previous_state_dict, _ = await load_state_values(task.task_id)
+            if previous_state_dict:
+                state = _prepare_followup_state(
+                    previous_state_dict,
+                    question=task.question,
+                    parameters=task.parameters,
+                )
+                await graph.aupdate_state(config, state.model_dump())
+                invoke_input = None
+            else:
+                state = DetectionState(task=task, stage="chat")
+                invoke_input = state.model_dump()
 
-        previous_state_dict = _checkpoint_store.load(task.task_id)
-        if previous_state_dict:
-            state = _prepare_followup_state(
-                previous_state_dict,
-                question=task.question,
-                parameters=task.parameters,
+            logger.info(
+                f"[stream_detection] START task_id={task.task_id}, "
+                f"is_continue={bool(previous_state_dict)}, checkpoint_backend={backend}"
             )
-        else:
-            state = DetectionState(task=task, stage="chat")
 
-        invoke_input = state.model_dump()
-        logger.info(f"[stream_detection] START task_id={task.task_id}, is_continue={bool(previous_state_dict)}")
+            async for event in graph.astream_events(invoke_input, config=config, version="v2"):
+                kind = event["event"]
+                name = event["name"]
 
-        async for event in graph.astream_events(invoke_input, version="v2"):
-            kind = event["event"]
-            name = event["name"]
+                if kind == "on_chain_start" and name in ["planner", "executor", "consolidate", "answer"]:
+                    yield f"data: {json.dumps({'type': 'node_start', 'node': name})}\n\n"
+                elif kind == "on_chat_model_stream":
+                    data = event.get("data", {})
+                    chunk = data.get("chunk")
+                    content = getattr(chunk, "content", None)
+                    if content:
+                        tags = event.get("tags", [])
+                        metadata = event.get("metadata", {})
+                        langgraph_node = metadata.get("langgraph_node", "")
 
-            if kind == "on_chain_start" and name in ["planner", "executor", "consolidate", "answer"]:
-                yield f"data: {json.dumps({'type': 'node_start', 'node': name})}\n\n"
-            elif kind == "on_chat_model_stream":
-                data = event.get("data", {})
-                chunk = data.get("chunk")
-                content = getattr(chunk, "content", None)
-                if content:
-                    tags = event.get("tags", [])
-                    metadata = event.get("metadata", {})
-                    langgraph_node = metadata.get("langgraph_node", "")
-
-                    if "planner_thought" in tags or langgraph_node == "planner":
-                        yield f"data: {json.dumps({'type': 'stream', 'subtype': 'thought', 'content': content})}\n\n"
-                    elif "final_answer" in tags or langgraph_node == "answer":
-                        yield f"data: {json.dumps({'type': 'stream', 'subtype': 'answer', 'content': content})}\n\n"
-            elif kind == "on_tool_start":
-                yield f"data: {json.dumps({'type': 'tool_start', 'tool': name, 'input': event['data'].get('input')})}\n\n"
-            elif kind == "on_tool_end":
-                yield f"data: {json.dumps({'type': 'tool_end', 'tool': name, 'output': event['data'].get('output')})}\n\n"
-            elif kind == "on_chain_end" and name == "LangGraph":
-                final_output = event["data"].get("output")
-                if final_output:
-                    _checkpoint_store.save(final_output)
-                    yield f"data: {json.dumps({'type': 'final_result', 'task_id': task.task_id, 'status': 'success'})}\n\n"
+                        if "planner_thought" in tags or langgraph_node == "planner":
+                            yield f"data: {json.dumps({'type': 'stream', 'subtype': 'thought', 'content': content})}\n\n"
+                        elif "final_answer" in tags or langgraph_node == "answer":
+                            yield f"data: {json.dumps({'type': 'stream', 'subtype': 'answer', 'content': content})}\n\n"
+                elif kind == "on_tool_start":
+                    yield f"data: {json.dumps({'type': 'tool_start', 'tool': name, 'input': event['data'].get('input')})}\n\n"
+                elif kind == "on_tool_end":
+                    yield f"data: {json.dumps({'type': 'tool_end', 'tool': name, 'output': event['data'].get('output')})}\n\n"
+                elif kind == "on_chain_end" and name == "LangGraph":
+                    final_output = event["data"].get("output")
+                    if final_output:
+                        persist_runtime_state(task.task_id, final_output, backend=backend)
+                        yield f"data: {json.dumps({'type': 'final_result', 'task_id': task.task_id, 'status': 'success'})}\n\n"
 
     except Exception as e:
         import traceback
@@ -347,7 +373,7 @@ async def stream_detection(task: DetectionTask) -> AsyncGenerator[str, None]:
     yield "event: close\ndata: close\n\n"
 
 
-async def _run_with_suspend(graph, initial_state) -> dict:
+async def _run_with_suspend(graph, initial_state, *, config: Optional[dict[str, Any]] = None) -> dict:
     """Run the graph and return the raw dict state result."""
     logger.info("[_run_with_suspend] invoking graph.ainvoke...")
 
@@ -356,7 +382,7 @@ async def _run_with_suspend(graph, initial_state) -> dict:
     else:
         invoke_input = initial_state
 
-    result_dict: dict = await graph.ainvoke(invoke_input)
+    result_dict: dict = await graph.ainvoke(invoke_input, config=config)
     logger.info(
         f"[_run_with_suspend] invoke returned, "
         f"keys={list(result_dict.keys()) if isinstance(result_dict, dict) else type(result_dict)}"
