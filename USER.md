@@ -93,3 +93,16 @@
     - `python -m pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_image_anomaly_detection_router.py tests/test_graph_runtime.py tests/test_checkpoint_store.py`
   - 结果：
     - `19 passed in 10.44s`
+
+### 2026-04-26 | 工作记忆文件治理（方案 B）
+
+- 完成内容：
+  - 将 `app/data/memory/working_memory.json` 定义为运行时文件，不再纳入 Git 跟踪。
+  - 新增 `app/data/memory/working_memory.example.json` 作为可提交的结构样例。
+  - 在 `.gitignore` 与 `README.md` 中补充运行时文件与样例文件的使用说明。
+- 影响范围：
+  - `.gitignore`
+  - `README.md`
+  - `app/data/memory/working_memory.example.json`
+- 验证结果：
+  - 运行时逻辑仍然读取/写入 `working_memory.json`，仓库中改为保留样例文件供参考。

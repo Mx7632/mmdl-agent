@@ -392,3 +392,8 @@ APP_PROFESSIONAL_VISION_DETECTOR_URL=http://127.0.0.1:9001/detect
 
 - Ongoing delivery notes are tracked in [USER.md](/E:/Computer/Projects/20_products/anomaly-detection/mmdl-agent/USER.md).
 - Rule: after each module or milestone is completed, update `USER.md` before the next Git commit.
+
+## Memory File Policy
+
+- `app/data/memory/working_memory.json` is treated as a runtime-generated file and is ignored by Git.
+- A checked-in sample is provided at `app/data/memory/working_memory.example.json` for structure reference and onboarding.

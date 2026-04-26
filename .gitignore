@@ -31,3 +31,6 @@ agent.env
 data_sets/
 
 AI_GUIDE.md
+
+# Runtime memory snapshots
+app/data/memory/working_memory.json
