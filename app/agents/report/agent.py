@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from app.orchestration import AgentEnvelope
+from app.agents.report.service import generate_report_state
 from app.memory.state import DetectionState
-from app.core import _summarize_node
 
 
 class ReportAgent:
     name = "report"
 
     async def run(self, state: DetectionState) -> AgentEnvelope:
-        updated = await _summarize_node(state)
+        updated = await generate_report_state(state)
         result = updated.result
         return AgentEnvelope(
             agent_name=self.name,

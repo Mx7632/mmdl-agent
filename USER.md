@@ -106,3 +106,26 @@
   - `app/data/memory/working_memory.example.json`
 - 验证结果：
   - 运行时逻辑仍然读取/写入 `working_memory.json`，仓库中改为保留样例文件供参考。
+
+### 2026-04-26 | 多 Agent Phase 2：主控增强与下游状态切换
+
+- 完成内容：
+  - 将 `SupervisorAgent` 从纯规则路由升级为“LLM 结构化规划 + 规则回退”的主控模式。
+  - `supervisor_merge_node` 现在会把 vision/knowledge/report 的结果同步回 `result` 与 `shared_context`，减少对旧 `tool_outputs` 的依赖。
+  - `answer_node` 改为优先消费 `shared_context["vision"]` 与 `shared_context["knowledge"]`，确保回答真正建立在专家 Agent 输出上。
+  - 报告生成逻辑从 `app.core` 解耦到 `app/agents/report/service.py`，`ReportAgent` 与 graph/report 入口统一复用新服务。
+  - `self_reflect_node` 改为优先基于共享视觉结果进行判断，与新的多 Agent 状态流保持一致。
+- 影响范围：
+  - `app/agents/supervisor/agent.py`
+  - `app/core/supervisor.py`
+  - `app/core/answer_node.py`
+  - `app/core/self_reflect.py`
+  - `app/agents/report/service.py`
+  - `app/agents/report/agent.py`
+  - `app/core/graph.py`
+  - `app/core/agent.py`
+  - `tests/test_phase1_multi_agent.py`
+- 验证结果：
+  - `python -m pytest tests/test_phase1_multi_agent.py -q`
+  - `python -m pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_image_anomaly_detection_router.py tests/test_graph_runtime.py tests/test_checkpoint_store.py -q`
+  - 结果：`22 passed`

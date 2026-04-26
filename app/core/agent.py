@@ -11,6 +11,7 @@ import json
 import logging
 from typing import Any, AsyncGenerator, Optional
 
+from app.agents.report.service import generate_report_state
 from app.core import build_graph
 from app.core.runtime import graph_session, load_state_values, persist_runtime_state
 from app.core.wait_user import build_continue_state
@@ -244,9 +245,7 @@ async def generate_report(task_id: str) -> dict[str, Any]:
     state.report_requested = True
     state.stage = "report"
 
-    from app.core import _summarize_node
-
-    state = await _summarize_node(state)
+    state = await generate_report_state(state)
     async with graph_session(task_id) as (graph, config, backend):
         await graph.aupdate_state(config, state.model_dump())
         persist_runtime_state(task_id, state.model_dump(), backend=backend)

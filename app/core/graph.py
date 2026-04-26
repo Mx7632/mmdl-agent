@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from langgraph.graph import END, StateGraph
 
+from app.agents.report.service import generate_report_state
 from app.core.answer_node import answer_node
 from app.core.self_reflect import self_reflect_node
 from app.core.supervisor import (
@@ -65,10 +66,7 @@ def build_graph(*, checkpointer: Any = None, store: Any = None) -> Any:
     graph.add_node("self_reflect", self_reflect_node)
     graph.add_node("wait_user", wait_user_node)
     graph.add_node("answer", answer_node)
-
-    from app.core import _summarize_node
-
-    graph.add_node("report", _summarize_node)
+    graph.add_node("report", generate_report_state)
 
     graph.set_entry_point("load_data")
     graph.add_edge("load_data", "supervisor_plan")
