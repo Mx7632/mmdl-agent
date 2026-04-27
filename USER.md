@@ -156,3 +156,34 @@
   - `python -m pytest tests/test_phase1_multi_agent.py -q`
   - `python -m pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_image_anomaly_detection_router.py tests/test_graph_runtime.py tests/test_checkpoint_store.py -q`
   - 结果：`24 passed`
+
+### 2026-04-27 | 主文档收口与接口说明统一
+
+- 完成内容：
+  - 将 `README.md` 重写为当前项目唯一主文档，统一描述现有 FastAPI 路由、LangGraph 多 Agent 流程、前端入口、RAG、视觉后端路由、checkpoint 与记忆策略。
+  - 移除 README 中旧版 JSON 检测示例、旧链式 `anomaly_detect/summarize` 流程、旧多页面前端描述等过时内容。
+  - 在 README 中明确列出建议删除或归档的冗余文档，作为后续文档清理依据。
+- 影响范围：
+  - `README.md`
+  - `USER.md`
+- 验证结果：
+  - 本次为文档整理，未改变运行时代码。
+
+### 2026-04-27 | 过时文档清理
+
+- 完成内容：
+  - 删除已由主 README 合并覆盖或与当前接口不匹配的旧文档。
+  - 保留 `Docs/01-LangChain.ipynb`、`Docs/02-LangGraph.ipynb`、`Docs/03-LangSmith.ipynb` 作为学习笔记。
+  - 更新 README 文档维护策略，改为记录当前实际保留文档。
+- 影响范围：
+  - `README.md`
+  - `USER.md`
+  - `web/README.md`
+  - `Docs/api_docs.md`
+  - `Docs/function_docs.md`
+  - `Docs/开发指南.md`
+  - `Docs/2026-04-21-architecture_review.md`
+  - `Docs/2026-04-21-implementation_update.md`
+  - `Docs/agent_engineering_review.md`
+- 验证结果：
+  - 已确认目标文档删除完成，三个 notebook 未删除。
