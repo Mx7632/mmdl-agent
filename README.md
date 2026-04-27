@@ -1,399 +1,396 @@
 # MMDL-Agent
 
-一个用于构建多模态/多步骤智能代理（Agent）的框架，集成 LangChain + LangGraph，提供工业级异常处理、记忆管理与工具调用能力。
+MMDL-Agent 是一个面向工业视觉异常诊断的多 Agent 应用框架。项目以 FastAPI 提供 HTTP API，以 LangGraph 编排多步骤诊断流程，并集成视觉检测、RAG 知识检索、多轮问答、人工澄清、报告生成和运行状态持久化。
 
----
+当前主流程是：
 
-<a id="architecture"></a>
-
-## 🏗️ 项目架构
-
+```text
+上传图片 / 提交问题
+  -> Supervisor 规划专家 Agent
+  -> Vision Agent 检测与定位异常
+  -> Knowledge Agent 检索相似案例
+  -> Self Reflect 判断是否需要补充信息
+  -> Answer / Wait User / Report
 ```
+
+## 当前架构
+
+```text
 MMDL-Agent/
-├── main.py                       # FastAPI 启动入口
-├── pyproject.toml                # 项目依赖与构建配置
-├── README.md                     # 项目说明文档
-├── TESTING.md                    # 测试与 CI 说明
-├── tests/                        # 自动化测试用例
-│   ├── test_api.py               # API 层测试
-│   ├── test_agent.py             # Agent 与工作流测试
-│   ├── test_memory.py            # 记忆与检查点测试
-│   └── test_exceptions.py        # 异常体系测试
-├── web/                          # 前端 Web 界面
-│   ├── index.html                # 核心前端工作台
-│   └── detection.html            # 兼容跳转页（重定向到 index.html）
-└── app/                          # 核心后端框架
-    ├── api/
-    │   └── main.py              # HTTP 路由与中间件
-    ├── config/
-    │   └── settings.py          # 全局配置（模型、日志、超时等）
-    ├── core/
-    │   ├── agent.py             # Agent 核心类与执行逻辑
-    │   └── graph.py             # LangGraph 工作流定义
-    ├── exceptions/
-    │   └── base.py              # 统一异常体系（AppError + 子类）
-    ├── memory/
-    │   ├── state.py             # 执行状态与上下文
-    │   └── checkpoint.py        # 检查点与持久化
-    ├── prompts/
-    │   └── README.md            # 提示词模板说明
-    ├── schemas/
-    │   └── detection.py         # 数据模型（Pydantic）
-    ├── tools/
-    │   └── image_anomaly_detection.py # 异常检测工具实现
-    └── utils/
-        └── logging.py           # 日志与追踪工具
+├── main.py                         # FastAPI app 导出入口
+├── pyproject.toml                  # 项目依赖与构建配置
+├── README.md                       # 当前唯一主文档
+├── USER.md                         # 开发记录与交付记录
+├── app/
+│   ├── api/main.py                 # HTTP 路由、中间件、异常处理、静态文件挂载
+│   ├── agents/                     # supervisor / vision / knowledge / clarification / report
+│   ├── config/settings.py          # 环境变量配置
+│   ├── core/                       # LangGraph 节点与运行入口
+│   ├── exceptions/base.py          # 统一异常体系
+│   ├── memory/                     # DetectionState、记忆、checkpoint
+│   ├── orchestration/              # AgentEnvelope 与共享上下文模型
+│   ├── rag/                        # 数据集分析、向量库、检索、在线反馈
+│   ├── schemas/detection.py        # API 请求/响应模型
+│   ├── storage/postgres.py         # PostgreSQL runtime state 镜像
+│   └── tools/image_anomaly_detection.py
+├── services/anomalygpt_local/      # 可选本地 AnomalyGPT sidecar 服务
+├── tests/                          # 自动化测试
+└── web/
+    └── index.html                  # 单页核心工作台
 ```
 
----
+## 核心模块
 
-## 🛠️ 本地开发环境
+| 模块 | 职责 | 关键文件 |
+|---|---|---|
+| API 层 | 路由、CORS、Trace ID、异常响应、静态文件挂载 | `app/api/main.py` |
+| 工作流 | LangGraph 节点、条件路由、挂起/恢复 | `app/core/graph.py`, `app/core/agent.py` |
+| 多 Agent | 主控规划与专家执行 | `app/agents/` |
+| 视觉检测 | Qwen 视觉模型或专业 HTTP 后端路由 | `app/tools/image_anomaly_detection.py` |
+| RAG | 数据集建库、文本/图像检索、反馈入库 | `app/rag/` |
+| 记忆与持久化 | 多轮上下文、长期记忆、checkpoint | `app/memory/`, `app/core/runtime.py` |
+| 前端 | 图片上传、异常定位展示、多轮追问、报告展示 | `web/index.html` |
+| AnomalyGPT sidecar | 本地专业异常检测服务封装 | `services/anomalygpt_local/` |
 
-### 前置要求
+## 快速启动
 
-- **Python 3.11+**（Anaconda/Conda）
-- **Git**
-- **pip**（或 conda）
+### 1. 创建环境
 
-### 快速开始
-
-#### 1. 克隆项目
-
-```bash
-git clone https://github.com/Xhr313/MMDL-Agent.git
-cd MMDL-Agent
+```powershell
+conda create -n MMDL-Agent python=3.12
+conda activate MMDL-Agent
 ```
 
-#### 2. 创建并激活 Python 虚拟环境
+也可以使用 venv：
 
-如果使用 **Anaconda**：
-
-```bash
-conda create -n MMDL-Agent python=3.12.12 #创建虚拟环境
-conda activate MMDL-Agent #激活虚拟环境
-```
-
-或使用 **venv**：
-
-```bash
+```powershell
 python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# macOS/Linux
-source .venv/bin/activate
+.\.venv\Scripts\activate
 ```
 
-#### 3. 安装项目依赖
+### 2. 安装依赖
 
-```bash
+```powershell
 pip install -e .
 ```
 
-或者只安装必要的运行依赖：
+### 3. 配置环境变量
 
-```bash
-pip install fastapi uvicorn pydantic pydantic-settings python-dotenv langchain langgraph httpx orjson
+复制示例配置：
+
+```powershell
+Copy-Item .env.example .env
 ```
 
-#### 4. 启动 FastAPI 应用
-
-```bash
-python -m uvicorn main:app --reload
-```
-
-**预期输出：**
-
-```
-INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     Started server process [12345]
-INFO:     Application startup complete
-```
-
-#### 5. 验证服务运行
-
-打开浏览器或使用 curl 验证：
-
-```bash
-# 根路由（欢迎页面）
-curl http://127.0.0.1:8000/
-```
-
-**返回示例：**
-```json
-{
-  "app": "industrial-anomaly-agent",
-  "version": "0.1.0",
-  "message": "后端服务器已经启动成功",
-  "docs": "/docs",
-  "openapi_schema": "/openapi.json"
-}
-```
----
-
-## 📋 核心模块说明
-
-| 模块 | 职责 | 关键文件 |
-|-----|------|--------|
-| **API 层** | HTTP 路由、中间件、异常转换 | `app/api/main.py` |
-| **Agent 核心** | 执行流程、状态管理、工具调用 | `app/core/agent.py` |
-| **LangGraph** | 工作流定义与执行 | `app/core/graph.py` |
-| **异常体系** | 统一异常处理与上下文追踪 | `app/exceptions/base.py` |
-| **记忆管理** | 执行状态与检查点持久化 | `app/memory/state.py`, `app/memory/checkpoint.py` |
-| **数据模型** | 请求/响应 Pydantic Schema | `app/schemas/detection.py` |
-| **日志工具** | 追踪 ID、结构化日志 | `app/utils/logging.py` |
-| **测试套件** | 单元测试与集成测试 | `tests/`, `TESTING.md` |
-| **Web 前端** | 单页核心检测流程与兼容跳转页 | `web/index.html`, `web/*.html` |
-
-### 异常体系
-
-项目提供**结构化异常**便于错误处理与追踪：
-
-- `AppError`: 基础异常类（包含 `details`、`original_error`、HTTP 状态码）
-- `ModelError`: 模型调用失败
-- `ToolError` / `ToolNotFoundError` / `ToolExecutionError`: 工具相关错误
-- `ContextError` / `TokenLimitError`: 上下文与 Token 限制
-- `MaxTurnsError`: 执行轮次超限
-- `ResponseParseError`: 响应解析失败
-- `ConfigurationError`: 配置错误
-- `StreamError`: 流式处理错误
-
-<a id="detection-algorithm"></a>
-
-### 异常检测算法流（概览）
-
-- 客户端或 Web 前端向 `POST /v1/detect` 提交检测任务，请求体会被解析为 `DetectionTask`（见 `app/schemas/detection.py`）。
-- Agent 调用在 `app/tools/image_anomaly_detection.py` 中注册的检测工具。
-- 工具返回 `DetectionResult`，其中包含任务状态、异常列表、摘要与元数据，最终被封装为标准 API 响应返回给调用方。
-
----
-
-## 🚀 开发工作流
-
-### 新增 API 端点
-
-1. 在 `app/schemas/detection.py` 定义请求/响应数据模型
-2. 在 `app/api/main.py` 添加路由处理函数
-3. 在 `app/core/agent.py` 实现业务逻辑
-
-### 新增工具或模型
-
-1. 在 `app/tools/` 新建工具模块
-2. 在 `app/core/agent.py` 注册工具到 Agent
-3. 补充单元测试
-
-### 日志与调试
-
-使用 `app/utils/logging.py` 的统一日志接口：
-
-```python
-from app.utils.logging import setup_logger
-
-logger = setup_logger(trace_id="custom-trace-id")
-logger.info("Processing task")
-logger.error("Task failed", extra={"task_id": "123"})
-```
-
-### Web 前端
-
-- `web/` 目录提供纯静态 Web 前端，用于与后端 API（如 `/health`、`/v1/detect`）进行交互。
-- 推荐使用任意静态文件服务器或 IDE 插件（如 VS Code Live Server）打开 `web/index.html` 进行调试。
-- 更详细的前端结构与使用说明见 `web/README.md`。
-
----
-
-## 🧪 测试与代码检查
-
-```bash
-# 安装开发依赖
-pip install pytest ruff mypy
-
-# 运行测试
-pytest
-
-# 代码风格检查与修复
-ruff check --fix
-
-# 类型检查
-mypy app/
-```
-
-> 更完整的测试说明（覆盖率、并行运行、CI 集成等）请参考docs下的 `TESTING.md`。
-
----
-
-## 📖 API 示例
-
-### 1. 异常检测
-
-```bash
-POST http://127.0.0.1:8000/v1/detect
-Content-Type: application/json
-
-{
-  "task_id": "task-001",
-  "data": [...],
-  "threshold": 0.5
-}
-```
-
----
-
-## 🐛 常见问题
-
-| 问题 | 解决方案 |
-|------|--------|
-| `ModuleNotFoundError: No module named 'uvicorn'` | 运行 `pip install uvicorn fastapi` |
-| 端口被占用 | 更换端口 `python -m uvicorn main:app --port 8001` |
-| Conda 环境激活失败 | 使用 `conda init` 初始化 shell |
-
----
-
-## 📝 文件说明
-
-- `main.py`: 应用入口（引入 FastAPI 实例）
-- `pyproject.toml`: 项目元信息、依赖声明、工具配置
-- `app/config/settings.py`: 应用全局配置（模型、超时、日志等）
-- `app/api/main.py`: FastAPI 实例创建、路由注册、中间件配置
-
----
-
-## 🚀 v2 新增内容（2026-04）
-
-### 架构升级：链式流程 → 两阶段图
-
-原始链式流程（`load_data → anomaly_detect → summarize`）已重构为两阶段：
-
-| 阶段 | 状态 | 说明 |
-|------|------|------|
-| 循环自检图 | 已实现，未启用 | MAX_LOOP=3，置信度<0.7 或 unknown 触发循环，长期记忆参与决策 |
-| 对话图 | **当前使用** | 先回答，可多轮 chat，点击按钮触发报告生成 |
-
-### 新增后端文件
-
-| 文件 | 作用 |
-|------|------|
-| `app/core/answer_node.py` | 对话回答节点（只回答，不生成报告） |
-| `app/core/self_reflect.py` | 自检节点（循环图用） |
-| `app/core/wait_user.py` | 人工澄清节点 |
-| `app/core/supplement.py` | 补充分析节点 |
-| `app/core/__init__.py` | 节点模块导出 |
-| `app/core/agent.py` | 新增 `run_chat()`、`generate_report()` 方法 |
-| `app/memory/state.py` | 新增 `report_requested`、`loop_count`、`reflection_decision` 等字段 |
-| `app/memory/memory_manager.py` | 记忆管理器（新增） |
-| `app/memory/models.py` | 记忆数据模型（新增） |
-| `app/memory/config.py` | 记忆配置（新增） |
-| `app/memory/LRU_cache.py` | LRU 缓存（新增） |
-| `app/memory/utils.py` | 记忆工具函数（新增） |
-| `app/memory/__init__.py` | 记忆模块导出 |
-
-### 新增 API 端点
-
-| 端点 | 方法 | 作用 |
-|------|------|------|
-| `/v1/detect` | POST | 上传图片+问题，返回简洁回答（无报告） |
-| `/v1/chat` | POST | 多轮对话，基于已有检测状态 |
-| `/v1/generate_report` | POST | 基于已有状态生成完整报告 |
-| `/v1/detect_with_report` | POST | 检测+报告一次性返回（可选） |
-
-### 前端核心工作台（`web/index.html`）
-
-前端已收敛为单页核心流程，完整交互路径如下：
-
-```
-上传图片 → 开始检测（/v1/detect）
-    → AI 返回答案 + 内嵌异常标签
-    → 用户可多轮提问（/v1/chat）
-    → 提交追问（/v1/chat）或人工澄清（/v1/continue）
-    → 点击「生成报告」（/v1/generate_report）
-        → 结果区直接更新完整报告
-        → 页面内保留任务时间线与异常摘要
-```
-
-兼容考虑下，`frontend_chat.html`、`chat.html`、`detection.html`、`expert_inspection.html`、`rag.html` 已改为跳转页，统一回到 `index.html`。
-
-### 已知待改进项
-
-- `settings.py` 中 API Key 为硬编码，存在泄露风险，建议迁移至环境变量或密钥管理服务
-- 目前仅支持 `qwen3.5-plus` 模型
-- 记忆模块可进一步优化：语义搜索、记忆分层压缩、工具效果追踪、向量数据库集成
-
-### 本地运行
-
-```bash
-# 1. 进入项目目录
-cd D:\Graduation_project\MMDL
-
-# 2. 激活虚拟环境
-conda activate mmdl-agent
-
-# 3. 启动后端
-python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
-
-# 4. 打开前端（任选一种）
-# 方式一：直接在浏览器打开 web/index.html
-# 方式二：后端启动后访问 http://127.0.0.1:8000/web/index.html
-
-# 5. API 测试
-# 检测（无报告）
-curl -X POST http://127.0.0.1:8000/v1/detect \
-  -F "task_id=test-001" \
-  -F "asset_id=asset-001" \
-  -F "start_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -F "end_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -F "question=这张图片有什么异常？" \
-  -F "image=@C:/Users/simmer/Pictures/Camera Roll/anomaly.jpg"
-
-# 生成报告
-curl -X POST http://127.0.0.1:8000/v1/generate_report \
-  -H "Content-Type: application/json" \
-  -d '{"task_id": "test-001"}'
-```
-
-### Git 操作说明
-
-```bash
-# 查看当前变更
-git status
-
-# 添加所有变更（含新文件）
-git add .
-
-# 提交（填写自己的信息）
-git commit -m "feat: 重构为对话图架构，新增聊天前端和报告侧边栏"
-
-# 推送到远程
-git push origin main
-```
-
----
-
-## Vision Backend Routing
-
-- Default image inspection still uses the Qwen vision model configured by `APP_LLM_VISION_MODEL`.
-- Set `APP_VISION_DETECTOR_BACKEND=anomalygpt` to make uploaded images prefer the specialist backend by default.
-- Set `APP_PROFESSIONAL_VISION_DETECTOR_URL` to the HTTP endpoint of your specialist model service.
-- You can also override the backend per request with `parameters.tool_type`, for example `qwen3.5-plus` or `anomalygpt`.
-
-## Local AnomalyGPT Service
-
-- A local sidecar service scaffold is provided under `services/anomalygpt_local`.
-- It is designed for the official [AnomalyGPT GitHub](https://github.com/CASIA-LMC-Lab/AnomalyGPT) repository cloned on your own machine.
-- Deployment guide: [services/anomalygpt_local/README.md](/E:/Computer/Projects/20_products/anomaly-detection/mmdl-agent/services/anomalygpt_local/README.md)
-- Docker compose sidecar is also included under `services/anomalygpt_local/docker-compose.yml`.
-- Typical project-side config:
+常用配置：
 
 ```env
-APP_VISION_DETECTOR_BACKEND=anomalygpt
+APP_OPENAI_API_KEY=
+APP_LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+APP_LLM_MODEL=qwen3.5-plus
+APP_LLM_VISION_MODEL=qwen3.5-plus
+
+APP_CHECKPOINT_BACKEND=postgres
+APP_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mmdl_agent
+APP_DATABASE_SCHEMA=public
+
+APP_VISION_DETECTOR_BACKEND=qwen
 APP_PROFESSIONAL_VISION_DETECTOR_TYPE=anomalygpt
 APP_PROFESSIONAL_VISION_DETECTOR_URL=http://127.0.0.1:9001/detect
+
+APP_RAG_MULTIMODAL_EMBEDDING_MODEL=multimodal-embedding-v1
 ```
 
-## Development Journal
+说明：
 
-- Ongoing delivery notes are tracked in [USER.md](/E:/Computer/Projects/20_products/anomaly-detection/mmdl-agent/USER.md).
-- Rule: after each module or milestone is completed, update `USER.md` before the next Git commit.
+- `APP_OPENAI_API_KEY` 当前同时用于兼容 OpenAI 接口的 DashScope LLM 调用和 DashScope 多模态 embedding。
+- `APP_CHECKPOINT_BACKEND=postgres` 时需要配置可访问的 PostgreSQL；未配置数据库或依赖不可用时，运行时会回退到内存 checkpoint。
+- `APP_VISION_DETECTOR_BACKEND=qwen` 默认走通用视觉模型；设为 `anomalygpt` 时默认走专业 HTTP 后端。
 
-## Memory File Policy
+### 4. 启动后端
 
-- `app/data/memory/working_memory.json` is treated as a runtime-generated file and is ignored by Git.
-- A checked-in sample is provided at `app/data/memory/working_memory.example.json` for structure reference and onboarding.
+```powershell
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+
+打开前端：
+
+```text
+http://127.0.0.1:8000/web/index.html
+```
+
+也可以直接用浏览器打开 `web/index.html`，页面会调用同源或本地后端 API。
+
+## 前端工作流
+
+当前前端只维护一个主入口：`web/index.html`。
+
+主要操作：
+
+1. 填写 `asset_id`、问题描述并上传图片。
+2. 点击“开始检测”，调用 `POST /v1/detect`。
+3. 查看回答、异常标签、bbox 或异常热区 mask。
+4. 如果任务进入 `pending`，输入补充信息并调用 `POST /v1/continue`。
+5. 对已有任务继续追问，调用 `POST /v1/chat`。
+6. 点击“生成报告”，调用 `POST /v1/generate_report`。
+
+## 工作流细节
+
+主图定义在 `app/core/graph.py`：
+
+```text
+load_data
+  -> supervisor_plan
+  -> supervisor_execute 或 supervisor_merge
+  -> supervisor_merge
+  -> wait_user 或 self_reflect
+  -> supervisor_plan 或 answer
+  -> report 或 END
+```
+
+专家 Agent：
+
+- `SupervisorAgent`：根据任务状态、图像输入、问题意图和已有输出规划专家。
+- `VisionAgent`：调用图像异常检测工具，返回异常列表、定位信息和元数据。
+- `KnowledgeAgent`：从 RAG 检索相似工业异常案例。
+- `ClarificationAgent`：当置信度或异常类型不明确时生成待澄清问题。
+- `ReportAgent`：复用报告生成服务输出完整诊断报告。
+
+## 主流程 API
+
+### `GET /`
+
+返回应用基本信息。
+
+> 当前 FastAPI 配置中 `docs_url=None`，不要把 `/docs` 当作可靠入口；可使用 `/openapi.json` 查看 OpenAPI schema。
+
+### `GET /health`
+
+健康检查。
+
+响应示例：
+
+```json
+{
+  "status": "ok",
+  "timestamp": 1770000000.0
+}
+```
+
+### `POST /v1/detect`
+
+首次检测接口。当前支持 `multipart/form-data`。
+
+表单字段：
+
+| 字段 | 必填 | 说明 |
+|---|---:|---|
+| `task_id` | 是 | 任务 ID |
+| `asset_id` | 是 | 设备或资产 ID |
+| `start_time` | 是 | 开始时间，字符串即可，建议 ISO8601 |
+| `end_time` | 是 | 结束时间，字符串即可，建议 ISO8601 |
+| `question` | 否 | 用户问题 |
+| `data_source` | 否 | 数据来源 |
+| `parameters` | 否 | JSON 字符串 |
+| `image` | 否 | 图片文件；不传则为文本模式 |
+
+示例：
+
+```powershell
+curl -X POST http://127.0.0.1:8000/v1/detect `
+  -F "task_id=test-001" `
+  -F "asset_id=pump-001" `
+  -F "start_time=2026-04-27T10:00:00+08:00" `
+  -F "end_time=2026-04-27T10:05:00+08:00" `
+  -F "question=这张图片是否存在裂纹或破损？" `
+  -F "parameters={\"tool_type\":\"qwen\",\"require_localization\":true}" `
+  -F "image=@C:\path\to\image.jpg"
+```
+
+成功响应字段通常包括：
+
+- `task_id`
+- `status`: `success` 或 `pending`
+- `answer`
+- `anomalies`
+- `metadata.logs`
+- `metadata.agent_trace`
+- `metadata.result_metadata`
+
+`pending` 响应会额外包含：
+
+- `pending_clarification`
+- `pending_question`
+- `conversation_history`
+- `agent_trace`
+
+### `POST /v1/chat`
+
+基于已有任务继续追问。
+
+请求体：
+
+```json
+{
+  "task_id": "test-001",
+  "question": "这个异常可能是什么原因导致的？"
+}
+```
+
+### `POST /v1/continue`
+
+为 pending 任务提交人工澄清。
+
+请求体：
+
+```json
+{
+  "task_id": "test-001",
+  "user_reply": "异常位于图像右下角，现场观察到轻微裂纹。"
+}
+```
+
+### `GET /v1/pending/{task_id}`
+
+查询某个任务是否处于待澄清状态。
+
+### `POST /v1/generate_report`
+
+基于已有任务状态生成完整报告。
+
+请求体：
+
+```json
+{
+  "task_id": "test-001"
+}
+```
+
+### `POST /v1/detect_with_report`
+
+一次性执行检测并生成报告。请求格式与 `/v1/detect` 相同；如果检测结果为 `pending`，会直接返回 pending，不生成报告。
+
+### `POST /v1/stream`
+
+SSE 流式接口，使用 `multipart/form-data`。
+
+常见事件：
+
+- `node_start`
+- `tool_start`
+- `tool_end`
+- `stream`
+- `final_result`
+- `error`
+- `close`
+
+## RAG API
+
+RAG 由 `app/rag/service.py` 统一管理，向量库默认写入 `data/rag/chroma`。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `POST` | `/v1/rag/build` | 同步扫描数据集并构建向量索引 |
+| `POST` | `/v1/rag/build/start` | 异步启动建库任务 |
+| `GET` | `/v1/rag/build/status/{task_id}` | 查询异步建库进度 |
+| `POST` | `/v1/rag/query` | 按文本检索相似异常案例 |
+| `POST` | `/v1/rag/query-image` | 按图片路径检索相似异常案例 |
+| `POST` | `/v1/rag/generate-descriptions` | 为数据集异常样本生成描述 |
+| `POST` | `/v1/rag/ingest-feedback` | 将高置信用户反馈写入向量库 |
+
+文本检索示例：
+
+```json
+{
+  "query_text": "表面划痕，靠近边缘",
+  "category": "capsule",
+  "top_k": 3
+}
+```
+
+反馈入库示例：
+
+```json
+{
+  "image_path": "data/uploads/case-001.png",
+  "category": "capsule",
+  "user_description": "右侧边缘存在细长裂纹",
+  "model_confidence": 0.93,
+  "is_anomaly": true,
+  "anomaly_type": "crack",
+  "severity": "medium"
+}
+```
+
+只有 `model_confidence >= APP_RAG_LEARNING_THRESHOLD` 的反馈会被接受。
+
+## 视觉后端路由
+
+视觉检测入口是 `ImageAnomalyDetectionTool`。
+
+可选后端：
+
+- `qwen`：调用兼容 OpenAI 接口的视觉模型，默认模型来自 `APP_LLM_VISION_MODEL`。
+- `anomalygpt` / `professional`：调用 `APP_PROFESSIONAL_VISION_DETECTOR_URL` 指向的专业 HTTP 服务。
+
+全局默认：
+
+```env
+APP_VISION_DETECTOR_BACKEND=qwen
+```
+
+单次请求覆盖：
+
+```json
+{
+  "tool_type": "anomalygpt",
+  "require_localization": true,
+  "detector_params": {
+    "mask_threshold": 0.5
+  }
+}
+```
+
+本地 AnomalyGPT sidecar 的部署细节见 `services/anomalygpt_local/README.md`。
+
+## 状态与记忆
+
+### Checkpoint
+
+运行时通过 `app/core/runtime.py` 创建 LangGraph session。
+
+- `APP_CHECKPOINT_BACKEND=memory`：进程内保存，多轮任务只在当前后端进程生命周期内有效。
+- `APP_CHECKPOINT_BACKEND=postgres`：使用 LangGraph Postgres saver；同时把应用级状态镜像写入 `agent_run_state` 表。
+
+### Memory
+
+`app/memory/memory_manager.py` 管理工作记忆、短期记忆、长期记忆和工具上下文。
+
+运行时文件策略：
+
+- `app/data/memory/working_memory.json` 是运行时生成文件，不应提交。
+- `app/data/memory/working_memory.example.json` 是结构示例。
+
+## 测试与检查
+
+```powershell
+python -m compileall app -q
+python -m compileall services -q
+python -m pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_image_anomaly_detection_router.py tests/test_graph_runtime.py tests/test_checkpoint_store.py -q
+```
+
+完整测试：
+
+```powershell
+pytest -q
+```
+
+## 文档维护策略
+
+当前项目以 `README.md` 作为唯一主文档，避免接口说明分散后再次过时。
+
+保留文档：
+
+- 保留：`README.md`、`USER.md`、`services/anomalygpt_local/README.md`
+- 可保留为模块说明：`app/prompts/README.md`
+- 保留学习笔记：`Docs/01-LangChain.ipynb`、`Docs/02-LangGraph.ipynb`、`Docs/03-LangSmith.ipynb`
