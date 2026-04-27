@@ -200,3 +200,143 @@
   - `node` 解析 `web/index.html` 内联脚本语法检查
   - `pytest tests/test_main_flow_smoke.py tests/test_phase1_multi_agent.py tests/test_graph_runtime.py -q`
   - 结果：`22 passed`
+
+### 2026-04-27 | Architecture Convergence Phase 1 | services split and orchestration cleanup
+- 完成内容：
+  - 将任务运行入口从 `app/core/agent.py` 拆分到 `app/services/`：分别落到 `task_runner.py`、`streaming.py`、`state_rehydration.py`，降低运行入口、SSE、状态恢复之间的耦合。
+  - 将 supervisor 运行时从 `app/core/supervisor.py` 拆分到 `app/orchestration/`：新增 `planner_runtime.py`、`step_executor.py`、`merge_adapters.py`、`events.py`。
+  - 保留 `app/core/agent.py` 与 `app/core/supervisor.py` 作为兼容门面，避免现有 graph 与测试导入路径立即失效。
+  - 为 `planner / executor / consolidate / supplement` 补充 legacy 标记，明确它们不是当前 supervisor 主链路的一部分。
+  - 新增 `Docs/architecture.md`，说明现役分层、主流程、运行入口、shared context 与 legacy 模块边界。
+- 影响范围：
+  - `app/services/`
+  - `app/orchestration/`
+  - `app/core/agent.py`
+  - `app/core/supervisor.py`
+  - `app/api/main.py`
+  - `app/core/planner.py`
+  - `app/core/executor.py`
+  - `app/core/consolidate.py`
+  - `app/core/supplement.py`
+  - `tests/test_main_flow_smoke.py`
+  - `tests/test_phase1_multi_agent.py`
+  - `Docs/architecture.md`
+- 验证结果：
+  - `pytest tests/test_agent.py tests/test_main_flow_smoke.py tests/test_phase1_multi_agent.py tests/test_graph_runtime.py -q`
+  - `node` 解析 `web/index.html` 内联脚本语法检查
+  - 结果：`37 passed, 1 skipped`
+
+### 2026-04-27 | Architecture Convergence Phase 2A | shared context access helpers
+- 完成内容：
+  - 新增 `app/orchestration/context_store.py`，统一管理 `pending_clarification / pending_question / rag_context` 这类核心业务上下文的读写与兼容 shadow 同步。
+  - `merge_adapters`、`wait_user`、`state_rehydration`、`answer_node` 改为通过 helper 访问共享上下文，减少 `state.context[...]` 的分散手写。
+  - 保留 `context` 兼容字段输出，但将 `shared_context` 作为优先读取来源，为后续继续收敛 `context` 做准备。
+- 影响范围：
+  - `app/orchestration/context_store.py`
+  - `app/orchestration/merge_adapters.py`
+  - `app/core/wait_user.py`
+  - `app/core/answer_node.py`
+  - `app/services/state_rehydration.py`
+  - `tests/test_phase1_multi_agent.py`
+- 验证结果：
+  - `pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py tests/test_agent.py -q`
+  - `node` 解析 `web/index.html` 内联脚本语法检查
+  - 结果：`37 passed, 1 skipped`
+
+### 2026-04-27 | Architecture Convergence Phase 2B | state runtime grouping views
+- 完成内容：
+  - 在 `app/memory/state.py` 中新增 `TaskRuntimeState`、`OrchestrationRuntimeState`、`DomainRuntimeState`，为 `DetectionState` 提供正式的分组视图。
+  - 新增 `task_runtime()`、`orchestration_runtime()`、`domain_runtime()`，将任务输入/会话、编排运行态、领域结果上下文按职责分组输出。
+  - 保持现有 checkpoint 顶层结构不变，先用视图方式为后续更彻底的状态拆分铺路，降低一次性重构风险。
+  - 在 `Docs/architecture.md` 中补充 state grouping 说明，明确这是未来状态模型收敛的迁移路径。
+- 影响范围：
+  - `app/memory/state.py`
+  - `tests/test_phase1_multi_agent.py`
+  - `Docs/architecture.md`
+- 验证结果：
+  - `pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py tests/test_agent.py -q`
+  - 结果：`37 passed, 1 skipped`
+
+### 2026-04-27 | Architecture Convergence Phase 2C | runtime views consumed in core paths
+- 完成内容：
+  - 将 graph 路由判断改为优先读取 `task_runtime()`、`orchestration_runtime()`、`domain_runtime()`，让 `execution_plan / reflection_decision / report_requested / clarification` 这类分层边界在核心流程中真正被消费。
+  - `self_reflect_node` 改为通过 runtime view 读取 `loop_count` 与 task parameters，减少对 `DetectionState` 顶层字段的直接耦合。
+  - `answer_node` 改为通过 `task_runtime()` 读取任务与会话历史，开始把最终回答节点对顶层 state 平面的依赖收窄。
+  - `planner_runtime` 的执行入口改为通过 `orchestration_runtime()` 读取计划与 step 完成态，给后续更彻底的状态拆分继续铺路。
+- 影响范围：
+  - `app/core/graph.py`
+  - `app/core/self_reflect.py`
+  - `app/core/answer_node.py`
+  - `app/orchestration/planner_runtime.py`
+- 验证结果：
+  - `pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py tests/test_agent.py -q`
+  - 结果：`37 passed, 1 skipped`
+
+### 2026-04-27 | Architecture Convergence Phase 2D | runtime apply helpers for write paths
+- 完成内容：
+  - 在 `DetectionState` 中新增 `apply_task_runtime()`、`apply_orchestration_runtime()`、`apply_domain_runtime()`，为 grouped runtime 提供正式写回入口。
+  - `prepare_followup_state()` 改为通过 runtime apply helpers 重置 follow-up 轮次所需字段，减少对顶层 state 字段的散写。
+  - `wait_user_node()` 改为通过 `task_runtime` / `orchestration_runtime` 更新会话、挂起恢复事件与 `needs_user_input` 状态，让 grouped runtime 开始承担写路径职责。
+  - 新增测试覆盖 runtime apply helpers，确认分组视图不仅可读，也能稳定写回主 state。
+- 影响范围：
+  - `app/memory/state.py`
+  - `app/services/state_rehydration.py`
+  - `app/core/wait_user.py`
+  - `tests/test_phase1_multi_agent.py`
+- 验证结果：
+  - `pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py tests/test_agent.py -q`
+  - 结果：`38 passed, 1 skipped`
+
+### 2026-04-27 | Architecture Convergence Phase 2E | orchestration writes via grouped runtime
+- 完成内容：
+  - `supervisor_plan_node()` 与 `supervisor_execute_node()` 开始通过 `apply_orchestration_runtime()` / `apply_domain_runtime()` 回写执行计划、step 状态、attempt、step outputs 与 agent outputs。
+  - `supervisor_merge_node()` 相关 adapters 开始通过 grouped runtime 写回 `tool_outputs`、`shared_context`、`unknown_anomaly_types` 与 `needs_user_input`，减少 orchestration 层对 `DetectionState` 顶层字段的散写。
+  - 补齐 `execution_events` 在顶层 state 与 orchestration runtime 视图之间的同步，避免事件 append 后被旧视图覆盖。
+- 影响范围：
+  - `app/orchestration/planner_runtime.py`
+  - `app/orchestration/merge_adapters.py`
+- 验证结果：
+  - `pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py tests/test_agent.py -q`
+  - 结果：`38 passed, 1 skipped`
+
+### 2026-04-27 | Architecture Convergence Phase 2F | result-side writes via grouped runtime
+- 完成内容：
+  - 重写 `app/core/answer_node.py` 为干净的 ASCII-safe 实现，并让回答节点通过 `task_runtime()` / `apply_task_runtime()` 与 `domain_runtime()` 更新会话步数、结果上下文与回答落盘。
+  - 重写 `app/agents/report/service.py` 为干净实现，并让报告生成路径通过 grouped runtime 读取 task/orchestration/domain 信息，最终通过 `apply_domain_runtime()` 回写 report 结果与 shared context。
+  - 清理 answer/report 两个结果侧核心文件的历史编码噪声，降低后续继续重构时的语法与文本损坏风险。
+- 影响范围：
+  - `app/core/answer_node.py`
+  - `app/agents/report/service.py`
+- 验证结果：
+  - `python -m py_compile app/core/answer_node.py app/agents/report/service.py`
+  - `pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py tests/test_agent.py -q`
+  - 结果：`38 passed, 1 skipped`
+
+### 2026-04-27 | Architecture Convergence Phase 2G | top-level compatibility clarified and supervisor reads tightened
+- 完成内容：
+  - 为 `DetectionState` 补充顶层状态说明，明确 flat state 继续保留用于 checkpoint 兼容，但新代码应优先走 grouped runtime 视图。
+  - `SupervisorAgent` 改为优先通过 `task_runtime()`、`orchestration_runtime()`、`domain_runtime()` 读取 `report_requested`、`needs_user_input`、`retry_*`、`agent_outputs`、`shared_context` 等关键状态。
+  - 让 supervisor 规划层成为更明确的“runtime view first” 消费者，减少对 `DetectionState` 顶层字段的直接读取耦合。
+- 影响范围：
+  - `app/memory/state.py`
+  - `app/agents/supervisor/agent.py`
+- 验证结果：
+  - `pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py tests/test_agent.py -q`
+  - 结果：`38 passed, 1 skipped`
+
+### 2026-04-27 | Architecture Convergence Phase 2H | active path runtime-view-first completion
+- 完成内容：
+  - `self_reflect`、`wait_user`、`step_executor`、`task_runner.generate_report` 等剩余现役模块继续收敛到 grouped runtime 读写方式。
+  - `planner_runtime` 中 agent trace 的写回也纳入 `apply_domain_runtime()` 路径，减少 active path 上对顶层 state 的散写残留。
+  - `Docs/architecture.md` 补充完成态说明：现役主链路已经达到 runtime-view-first，顶层字段主要承担 checkpoint 与兼容职责。
+- 影响范围：
+  - `app/core/self_reflect.py`
+  - `app/core/wait_user.py`
+  - `app/orchestration/step_executor.py`
+  - `app/orchestration/planner_runtime.py`
+  - `app/services/task_runner.py`
+  - `Docs/architecture.md`
+- 验证结果：
+  - `python -m py_compile app/core/self_reflect.py app/core/wait_user.py app/orchestration/step_executor.py app/orchestration/planner_runtime.py app/services/task_runner.py`
+  - `pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py tests/test_agent.py -q`
+  - 结果：`38 passed, 1 skipped`

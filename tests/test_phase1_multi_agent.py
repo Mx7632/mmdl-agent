@@ -43,6 +43,77 @@ def test_supervisor_fallback_returns_structured_vision_plan(monkeypatch: pytest.
     assert plan.reason == "fallback routing"
 
 
+def test_detection_state_runtime_views_group_fields():
+    state = build_state()
+    state.conversation_history.append({"role": "user", "content": "Need a second pass."})
+    state.user_reply = "Operator confirmed the defect."
+    state.current_step = 3
+    state.report_requested = True
+    state.stage = "report"
+    state.active_agent = "vision"
+    state.execution_plan = {"steps": [{"id": "vision-1", "agent": "vision"}]}
+    state.step_status["vision-1"] = "success"
+    state.step_attempts["vision"] = 1
+    state.execution_events.append({"type": "step_completed", "step_id": "vision-1"})
+    state.loop_count = 2
+    state.needs_user_input = True
+    state.retry_target = "vision"
+    state.shared_context["knowledge"] = {"prompt_context": "retrieved context"}
+    state.agent_outputs["vision"] = {"payload": {"anomalies": [{"type": "scratch"}]}}
+
+    task_runtime = state.task_runtime()
+    orchestration_runtime = state.orchestration_runtime()
+    domain_runtime = state.domain_runtime()
+
+    assert task_runtime.task.task_id == state.task.task_id
+    assert task_runtime.user_reply == "Operator confirmed the defect."
+    assert task_runtime.current_step == 3
+    assert task_runtime.report_requested is True
+    assert orchestration_runtime.active_agent == "vision"
+    assert orchestration_runtime.execution_plan["steps"][0]["agent"] == "vision"
+    assert orchestration_runtime.step_status["vision-1"] == "success"
+    assert orchestration_runtime.needs_user_input is True
+    assert orchestration_runtime.retry_target == "vision"
+    assert domain_runtime.shared_context.knowledge is not None
+    assert domain_runtime.shared_context.knowledge.prompt_context == "retrieved context"
+    assert "vision" in domain_runtime.agent_outputs
+
+
+def test_detection_state_runtime_apply_helpers():
+    state = build_state()
+
+    task_runtime = state.task_runtime()
+    task_runtime.current_step = 5
+    task_runtime.report_requested = True
+    task_runtime.user_reply = "confirmed"
+    task_runtime.conversation_history.append({"role": "user", "content": "please continue"})
+    state.apply_task_runtime(task_runtime)
+
+    orchestration_runtime = state.orchestration_runtime()
+    orchestration_runtime.loop_count = 4
+    orchestration_runtime.needs_user_input = True
+    orchestration_runtime.retry_target = "knowledge"
+    orchestration_runtime.execution_plan = {"steps": [{"id": "knowledge-1", "agent": "knowledge"}]}
+    state.apply_orchestration_runtime(orchestration_runtime)
+
+    domain_runtime = state.domain_runtime()
+    domain_runtime.shared_context["knowledge"] = {"prompt_context": "cases"}
+    domain_runtime.agent_outputs["knowledge"] = {"payload": {"rows": [{"id": "case-1"}]}}
+    state.apply_domain_runtime(domain_runtime)
+
+    assert state.current_step == 5
+    assert state.report_requested is True
+    assert state.user_reply == "confirmed"
+    assert state.conversation_history[-1]["content"] == "please continue"
+    assert state.loop_count == 4
+    assert state.needs_user_input is True
+    assert state.retry_target == "knowledge"
+    assert state.execution_plan["steps"][0]["agent"] == "knowledge"
+    assert state.shared_context.knowledge is not None
+    assert state.shared_context.knowledge.prompt_context == "cases"
+    assert "knowledge" in state.agent_outputs
+
+
 def test_supervisor_fallback_adds_knowledge_for_reasoning_questions(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("app.agents.supervisor.agent.settings.openai_api_key", "")
     supervisor = get_supervisor_agent()
@@ -254,7 +325,9 @@ def test_supervisor_merge_applies_all_registered_adapters():
     assert updated.shared_context.clarification is not None
     assert updated.shared_context.report is not None
     assert updated.context["rag_context"] == "retrieved context"
+    assert updated.shared_context.knowledge.prompt_context == "retrieved context"
     assert updated.context["pending_question"] == "Is the defect near the upper edge?"
+    assert updated.shared_context.clarification.pending_question == "Is the defect near the upper edge?"
     assert updated.needs_user_input is True
     assert updated.result.answer == "vision answer"
     assert updated.result.summary == "final report summary"
@@ -362,7 +435,7 @@ def test_clarification_merge_and_pending_lookup(monkeypatch: pytest.MonkeyPatch)
         async def fake_load_state_values(task_id: str):
             return merged_state.model_dump(), "memory"
 
-        monkeypatch.setattr("app.core.agent.load_state_values", fake_load_state_values)
+        monkeypatch.setattr("app.services.task_runner.load_state_values", fake_load_state_values)
         pending = await get_pending_task(merged_state.task.task_id)
         assert pending is not None
         assert pending["pending_question"] == merged_state.context["pending_question"]
@@ -371,7 +444,7 @@ def test_clarification_merge_and_pending_lookup(monkeypatch: pytest.MonkeyPatch)
         async def fake_missing_state_values(task_id: str):
             return None, "memory"
 
-        monkeypatch.setattr("app.core.agent.load_state_values", fake_missing_state_values)
+        monkeypatch.setattr("app.services.task_runner.load_state_values", fake_missing_state_values)
         pending = await get_pending_task("missing-task")
         assert pending is None
 
@@ -430,9 +503,9 @@ def test_stream_detection_emits_execution_events_and_final_metadata(monkeypatch:
     async def fake_load_state_values(task_id: str):
         return None, "memory"
 
-    monkeypatch.setattr("app.core.agent.graph_session", fake_graph_session)
-    monkeypatch.setattr("app.core.agent.load_state_values", fake_load_state_values)
-    monkeypatch.setattr("app.core.agent.persist_runtime_state", lambda task_id, state, backend: None)
+    monkeypatch.setattr("app.services.streaming.graph_session", fake_graph_session)
+    monkeypatch.setattr("app.services.streaming.load_state_values", fake_load_state_values)
+    monkeypatch.setattr("app.services.streaming.persist_runtime_state", lambda task_id, state, backend: None)
 
     async def collect():
         chunks: list[str] = []

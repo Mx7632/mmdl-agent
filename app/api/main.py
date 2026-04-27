@@ -16,8 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.config.settings import settings
-from app.core.agent import run_detection, continue_detection, get_pending_task, run_chat, generate_report
 from app.exceptions.base import AppError, DataMissingError, ResponseParseError
+from app.services import continue_detection, generate_report, get_pending_task, run_chat, run_detection
 from app.schemas.detection import DetectionResult, DetectionTask
 from app.schemas.detection import (
     RagBuildRequest,
@@ -484,7 +484,7 @@ async def stream_chat(request: Request):
         else:
             logger.info("[stream_chat] No image upload detected in current request")
 
-        from app.core.agent import stream_continue_detection, stream_detection
+        from app.services import stream_continue_detection, stream_detection
         
         async def wrapped_stream():
             try:

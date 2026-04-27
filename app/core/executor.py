@@ -1,5 +1,8 @@
 """
 Executor node for running planner-selected tools.
+
+LEGACY: this module is retained for reference only and is not used by the
+current supervisor-based graph in app/core/graph.py.
 """
 
 from __future__ import annotations

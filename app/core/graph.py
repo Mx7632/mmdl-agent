@@ -27,7 +27,7 @@ async def _load_data_node(state: DetectionState) -> DetectionState:
 
 
 def _route_after_supervisor_plan(state: DetectionState) -> Literal["supervisor_execute", "supervisor_merge"]:
-    execution_plan = state.execution_plan or {}
+    execution_plan = state.orchestration_runtime().execution_plan or {}
     planned_steps = execution_plan.get("steps") or []
     if planned_steps:
         return "supervisor_execute"
@@ -35,14 +35,14 @@ def _route_after_supervisor_plan(state: DetectionState) -> Literal["supervisor_e
 
 
 def _route_after_supervisor_merge(state: DetectionState) -> Literal["wait_user", "self_reflect"]:
-    clarification_ctx = state.shared_context.clarification
-    if state.needs_user_input and clarification_ctx and clarification_ctx.pending_question:
+    clarification_ctx = state.domain_runtime().shared_context.clarification
+    if state.orchestration_runtime().needs_user_input and clarification_ctx and clarification_ctx.pending_question:
         return "wait_user"
     return "self_reflect"
 
 
 def _route_after_reflect(state: DetectionState) -> Literal["supervisor_plan", "answer"]:
-    decision = state.reflection_decision or "proceed"
+    decision = state.orchestration_runtime().reflection_decision or "proceed"
     if decision in {"need_user", "retry"}:
         return "supervisor_plan"
     return "answer"
@@ -55,7 +55,7 @@ def _route_after_wait_user(state: DetectionState) -> Literal["supervisor_plan", 
 
 
 def _route_after_answer(state: DetectionState) -> Literal["report", END]:
-    if state.report_requested:
+    if state.task_runtime().report_requested:
         return "report"
     return END
 

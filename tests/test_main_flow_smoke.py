@@ -199,7 +199,7 @@ def test_stream_endpoint_dispatches_continue_flow(monkeypatch):
         )
         yield "event: close\ndata: close\n\n"
 
-    monkeypatch.setattr("app.core.agent.stream_continue_detection", fake_stream_continue_detection)
+    monkeypatch.setattr("app.services.stream_continue_detection", fake_stream_continue_detection)
 
     response = client.post(
         "/v1/stream",
