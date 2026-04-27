@@ -156,3 +156,47 @@
   - `python -m pytest tests/test_phase1_multi_agent.py -q`
   - `python -m pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_image_anomaly_detection_router.py tests/test_graph_runtime.py tests/test_checkpoint_store.py -q`
   - 结果：`24 passed`
+### 2026-04-27 | Multi-Agent Phase 4A/4B | structured execution plan + actionable retry
+- 完成内容：
+  - 将 supervisor 规划结果从扁平 `planned_agents` 升级为结构化 `execution_plan.steps`，每个 step 记录 `id / agent / goal / depends_on / retryable`。
+  - 扩展 `DetectionState`，新增 `execution_plan`、`step_status`、`step_attempts`、`step_outputs`、`last_failed_step` 以及 `retry_target / retry_reason / retry_strategy`。
+  - 改造 `supervisor_plan_node` 与 `supervisor_execute_node`，按结构化 step 执行并把 step 级状态写回 runtime metadata。
+  - 改造 `self_reflect_node`，当判定需要 retry 时输出明确的 retry 目标和策略，不再只返回抽象的 `retry` 决策。
+  - 调整主运行时返回与 SSE 节点观测，补充 `execution_plan / step_status / step_attempts`，并切换到真实 supervisor 节点名。
+  - 在执行层新增按依赖分批执行能力：同一批无依赖 step 支持并发，跨批次保持顺序，作为后续更完整 DAG 编排的基础。
+  - 将 `supervisor_merge_node` 重构为 agent-specific merge adapters，降低对 `vision / knowledge / clarification / report` 的硬编码耦合，为后续新增 specialist agent 预留稳定扩展点。
+  - 新增 `execution_events` 时间线，记录 `plan_created / step_started / step_completed / step_failed / task_suspended / task_resumed` 等事件，并同步暴露到 API metadata、pending 查询结果与 SSE `execution_event` / `final_result.metadata`。
+  - 前端主工作台新增 multi-agent timeline 面板，基于 `execution_plan / execution_events / step_status / step_attempts` 渲染 step 概览与事件流，帮助用户直接观察 supervisor 编排过程。
+  - 流式接口 `final_result` 补充 answer / anomalies / pending 信息，前端首轮检测与追问切换到 `/v1/stream`，执行过程中可实时滚动展示 execution events 与增量回答。
+  - `/v1/stream` 新增 continue 分支：表单携带 `user_reply` 时走流式继续澄清链路，前端 `continueTask()` 同步切换为实时执行模式，三条主路径（detect / chat / continue）现已统一到同一套 timeline 更新机制。
+- 影响范围：
+  - `app/agents/supervisor/agent.py`
+  - `app/agents/supervisor/__init__.py`
+  - `app/core/supervisor.py`
+  - `app/core/graph.py`
+  - `app/core/self_reflect.py`
+  - `app/core/agent.py`
+  - `app/core/wait_user.py`
+  - `app/memory/state.py`
+  - `tests/test_phase1_multi_agent.py`
+  - `tests/test_main_flow_smoke.py`
+  - `web/index.html`
+- 验证结果：
+  - `pytest tests/test_phase1_multi_agent.py -q`
+  - `pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py -q`
+  - `node` 解析 `web/index.html` 内联脚本语法检查
+  - `pytest tests/test_main_flow_smoke.py -q`
+  - 结果：`22 passed`，前端主流程与流式 continue 分支通过
+
+### 2026-04-27 | Frontend Timeline UX | filters, collapse, detail inspector
+- ������ݣ�
+  - Ϊ multi-agent timeline �������״̬ɸѡ��`ȫ�� / ������ / ʧ�� / �ȴ� / ���`������������ʱ���Կ��پ۽��쳣�͹���ڵ㡣
+  - ���� `Steps / Events` �۵����أ��¼�������ʱ����������һ�࣬������ǰ�����ɨ��Ч�ʡ�
+  - ����������壬��� step ���¼���ɲ鿴 `agent / step_id / attempt / depends_on` �ȹؼ��ֶκ�ԭʼ JSON�����㾫ȷ���ϡ�
+  - timeline �ڲ���Ϊ������ + �¼��� + ����������������ṹ��ͬʱ�����ƶ��˵���չʾ��
+- Ӱ�췶Χ��
+  - `web/index.html`
+- ��֤�����
+  - `node` ���� `web/index.html` �����ű��﷨���
+  - `pytest tests/test_main_flow_smoke.py tests/test_phase1_multi_agent.py tests/test_graph_runtime.py -q`
+  - �����`22 passed`

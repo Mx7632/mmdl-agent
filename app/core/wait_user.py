@@ -24,6 +24,13 @@ async def wait_user_node(state: DetectionState) -> DetectionState:
         state.logs.append(
             f"[WaitUser] Received user reply, conversation turns={len(state.conversation_history)}"
         )
+        state.execution_events.append(
+            {
+                "type": "task_resumed",
+                "task_id": state.task.task_id,
+                "conversation_turns": len(state.conversation_history),
+            }
+        )
         state.user_reply = None
         state.needs_user_input = False
     else:
@@ -33,10 +40,26 @@ async def wait_user_node(state: DetectionState) -> DetectionState:
             state.logs.append(
                 f"[WaitUser] Suspended for clarification: {clarification_ctx.unknown_anomaly_types}"
             )
+            state.execution_events.append(
+                {
+                    "type": "task_suspended",
+                    "task_id": state.task.task_id,
+                    "pending_question": clarification_ctx.pending_question,
+                    "unknown_anomaly_types": list(clarification_ctx.unknown_anomaly_types),
+                }
+            )
         else:
-            state.context["pending_clarification"] = "需要补充用户信息。"
-            state.context["pending_question"] = "请补充现场观察到的具体现象。"
+            state.context["pending_clarification"] = "Additional user information is required."
+            state.context["pending_question"] = "Please provide more concrete observations from the site."
             state.logs.append("[WaitUser] Suspended without structured clarification context")
+            state.execution_events.append(
+                {
+                    "type": "task_suspended",
+                    "task_id": state.task.task_id,
+                    "pending_question": state.context["pending_question"],
+                    "unknown_anomaly_types": [],
+                }
+            )
 
     return state
 

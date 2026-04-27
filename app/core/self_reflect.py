@@ -38,22 +38,23 @@ def _build_reflection_prompt(anomalies: list[Any], history_text: str) -> str:
         for item in anomalies
         if isinstance(item, dict)
     )
-    return f"""你是工业异常检测质量审核员。
+    return f"""You are auditing the quality of an industrial anomaly diagnosis.
+Assess whether the current anomaly result is strong enough to continue.
 
-请评估以下异常检测结果是否足以继续输出结论。
+Current anomalies:
+{anomaly_str or '(none)'}
 
-## 本次异常
-{anomaly_str or '（无异常）'}
+History:
+{history_text or '(none)'}
 
-## 历史参考
-{history_text or '（无历史记录）'}
-
-请返回严格 JSON：
+Return strict JSON only:
 {{
   "confidence": 0.0,
   "unknown_anomaly_types": [],
   "can_proceed": true,
-  "reason": "一句话说明"
+  "reason": "short reason",
+  "retry_target": "vision|knowledge|null",
+  "retry_strategy": "short label"
 }}
 """
 
@@ -63,6 +64,9 @@ async def self_reflect_node(state: DetectionState) -> DetectionState:
         state.logs.append(f"[SelfReflect] loop_count reached {MAX_LOOP}, proceed directly")
         state.reflection_decision = "proceed"
         state.needs_user_input = False
+        state.retry_target = None
+        state.retry_reason = None
+        state.retry_strategy = None
         return state
 
     result = _ensure_result_from_shared_context(state)
@@ -72,7 +76,7 @@ async def self_reflect_node(state: DetectionState) -> DetectionState:
 
     if not settings.openai_api_key:
         raise ConfigurationError(
-            "openai_api_key 未配置",
+            "openai_api_key is not configured",
             config_key="APP_OPENAI_API_KEY",
         )
 
@@ -99,27 +103,45 @@ async def self_reflect_node(state: DetectionState) -> DetectionState:
         state.confidence = float(parsed.get("confidence", 0.5))
         state.unknown_anomaly_types = parsed.get("unknown_anomaly_types") or []
         can_proceed = bool(parsed.get("can_proceed", False))
+        retry_target = parsed.get("retry_target")
+        retry_strategy = parsed.get("retry_strategy")
+        retry_reason = parsed.get("reason")
     else:
         state.confidence = float(result.metadata.get("confidence", CONFIDENCE_THRESHOLD) or CONFIDENCE_THRESHOLD)
         state.unknown_anomaly_types = []
         can_proceed = True
+        retry_target = None
+        retry_strategy = None
+        retry_reason = None
 
     if not can_proceed:
         if state.unknown_anomaly_types:
             state.reflection_decision = "need_user"
             state.needs_user_input = True
+            state.retry_target = None
+            state.retry_reason = None
+            state.retry_strategy = None
             state.logs.append(
                 f"[SelfReflect] confidence={state.confidence:.2f}, need user clarification"
             )
         else:
+            has_image = bool((state.task.parameters or {}).get("image_base64"))
             state.reflection_decision = "retry"
             state.needs_user_input = False
+            if retry_target not in {"vision", "knowledge"}:
+                retry_target = "vision" if has_image else "knowledge"
+            state.retry_target = retry_target
+            state.retry_reason = retry_reason or "self_reflect requested another specialist pass"
+            state.retry_strategy = retry_strategy or "rerun_with_focus"
             state.logs.append(
-                f"[SelfReflect] confidence={state.confidence:.2f} below threshold, retry"
+                f"[SelfReflect] confidence={state.confidence:.2f} below threshold, retry {state.retry_target}"
             )
     else:
         state.reflection_decision = "proceed"
         state.needs_user_input = False
+        state.retry_target = None
+        state.retry_reason = None
+        state.retry_strategy = None
         state.logs.append(f"[SelfReflect] confidence={state.confidence:.2f}, proceed")
 
     return state

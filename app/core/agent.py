@@ -22,6 +22,43 @@ from app.schemas.detection import DetectionTask
 logger = logging.getLogger(__name__)
 
 
+def _build_execution_metadata(state_dict: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "agent_trace": list(state_dict.get("agent_trace", [])),
+        "execution_plan": state_dict.get("execution_plan"),
+        "step_status": dict(state_dict.get("step_status", {})),
+        "step_attempts": dict(state_dict.get("step_attempts", {})),
+        "execution_events": list(state_dict.get("execution_events", [])),
+    }
+
+
+def _build_stream_final_payload(task_id: str, final_output: dict[str, Any]) -> dict[str, Any]:
+    needs_suspend = final_output.get("needs_user_input") and not final_output.get("user_reply")
+    anomalies = _extract_anomalies(final_output.get("result"))
+    result_metadata = _extract_result_metadata(final_output.get("result"))
+    context = final_output.get("context", {}) or {}
+    pending_clarification, pending_question = _extract_pending_context(final_output)
+
+    payload = {
+        "type": "final_result",
+        "task_id": task_id,
+        "status": "pending" if needs_suspend else "success",
+        "answer": context.get("answer", ""),
+        "anomalies": anomalies,
+        "summary": final_output.get("result", {}).get("summary") if isinstance(final_output.get("result"), dict) else getattr(final_output.get("result"), "summary", None),
+        "pending_clarification": pending_clarification,
+        "pending_question": pending_question,
+        "metadata": {
+            "logs": list(final_output.get("logs", [])),
+            "loop_count": final_output.get("loop_count", 0),
+            "confidence": final_output.get("confidence", 0.0),
+            "result_metadata": result_metadata,
+            **_build_execution_metadata(final_output),
+        },
+    }
+    return payload
+
+
 def _extract_pending_context(state_dict: dict[str, Any]) -> tuple[str | None, str | None]:
     ctx = state_dict.get("context", {}) or {}
     shared_context = state_dict.get("shared_context", {}) or {}
@@ -45,7 +82,7 @@ async def get_pending_task(task_id: str) -> Optional[dict]:
         "pending_question": pending_question,
         "conversation_history": list(state.get("conversation_history", [])),
         "loop_count": state.get("loop_count", 0),
-        "agent_trace": list(state.get("agent_trace", [])),
+        **_build_execution_metadata(state),
     }
 
 
@@ -107,8 +144,17 @@ def _prepare_followup_state(
     from app.orchestration import SharedContext
 
     state.shared_context = SharedContext()
+    state.execution_plan = None
+    state.step_status = {}
+    state.step_attempts = {}
+    state.step_outputs = {}
+    state.execution_events = []
+    state.last_failed_step = None
     state.loop_count = 0
     state.reflection_decision = None
+    state.retry_target = None
+    state.retry_reason = None
+    state.retry_strategy = None
     state.needs_user_input = False
     state.user_reply = None
 
@@ -152,7 +198,7 @@ async def run_detection(task: DetectionTask) -> dict[str, Any]:
             "pending_question": pending_question,
             "loop_count": result_dict.get("loop_count", 0),
             "conversation_history": list(result_dict.get("conversation_history", [])),
-            "agent_trace": list(result_dict.get("agent_trace", [])),
+            **_build_execution_metadata(result_dict),
         }
 
     answer = result_dict.get("context", {}).get(
@@ -177,9 +223,9 @@ async def run_detection(task: DetectionTask) -> dict[str, Any]:
             "loop_count": result_dict.get("loop_count", 0),
             "confidence": result_dict.get("confidence", 0.0),
             "result_metadata": result_metadata,
-            "agent_trace": list(result_dict.get("agent_trace", [])),
+            **_build_execution_metadata(result_dict),
         },
-    }
+        }
 
 
 async def run_chat(task_id: str, question: str) -> dict[str, Any]:
@@ -214,7 +260,7 @@ async def run_chat(task_id: str, question: str) -> dict[str, Any]:
                 "logs": list(result_dict.get("logs", [])),
                 "loop_count": result_dict.get("loop_count", 0),
                 "confidence": result_dict.get("confidence", 0.0),
-                "agent_trace": list(result_dict.get("agent_trace", [])),
+                **_build_execution_metadata(result_dict),
             },
         }
 
@@ -235,7 +281,7 @@ async def run_chat(task_id: str, question: str) -> dict[str, Any]:
             "loop_count": result_dict.get("loop_count", 0),
             "confidence": result_dict.get("confidence", 0.0),
             "result_metadata": result_metadata,
-            "agent_trace": list(result_dict.get("agent_trace", [])),
+            **_build_execution_metadata(result_dict),
         },
     }
 
@@ -278,7 +324,7 @@ async def generate_report(task_id: str) -> dict[str, Any]:
             "logs": list(state.logs),
             "loop_count": state.loop_count,
             "result_metadata": result.metadata if result else {},
-            "agent_trace": list(state.agent_trace),
+            **_build_execution_metadata(state.model_dump()),
         },
     }
 
@@ -309,7 +355,7 @@ async def continue_detection(task_id: str, user_reply: str) -> dict[str, Any]:
             "pending_question": pending_question,
             "loop_count": result_dict.get("loop_count", 0),
             "conversation_history": list(result_dict.get("conversation_history", [])),
-            "agent_trace": list(result_dict.get("agent_trace", [])),
+            **_build_execution_metadata(result_dict),
         }
 
     answer = result_dict.get("context", {}).get("answer", "")
@@ -326,9 +372,74 @@ async def continue_detection(task_id: str, user_reply: str) -> dict[str, Any]:
             "logs": list(result_dict.get("logs", [])),
             "loop_count": result_dict.get("loop_count", 0),
             "result_metadata": result_metadata,
-            "agent_trace": list(result_dict.get("agent_trace", [])),
+            **_build_execution_metadata(result_dict),
         },
     }
+
+
+async def _stream_langgraph_events(
+    graph,
+    *,
+    task_id: str,
+    backend: str,
+    config: dict[str, Any],
+    invoke_input: Any,
+) -> AsyncGenerator[str, None]:
+    emitted_execution_events = 0
+
+    async for event in graph.astream_events(invoke_input, config=config, version="v2"):
+        kind = event["event"]
+        name = event["name"]
+
+        if kind == "on_chain_start" and name in [
+            "supervisor_plan",
+            "supervisor_execute",
+            "supervisor_merge",
+            "self_reflect",
+            "wait_user",
+            "answer",
+            "report",
+        ]:
+            yield f"data: {json.dumps({'type': 'node_start', 'node': name})}\n\n"
+        elif kind == "on_chat_model_stream":
+            data = event.get("data", {})
+            chunk = data.get("chunk")
+            content = getattr(chunk, "content", None)
+            if content:
+                tags = event.get("tags", [])
+                metadata = event.get("metadata", {})
+                langgraph_node = metadata.get("langgraph_node", "")
+
+                if "planner_thought" in tags or langgraph_node == "supervisor_plan":
+                    yield f"data: {json.dumps({'type': 'stream', 'subtype': 'thought', 'content': content})}\n\n"
+                elif "final_answer" in tags or langgraph_node == "answer":
+                    yield f"data: {json.dumps({'type': 'stream', 'subtype': 'answer', 'content': content})}\n\n"
+        elif kind == "on_tool_start":
+            yield f"data: {json.dumps({'type': 'tool_start', 'tool': name, 'input': event['data'].get('input')})}\n\n"
+        elif kind == "on_tool_end":
+            yield f"data: {json.dumps({'type': 'tool_end', 'tool': name, 'output': event['data'].get('output')})}\n\n"
+        elif kind == "on_chain_end" and name in [
+            "supervisor_plan",
+            "supervisor_execute",
+            "supervisor_merge",
+            "wait_user",
+        ]:
+            output = event.get("data", {}).get("output")
+            if isinstance(output, dict):
+                execution_events = list(output.get("execution_events", []))
+                new_events = execution_events[emitted_execution_events:]
+                for item in new_events:
+                    yield f"data: {json.dumps({'type': 'execution_event', 'event': item})}\n\n"
+                emitted_execution_events += len(new_events)
+        elif kind == "on_chain_end" and name == "LangGraph":
+            final_output = event["data"].get("output")
+            if final_output:
+                persist_runtime_state(task_id, final_output, backend=backend)
+                final_payload = _build_stream_final_payload(
+                    task_id,
+                    final_output if isinstance(final_output, dict) else {},
+                )
+                yield f"data: {json.dumps(final_payload)}\n\n"
 
 
 async def stream_detection(task: DetectionTask) -> AsyncGenerator[str, None]:
@@ -352,40 +463,50 @@ async def stream_detection(task: DetectionTask) -> AsyncGenerator[str, None]:
                 f"[stream_detection] START task_id={task.task_id}, "
                 f"is_continue={bool(previous_state_dict)}, checkpoint_backend={backend}"
             )
-
-            async for event in graph.astream_events(invoke_input, config=config, version="v2"):
-                kind = event["event"]
-                name = event["name"]
-
-                if kind == "on_chain_start" and name in ["planner", "executor", "consolidate", "answer"]:
-                    yield f"data: {json.dumps({'type': 'node_start', 'node': name})}\n\n"
-                elif kind == "on_chat_model_stream":
-                    data = event.get("data", {})
-                    chunk = data.get("chunk")
-                    content = getattr(chunk, "content", None)
-                    if content:
-                        tags = event.get("tags", [])
-                        metadata = event.get("metadata", {})
-                        langgraph_node = metadata.get("langgraph_node", "")
-
-                        if "planner_thought" in tags or langgraph_node == "planner":
-                            yield f"data: {json.dumps({'type': 'stream', 'subtype': 'thought', 'content': content})}\n\n"
-                        elif "final_answer" in tags or langgraph_node == "answer":
-                            yield f"data: {json.dumps({'type': 'stream', 'subtype': 'answer', 'content': content})}\n\n"
-                elif kind == "on_tool_start":
-                    yield f"data: {json.dumps({'type': 'tool_start', 'tool': name, 'input': event['data'].get('input')})}\n\n"
-                elif kind == "on_tool_end":
-                    yield f"data: {json.dumps({'type': 'tool_end', 'tool': name, 'output': event['data'].get('output')})}\n\n"
-                elif kind == "on_chain_end" and name == "LangGraph":
-                    final_output = event["data"].get("output")
-                    if final_output:
-                        persist_runtime_state(task.task_id, final_output, backend=backend)
-                        yield f"data: {json.dumps({'type': 'final_result', 'task_id': task.task_id, 'status': 'success'})}\n\n"
+            async for chunk in _stream_langgraph_events(
+                graph,
+                task_id=task.task_id,
+                backend=backend,
+                config=config,
+                invoke_input=invoke_input,
+            ):
+                yield chunk
 
     except Exception as e:
         import traceback
 
         logger.error(f"[stream_detection] Error: {e}\n{traceback.format_exc()}")
+        yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    yield "event: close\ndata: close\n\n"
+
+
+async def stream_continue_detection(task_id: str, user_reply: str) -> AsyncGenerator[str, None]:
+    """Continue a suspended task in streaming mode after the user provides clarification."""
+    try:
+        previous_state, _ = await load_state_values(task_id)
+        if previous_state is None:
+            raise TaskNotFoundError(f"Suspended task not found: {task_id}")
+
+        continued_state = build_continue_state(task_id, user_reply, previous_state)
+        continued_state["needs_user_input"] = False
+
+        async with graph_session(task_id) as (graph, config, backend):
+            logger.info("[stream_continue_detection] checkpoint backend=%s", backend)
+            await graph.aupdate_state(config, continued_state)
+            async for chunk in _stream_langgraph_events(
+                graph,
+                task_id=task_id,
+                backend=backend,
+                config=config,
+                invoke_input=None,
+            ):
+                yield chunk
+
+    except Exception as e:
+        import traceback
+
+        logger.error(f"[stream_continue_detection] Error: {e}\n{traceback.format_exc()}")
         yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     yield "event: close\ndata: close\n\n"

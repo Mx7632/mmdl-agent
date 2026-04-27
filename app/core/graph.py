@@ -27,8 +27,9 @@ async def _load_data_node(state: DetectionState) -> DetectionState:
 
 
 def _route_after_supervisor_plan(state: DetectionState) -> Literal["supervisor_execute", "supervisor_merge"]:
-    planned_agents = state.context.get("planned_agents") or []
-    if planned_agents:
+    execution_plan = state.execution_plan or {}
+    planned_steps = execution_plan.get("steps") or []
+    if planned_steps:
         return "supervisor_execute"
     return "supervisor_merge"
 

@@ -461,6 +461,297 @@
             font-size: 14px;
         }
 
+        .timeline-card {
+            margin-top: 14px;
+            padding: 18px;
+            border-radius: 18px;
+            border: 1px solid var(--line-soft);
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        .timeline-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .timeline-head h3 {
+            margin: 0;
+            font-size: 15px;
+        }
+
+        .timeline-head p {
+            margin: 6px 0 0;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .timeline-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .timeline-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .timeline-filters,
+        .timeline-toggles {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .filter-button,
+        .toggle-button {
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: #fff;
+            color: var(--muted);
+            padding: 8px 12px;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+        }
+
+        .filter-button.is-active,
+        .toggle-button.is-active {
+            border-color: rgba(37, 99, 235, 0.28);
+            background: var(--accent-soft);
+            color: var(--accent);
+        }
+
+        .timeline-shell {
+            display: grid;
+            grid-template-columns: minmax(260px, 0.95fr) minmax(320px, 1.15fr) minmax(260px, 0.9fr);
+            gap: 14px;
+        }
+
+        .timeline-steps,
+        .timeline-events,
+        .timeline-details {
+            min-width: 0;
+        }
+
+        .timeline-panel {
+            border: 1px solid var(--line-soft);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.74);
+            overflow: hidden;
+        }
+
+        .timeline-panel-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--line-soft);
+            background: rgba(248, 250, 252, 0.9);
+        }
+
+        .timeline-panel-head h4 {
+            margin: 0;
+            font-size: 13px;
+        }
+
+        .timeline-panel-note {
+            color: var(--muted);
+            font-size: 11px;
+        }
+
+        .timeline-panel-body {
+            padding: 12px;
+        }
+
+        .timeline-panel-body.is-collapsed {
+            display: none;
+        }
+
+        .timeline-list,
+        .event-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .timeline-item,
+        .event-item {
+            border: 1px solid var(--line-soft);
+            border-radius: 16px;
+            background: #fff;
+            padding: 12px 14px;
+            cursor: pointer;
+        }
+
+        .timeline-item.running,
+        .event-item.running {
+            border-color: rgba(37, 99, 235, 0.3);
+            background: #f7fbff;
+        }
+
+        .timeline-item.success,
+        .event-item.success {
+            border-color: rgba(20, 101, 52, 0.2);
+            background: #f5fcf7;
+        }
+
+        .timeline-item.failed,
+        .event-item.failed {
+            border-color: rgba(180, 35, 24, 0.2);
+            background: #fff6f6;
+        }
+
+        .timeline-item.pending,
+        .event-item.pending {
+            border-color: rgba(138, 90, 20, 0.24);
+            background: #fffaf2;
+        }
+
+        .timeline-item.planned {
+            background: #fbfcfe;
+        }
+
+        .timeline-item.is-selected,
+        .event-item.is-selected {
+            box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.14);
+        }
+
+        .timeline-title,
+        .event-title {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .timeline-item-top,
+        .event-item-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .timeline-index,
+        .event-index {
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .timeline-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .timeline-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: #f3f6fa;
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .timeline-title strong,
+        .event-title strong {
+            font-size: 13px;
+        }
+
+        .timeline-meta,
+        .event-meta {
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .timeline-details-body {
+            display: grid;
+            gap: 12px;
+        }
+
+        .timeline-details-header h4 {
+            margin: 0;
+            font-size: 14px;
+        }
+
+        .timeline-details-header p {
+            margin: 6px 0 0;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .timeline-kv {
+            display: grid;
+            gap: 8px;
+        }
+
+        .timeline-kv-item {
+            padding: 10px 12px;
+            border: 1px solid var(--line-soft);
+            border-radius: 14px;
+            background: #fff;
+        }
+
+        .timeline-kv-item small {
+            display: block;
+            margin-bottom: 4px;
+            color: var(--muted);
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        .timeline-raw {
+            margin: 0;
+            padding: 12px;
+            border: 1px solid var(--line-soft);
+            border-radius: 14px;
+            background: #0f1720;
+            color: #d8e1eb;
+            font-family: Consolas, "SFMono-Regular", monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .timeline-empty.compact {
+            padding: 10px 12px;
+            font-size: 12px;
+        }
+
+        .timeline-empty {
+            padding: 14px;
+            border: 1px dashed var(--line);
+            border-radius: 16px;
+            background: #fafbfd;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
         .result-copy {
             min-height: 56px;
             white-space: pre-wrap;
@@ -553,6 +844,15 @@
 
             .result-grid {
                 grid-template-columns: 1fr;
+            }
+
+            .timeline-shell {
+                grid-template-columns: 1fr;
+            }
+
+            .timeline-toolbar,
+            .timeline-head {
+                align-items: stretch;
             }
 
             .bubble-wrap {
@@ -670,6 +970,70 @@
                         <div id="report-panel-inline" class="result-copy">尚未生成报告</div>
                     </section>
                 </div>
+
+                <section class="timeline-card">
+                    <div class="timeline-head">
+                        <div>
+                            <h3>Multi-Agent 执行时间线</h3>
+                            <p>展示 supervisor 计划、step 状态、重试、挂起与恢复事件。</p>
+                        </div>
+                        <div id="timeline-summary" class="timeline-summary"></div>
+                    </div>
+                    <div class="timeline-toolbar">
+                        <div id="timeline-filters" class="timeline-filters"></div>
+                        <div class="timeline-toggles">
+                            <button id="timeline-toggle-steps" class="toggle-button is-active" type="button">Steps</button>
+                            <button id="timeline-toggle-events" class="toggle-button is-active" type="button">Events</button>
+                        </div>
+                    </div>
+                    <div class="timeline-shell">
+                        <section class="timeline-steps">
+                            <div class="timeline-panel">
+                                <div class="timeline-panel-head">
+                                    <div>
+                                        <h4>Step 概览</h4>
+                                        <div id="timeline-steps-note" class="timeline-panel-note">任务启动后，这里会显示结构化 step 计划。</div>
+                                    </div>
+                                </div>
+                                <div id="timeline-steps-body" class="timeline-panel-body">
+                                    <div id="timeline-steps" class="timeline-list">
+                                        <div class="timeline-empty">任务启动后，这里会显示结构化 step 计划。</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                        <section class="timeline-events">
+                            <div class="timeline-panel">
+                                <div class="timeline-panel-head">
+                                    <div>
+                                        <h4>事件流</h4>
+                                        <div id="timeline-events-note" class="timeline-panel-note">执行中会持续追加 agent 事件。</div>
+                                    </div>
+                                </div>
+                                <div id="timeline-events-body" class="timeline-panel-body">
+                                    <div id="timeline-events" class="event-list">
+                                        <div class="timeline-empty">当前还没有执行事件。</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                        <section class="timeline-details">
+                            <div class="timeline-panel">
+                                <div class="timeline-panel-head">
+                                    <div>
+                                        <h4>详情面板</h4>
+                                        <div class="timeline-panel-note">点击 step 或事件，查看依赖、尝试次数和原始上下文。</div>
+                                    </div>
+                                </div>
+                                <div class="timeline-panel-body">
+                                    <div id="timeline-details" class="timeline-details-body">
+                                        <div class="timeline-empty">选择左侧 step 或事件后，这里会显示更完整的排障细节。</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </section>
             </section>
 
             <footer class="composer">
@@ -697,7 +1061,14 @@
             pending: false,
             imageFile: null,
             history: [],
-            lastResult: null
+            lastResult: null,
+            executionPlan: null,
+            executionEvents: [],
+            stepStatus: {},
+            stepAttempts: {},
+            timelineFilter: 'all',
+            timelinePanels: { steps: true, events: true },
+            selectedTimelineItem: null
         };
 
         const els = {
@@ -727,7 +1098,18 @@
             reportPanelInline: document.getElementById('report-panel-inline'),
             anomalyChips: document.getElementById('anomaly-chips'),
             historyPanel: document.getElementById('history-panel'),
-            modeIndicator: document.getElementById('mode-indicator')
+            modeIndicator: document.getElementById('mode-indicator'),
+            timelineSummary: document.getElementById('timeline-summary'),
+            timelineFilters: document.getElementById('timeline-filters'),
+            timelineToggleSteps: document.getElementById('timeline-toggle-steps'),
+            timelineToggleEvents: document.getElementById('timeline-toggle-events'),
+            timelineStepsBody: document.getElementById('timeline-steps-body'),
+            timelineStepsNote: document.getElementById('timeline-steps-note'),
+            timelineSteps: document.getElementById('timeline-steps'),
+            timelineEventsBody: document.getElementById('timeline-events-body'),
+            timelineEventsNote: document.getElementById('timeline-events-note'),
+            timelineEvents: document.getElementById('timeline-events'),
+            timelineDetails: document.getElementById('timeline-details')
         };
 
         function newTaskId() {
@@ -754,6 +1136,375 @@
 
         function getResultMetadata(result) {
             return result?.metadata?.result_metadata || {};
+        }
+
+        function getExecutionMetadata(result) {
+            const metadata = (result?.metadata && typeof result.metadata === 'object') ? result.metadata : result;
+            if (!metadata || typeof metadata !== 'object') {
+                return {};
+            }
+            return metadata;
+        }
+
+        function normalizeStepState(rawStatus, pending) {
+            if (!rawStatus) return pending ? 'pending' : 'planned';
+            if (rawStatus === 'running') return 'running';
+            if (rawStatus === 'failed') return 'failed';
+            if (rawStatus === 'success') return 'success';
+            return pending ? 'pending' : 'planned';
+        }
+
+        function summarizeEvent(event) {
+            const stepId = event?.step_id ? ` · ${event.step_id}` : '';
+            switch (event?.type) {
+                case 'plan_created':
+                    return {
+                        title: '计划已生成',
+                        tone: 'planned',
+                        meta: `steps: ${event.step_count || 0}${event.reason ? `\nreason: ${event.reason}` : ''}`
+                    };
+                case 'step_started':
+                    return {
+                        title: `${event.agent || 'agent'} 开始执行${stepId}`,
+                        tone: 'running',
+                        meta: `attempt: ${event.attempt || 1}${Array.isArray(event.depends_on) && event.depends_on.length ? `\ndepends_on: ${event.depends_on.join(', ')}` : ''}`
+                    };
+                case 'step_completed':
+                    return {
+                        title: `${event.agent || 'agent'} 已完成${stepId}`,
+                        tone: event.requires_human ? 'pending' : 'success',
+                        meta: `status: ${event.status || 'success'}${typeof event.confidence === 'number' ? `\nconfidence: ${event.confidence}` : ''}`
+                    };
+                case 'step_failed':
+                    return {
+                        title: `${event.agent || 'agent'} 执行失败${stepId}`,
+                        tone: 'failed',
+                        meta: event.error || 'unknown error'
+                    };
+                case 'task_suspended':
+                    return {
+                        title: '任务已挂起，等待澄清',
+                        tone: 'pending',
+                        meta: `${event.pending_question || 'pending question unavailable'}${Array.isArray(event.unknown_anomaly_types) && event.unknown_anomaly_types.length ? `\nunknown: ${event.unknown_anomaly_types.join(', ')}` : ''}`
+                    };
+                case 'task_resumed':
+                    return {
+                        title: '任务已恢复执行',
+                        tone: 'running',
+                        meta: `conversation_turns: ${event.conversation_turns || 0}`
+                    };
+                default:
+                    return {
+                        title: event?.type || 'unknown_event',
+                        tone: 'planned',
+                        meta: JSON.stringify(event || {}, null, 2)
+                    };
+            }
+        }
+
+        function matchesTimelineFilter(status, filter) {
+            if (filter === 'all') return true;
+            if (filter === 'active') return status === 'running' || status === 'planned';
+            if (filter === 'failed') return status === 'failed';
+            if (filter === 'waiting') return status === 'pending';
+            if (filter === 'done') return status === 'success';
+            return true;
+        }
+
+        function getStepCards() {
+            const steps = state.executionPlan?.steps || [];
+            const stepStatus = state.stepStatus || {};
+            const stepAttempts = state.stepAttempts || {};
+            return steps.map((step, index) => {
+                const status = normalizeStepState(stepStatus[step.id], state.pending && index === steps.length - 1);
+                const dependsOn = Array.isArray(step.depends_on) && step.depends_on.length ? step.depends_on : [];
+                return {
+                    kind: 'step',
+                    key: step.id || `step-${index + 1}`,
+                    index,
+                    status,
+                    attempt: stepAttempts[step.agent] || 0,
+                    title: step.agent || `step-${index + 1}`,
+                    subtitle: step.goal || 'No goal provided',
+                    badges: [
+                        status,
+                        `attempt ${stepAttempts[step.agent] || 0}`,
+                        step.retryable === false ? 'fixed' : 'retryable'
+                    ],
+                    details: {
+                        step_id: step.id || '-',
+                        agent: step.agent || '-',
+                        goal: step.goal || '-',
+                        depends_on: dependsOn.length ? dependsOn.join(', ') : 'none',
+                        retryable: step.retryable === false ? 'no' : 'yes'
+                    },
+                    raw: step
+                };
+            });
+        }
+
+        function getEventCards() {
+            const events = Array.isArray(state.executionEvents) ? state.executionEvents : [];
+            return events.map((event, index) => {
+                const summary = summarizeEvent(event);
+                return {
+                    kind: 'event',
+                    key: `event-${index}`,
+                    index,
+                    status: summary.tone,
+                    title: summary.title,
+                    subtitle: summary.meta || 'No event details',
+                    badges: [
+                        event?.type || 'event',
+                        event?.agent || null,
+                        event?.step_id || null
+                    ].filter(Boolean),
+                    details: {
+                        type: event?.type || '-',
+                        agent: event?.agent || '-',
+                        step_id: event?.step_id || '-',
+                        attempt: event?.attempt ?? '-',
+                        status: event?.status || summary.tone
+                    },
+                    raw: event
+                };
+            });
+        }
+
+        function ensureTimelineSelection(stepCards, eventCards) {
+            const selected = state.selectedTimelineItem;
+            const allCards = [...stepCards, ...eventCards];
+            const exists = selected && allCards.some(item => item.kind === selected.kind && item.key === selected.key);
+            if (exists) {
+                return;
+            }
+
+            const preferred = allCards.find(item => item.status === 'failed')
+                || allCards.find(item => item.status === 'pending')
+                || eventCards[eventCards.length - 1]
+                || stepCards[0]
+                || null;
+
+            state.selectedTimelineItem = preferred ? { kind: preferred.kind, key: preferred.key } : null;
+        }
+
+        function renderTimelineFilters(summaryItems) {
+            const filters = [
+                { key: 'all', label: '全部', count: summaryItems.total },
+                { key: 'active', label: '运行中', count: summaryItems.running + summaryItems.planned },
+                { key: 'failed', label: '失败', count: summaryItems.failed },
+                { key: 'waiting', label: '等待', count: summaryItems.pending },
+                { key: 'done', label: '完成', count: summaryItems.success }
+            ];
+
+            els.timelineFilters.innerHTML = filters.map(filter => `
+                <button
+                    class="filter-button ${state.timelineFilter === filter.key ? 'is-active' : ''}"
+                    type="button"
+                    data-filter="${escapeHtml(filter.key)}"
+                >${escapeHtml(filter.label)} <span class="timeline-chip">${escapeHtml(filter.count)}</span></button>
+            `).join('');
+        }
+
+        function renderTimelineDetails(selectedCard) {
+            if (!selectedCard) {
+                els.timelineDetails.innerHTML = '<div class="timeline-empty">选择左侧 step 或事件后，这里会显示更完整的排障细节。</div>';
+                return;
+            }
+
+            const kvItems = Object.entries(selectedCard.details || {}).map(([key, value]) => `
+                <div class="timeline-kv-item">
+                    <small>${escapeHtml(key.replaceAll('_', ' '))}</small>
+                    <div>${escapeHtml(value == null || value === '' ? '-' : String(value))}</div>
+                </div>
+            `).join('');
+
+            els.timelineDetails.innerHTML = `
+                <div class="timeline-details-header">
+                    <h4>${escapeHtml(selectedCard.title)}</h4>
+                    <p>${escapeHtml(selectedCard.subtitle || 'No additional detail')}</p>
+                </div>
+                <div class="timeline-badges">${selectedCard.badges.map(badge => `<span class="timeline-chip">${escapeHtml(badge)}</span>`).join('')}</div>
+                <div class="timeline-kv">${kvItems}</div>
+                <pre class="timeline-raw">${escapeHtml(JSON.stringify(selectedCard.raw || {}, null, 2))}</pre>
+            `;
+        }
+
+        function renderExecutionTimeline() {
+            const stepCards = getStepCards();
+            const eventCards = getEventCards();
+            const allStatuses = [...stepCards, ...eventCards].map(item => item.status);
+            const summaryItems = {
+                total: stepCards.length + eventCards.length,
+                success: allStatuses.filter(value => value === 'success').length,
+                running: allStatuses.filter(value => value === 'running').length,
+                failed: allStatuses.filter(value => value === 'failed').length,
+                pending: allStatuses.filter(value => value === 'pending').length,
+                planned: allStatuses.filter(value => value === 'planned').length
+            };
+
+            ensureTimelineSelection(stepCards, eventCards);
+
+            els.timelineSummary.innerHTML = [
+                `<span class="pill">steps ${stepCards.length}</span>`,
+                `<span class="pill">events ${eventCards.length}</span>`,
+                `<span class="pill">running ${summaryItems.running}</span>`,
+                `<span class="pill">failed ${summaryItems.failed}</span>`,
+                `<span class="pill">waiting ${summaryItems.pending}</span>`
+            ].join('');
+
+            renderTimelineFilters(summaryItems);
+
+            const filteredSteps = stepCards.filter(item => matchesTimelineFilter(item.status, state.timelineFilter));
+            const filteredEvents = eventCards.filter(item => matchesTimelineFilter(item.status, state.timelineFilter));
+            const selectedCard = [...stepCards, ...eventCards].find(item => item.kind === state.selectedTimelineItem?.kind && item.key === state.selectedTimelineItem?.key) || null;
+
+            els.timelineToggleSteps.classList.toggle('is-active', !!state.timelinePanels.steps);
+            els.timelineToggleEvents.classList.toggle('is-active', !!state.timelinePanels.events);
+            els.timelineStepsBody.classList.toggle('is-collapsed', !state.timelinePanels.steps);
+            els.timelineEventsBody.classList.toggle('is-collapsed', !state.timelinePanels.events);
+            els.timelineStepsNote.textContent = `${filteredSteps.length}/${stepCards.length} steps visible`;
+            els.timelineEventsNote.textContent = `${filteredEvents.length}/${eventCards.length} events visible`;
+
+            if (!stepCards.length) {
+                els.timelineSteps.innerHTML = '<div class="timeline-empty">任务启动后，这里会显示结构化 step 计划。</div>';
+            } else if (!filteredSteps.length) {
+                els.timelineSteps.innerHTML = '<div class="timeline-empty compact">当前筛选条件下没有匹配的 step。</div>';
+            } else {
+                els.timelineSteps.innerHTML = filteredSteps.map(step => {
+                    const isSelected = state.selectedTimelineItem?.kind === 'step' && state.selectedTimelineItem?.key === step.key;
+                    return `
+                        <article class="timeline-item ${escapeHtml(step.status)} ${isSelected ? 'is-selected' : ''}" data-kind="step" data-key="${escapeHtml(step.key)}">
+                            <div class="timeline-item-top">
+                                <span class="timeline-index">step ${step.index + 1}</span>
+                                <div class="timeline-badges">${step.badges.map(badge => `<span class="timeline-chip">${escapeHtml(badge)}</span>`).join('')}</div>
+                            </div>
+                            <div class="timeline-title">
+                                <strong>${escapeHtml(step.title)}</strong>
+                            </div>
+                            <div class="timeline-meta">${escapeHtml(step.subtitle)}</div>
+                        </article>
+                    `;
+                }).join('');
+            }
+
+            if (!eventCards.length) {
+                els.timelineEvents.innerHTML = '<div class="timeline-empty">当前还没有执行事件。</div>';
+            } else if (!filteredEvents.length) {
+                els.timelineEvents.innerHTML = '<div class="timeline-empty compact">当前筛选条件下没有匹配的事件。</div>';
+            } else {
+                els.timelineEvents.innerHTML = filteredEvents.map(event => {
+                    const isSelected = state.selectedTimelineItem?.kind === 'event' && state.selectedTimelineItem?.key === event.key;
+                    return `
+                        <article class="event-item ${escapeHtml(event.status)} ${isSelected ? 'is-selected' : ''}" data-kind="event" data-key="${escapeHtml(event.key)}">
+                            <div class="event-item-top">
+                                <span class="event-index">event ${event.index + 1}</span>
+                                <div class="timeline-badges">${event.badges.map(badge => `<span class="timeline-chip">${escapeHtml(badge)}</span>`).join('')}</div>
+                            </div>
+                            <div class="event-title">
+                                <strong>${escapeHtml(event.title)}</strong>
+                            </div>
+                            <div class="event-meta">${escapeHtml(event.subtitle)}</div>
+                        </article>
+                    `;
+                }).join('');
+            }
+
+            renderTimelineDetails(selectedCard);
+        }
+
+        async function readSseStream(response, onPayload) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+
+                const frames = buffer.split('\n\n');
+                buffer = frames.pop() || '';
+
+                for (const frame of frames) {
+                    const line = frame.split('\n').find(item => item.startsWith('data: '));
+                    if (!line) continue;
+                    const raw = line.slice(6).trim();
+                    if (!raw || raw === 'close') continue;
+                    onPayload(JSON.parse(raw));
+                }
+            }
+        }
+
+        function setStreamingStatus(sourceLabel, detail) {
+            els.statusPanel.textContent = [
+                'status: streaming',
+                `source: ${sourceLabel}`,
+                state.taskId ? `task_id: ${state.taskId}` : null,
+                detail || null
+            ].filter(Boolean).join('\n');
+        }
+
+        async function submitStreamingTask(form, sourceLabel) {
+            const response = await fetch(`${API_BASE}/v1/stream`, {
+                method: 'POST',
+                body: form
+            });
+
+            if (!response.ok) {
+                let message = `HTTP ${response.status}`;
+                try {
+                    const data = await response.json();
+                    message = data.message || data.detail || message;
+                } catch (error) {
+                    void error;
+                }
+                throw new Error(message);
+            }
+
+            let streamedAnswer = '';
+            let finalResult = null;
+
+            await readSseStream(response, payload => {
+                if (payload.type === 'node_start') {
+                    setStreamingStatus(sourceLabel, `node: ${payload.node}`);
+                    return;
+                }
+
+                if (payload.type === 'execution_event') {
+                    state.executionEvents = [...state.executionEvents, payload.event];
+                    renderExecutionTimeline();
+                    const summary = summarizeEvent(payload.event);
+                    setStreamingStatus(sourceLabel, summary.title);
+                    return;
+                }
+
+                if (payload.type === 'stream' && payload.subtype === 'answer') {
+                    streamedAnswer += payload.content || '';
+                    if (streamedAnswer) {
+                        els.answerPanel.textContent = streamedAnswer;
+                        els.answerPanelInline.textContent = streamedAnswer;
+                    }
+                    return;
+                }
+
+                if (payload.type === 'error') {
+                    throw new Error(payload.message || 'stream error');
+                }
+
+                if (payload.type === 'final_result') {
+                    if (!payload.answer && streamedAnswer) {
+                        payload.answer = streamedAnswer;
+                    }
+                    finalResult = payload;
+                }
+            });
+
+            if (!finalResult) {
+                throw new Error('stream completed without final result');
+            }
+
+            return finalResult;
         }
 
         function clearLocalizationOverlay() {
@@ -876,12 +1627,20 @@
         function applyResult(result, sourceLabel) {
             state.lastResult = result;
             state.pending = result.status === 'pending';
+            const executionMetadata = getExecutionMetadata(result);
+            state.executionPlan = executionMetadata.execution_plan || null;
+            state.executionEvents = Array.isArray(executionMetadata.execution_events) ? executionMetadata.execution_events : [];
+            state.stepStatus = executionMetadata.step_status || {};
+            state.stepAttempts = executionMetadata.step_attempts || {};
             renderTaskState();
+            renderExecutionTimeline();
 
             els.statusPanel.textContent = [
                 `status: ${result.status || 'unknown'}`,
                 `source: ${sourceLabel}`,
-                result.task_id ? `task_id: ${result.task_id}` : null
+                result.task_id ? `task_id: ${result.task_id}` : null,
+                state.executionPlan?.steps?.length ? `steps: ${state.executionPlan.steps.length}` : null,
+                state.executionEvents.length ? `events: ${state.executionEvents.length}` : null
             ].filter(Boolean).join('\n');
 
             if (result.answer) {
@@ -926,6 +1685,13 @@
             state.imageFile = null;
             state.history = [];
             state.lastResult = null;
+            state.executionPlan = null;
+            state.executionEvents = [];
+            state.stepStatus = {};
+            state.stepAttempts = {};
+            state.timelineFilter = 'all';
+            state.timelinePanels = { steps: true, events: true };
+            state.selectedTimelineItem = null;
 
             els.assetId.value = '';
             els.question.value = '';
@@ -949,6 +1715,7 @@
 
             renderHistory();
             renderTaskState();
+            renderExecutionTimeline();
         }
 
         async function startDetection() {
@@ -957,21 +1724,27 @@
             const image = els.imageInput.files[0];
 
             if (!assetId) {
-                setMessage(els.detectMessage, 'warning', '请先填写设备 ID。');
+                setMessage(els.detectMessage, 'warning', '?????? ID?');
                 return;
             }
             if (!image) {
-                setMessage(els.detectMessage, 'warning', '请先上传检测图片。');
+                setMessage(els.detectMessage, 'warning', '?????????');
                 return;
             }
 
             const taskId = newTaskId();
             state.taskId = taskId;
+            state.executionPlan = null;
+            state.executionEvents = [];
+            state.stepStatus = {};
+            state.stepAttempts = {};
+            state.selectedTimelineItem = null;
             renderTaskState();
-            setMessage(els.detectMessage, 'info', '检测任务已提交，等待结果。');
+            renderExecutionTimeline();
+            setMessage(els.detectMessage, 'info', '???????????????????');
             setMessage(els.followupMessage, 'info', '');
             setMessage(els.reportMessage, 'info', '');
-            pushHistory('user', question || '请分析当前图片');
+            pushHistory('user', question || '???????');
 
             const form = new FormData();
             form.append('task_id', taskId);
@@ -983,24 +1756,18 @@
 
             els.detectButton.disabled = true;
             try {
-                const res = await fetch(`${API_BASE}/v1/detect`, {
-                    method: 'POST',
-                    body: form
-                });
-                const data = await res.json();
-                if (!res.ok) {
-                    throw new Error(data.message || data.detail || `HTTP ${res.status}`);
-                }
-
+                const data = await submitStreamingTask(form, 'detect');
                 applyResult(data, 'detect');
                 setMessage(
                     els.detectMessage,
                     data.status === 'pending' ? 'warning' : 'success',
-                    data.status === 'pending' ? '检测已暂停，等待人工澄清。' : '检测完成，可以继续追问或生成报告。'
+                    data.status === 'pending'
+                        ? '?????????????'
+                        : '?????????????????'
                 );
                 els.question.value = '';
             } catch (error) {
-                setMessage(els.detectMessage, 'error', `检测失败：${error.message}`);
+                setMessage(els.detectMessage, 'error', `?????${error.message}`);
                 els.statusPanel.textContent = `status: failed\nreason: ${error.message}`;
             } finally {
                 els.detectButton.disabled = false;
@@ -1011,36 +1778,29 @@
         async function sendFollowup() {
             const question = els.question.value.trim();
             if (!state.taskId) {
-                setMessage(els.followupMessage, 'warning', '请先完成第一轮检测。');
+                setMessage(els.followupMessage, 'warning', '??????????');
                 return;
             }
             if (!question) {
-                setMessage(els.followupMessage, 'warning', '请输入追问内容。');
+                setMessage(els.followupMessage, 'warning', '????????');
                 return;
             }
 
-            setMessage(els.followupMessage, 'info', '正在发送追问。');
+            setMessage(els.followupMessage, 'info', '?????????');
             pushHistory('user', question);
             els.followupButton.disabled = true;
             try {
-                const res = await fetch(`${API_BASE}/v1/chat`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        task_id: state.taskId,
-                        question
-                    })
-                });
-                const data = await res.json();
-                if (!res.ok) {
-                    throw new Error(data.message || data.detail || `HTTP ${res.status}`);
-                }
+                const form = new FormData();
+                form.append('task_id', state.taskId);
+                form.append('asset_id', els.assetId.value.trim() || 'EQUIP-001');
+                form.append('question', question);
 
+                const data = await submitStreamingTask(form, 'chat');
                 applyResult(data, 'chat');
-                setMessage(els.followupMessage, 'success', '追问完成。');
+                setMessage(els.followupMessage, 'success', '?????');
                 els.question.value = '';
             } catch (error) {
-                setMessage(els.followupMessage, 'error', `追问失败：${error.message}`);
+                setMessage(els.followupMessage, 'error', `?????${error.message}`);
             } finally {
                 renderTaskState();
             }
@@ -1049,44 +1809,37 @@
         async function continueTask() {
             const userReply = els.question.value.trim();
             if (!state.taskId) {
-                setMessage(els.followupMessage, 'warning', '请先完成第一轮检测。');
+                setMessage(els.followupMessage, 'warning', '??????????');
                 return;
             }
             if (!state.pending) {
-                setMessage(els.followupMessage, 'warning', '当前任务不需要澄清。');
+                setMessage(els.followupMessage, 'warning', '??????????');
                 return;
             }
             if (!userReply) {
-                setMessage(els.followupMessage, 'warning', '请输入澄清内容。');
+                setMessage(els.followupMessage, 'warning', '????????');
                 return;
             }
 
-            setMessage(els.followupMessage, 'info', '正在提交澄清。');
+            setMessage(els.followupMessage, 'info', '?????????');
             pushHistory('user', userReply);
             els.continueButton.disabled = true;
             try {
-                const res = await fetch(`${API_BASE}/v1/continue`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        task_id: state.taskId,
-                        user_reply: userReply
-                    })
-                });
-                const data = await res.json();
-                if (!res.ok) {
-                    throw new Error(data.message || data.detail || `HTTP ${res.status}`);
-                }
+                const form = new FormData();
+                form.append('task_id', state.taskId);
+                form.append('asset_id', els.assetId.value.trim() || 'EQUIP-001');
+                form.append('user_reply', userReply);
 
+                const data = await submitStreamingTask(form, 'continue');
                 applyResult(data, 'continue');
                 setMessage(
                     els.followupMessage,
                     data.status === 'pending' ? 'warning' : 'success',
-                    data.status === 'pending' ? '仍需进一步澄清。' : '澄清已提交并完成后续处理。'
+                    data.status === 'pending' ? '????????' : '?????????????'
                 );
                 els.question.value = '';
             } catch (error) {
-                setMessage(els.followupMessage, 'error', `澄清失败：${error.message}`);
+                setMessage(els.followupMessage, 'error', `?????${error.message}`);
             } finally {
                 renderTaskState();
             }
@@ -1156,6 +1909,43 @@
             if (state.lastResult) {
                 renderLocalization(state.lastResult.anomalies, state.lastResult);
             }
+        });
+
+        els.timelineFilters.addEventListener('click', event => {
+            const button = event.target.closest('[data-filter]');
+            if (!button) return;
+            state.timelineFilter = button.dataset.filter || 'all';
+            renderExecutionTimeline();
+        });
+
+        els.timelineToggleSteps.addEventListener('click', () => {
+            state.timelinePanels.steps = !state.timelinePanels.steps;
+            renderExecutionTimeline();
+        });
+
+        els.timelineToggleEvents.addEventListener('click', () => {
+            state.timelinePanels.events = !state.timelinePanels.events;
+            renderExecutionTimeline();
+        });
+
+        els.timelineSteps.addEventListener('click', event => {
+            const card = event.target.closest('[data-kind="step"]');
+            if (!card) return;
+            state.selectedTimelineItem = {
+                kind: 'step',
+                key: card.dataset.key || ''
+            };
+            renderExecutionTimeline();
+        });
+
+        els.timelineEvents.addEventListener('click', event => {
+            const card = event.target.closest('[data-kind="event"]');
+            if (!card) return;
+            state.selectedTimelineItem = {
+                kind: 'event',
+                key: card.dataset.key || ''
+            };
+            renderExecutionTimeline();
         });
 
         els.detectButton.addEventListener('click', startDetection);
