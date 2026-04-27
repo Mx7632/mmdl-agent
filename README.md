@@ -36,12 +36,7 @@ MMDL-Agent/
 ├── services/anomalygpt_local/      # 可选本地 AnomalyGPT sidecar 服务
 ├── tests/                          # 自动化测试
 └── web/
-    ├── index.html                  # 单页核心工作台
-    ├── detection.html              # 兼容跳转页
-    ├── chat.html                   # 兼容跳转页
-    ├── expert_inspection.html      # 兼容跳转页
-    ├── frontend_chat.html          # 兼容跳转页
-    └── rag.html                    # 兼容跳转页
+    └── index.html                  # 单页核心工作台
 ```
 
 ## 核心模块
@@ -138,8 +133,6 @@ http://127.0.0.1:8000/web/index.html
 4. 如果任务进入 `pending`，输入补充信息并调用 `POST /v1/continue`。
 5. 对已有任务继续追问，调用 `POST /v1/chat`。
 6. 点击“生成报告”，调用 `POST /v1/generate_report`。
-
-这些旧页面目前只做兼容跳转：`detection.html`、`chat.html`、`expert_inspection.html`、`frontend_chat.html`、`rag.html`。
 
 ## 工作流细节
 
@@ -401,5 +394,3 @@ pytest -q
 - 保留：`README.md`、`USER.md`、`services/anomalygpt_local/README.md`
 - 可保留为模块说明：`app/prompts/README.md`
 - 保留学习笔记：`Docs/01-LangChain.ipynb`、`Docs/02-LangGraph.ipynb`、`Docs/03-LangSmith.ipynb`
-
-已删除过时的 API 文档、功能文档、开发指南、历史评审文档和前端分散说明。后续接口或流程变更应优先更新本文件。

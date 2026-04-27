@@ -187,3 +187,22 @@
   - `Docs/agent_engineering_review.md`
 - 验证结果：
   - 已确认目标文档删除完成，三个 notebook 未删除。
+
+### 2026-04-27 | 前端入口收敛为单页
+
+- 完成内容：
+  - 审查 `web/` 下所有 HTML 页面，确认除 `index.html` 外均为跳转到主页面的兼容壳。
+  - 搜索项目代码、测试和文档引用，确认旧 HTML 页面未被运行时代码依赖。
+  - 删除 `chat.html`、`detection.html`、`expert_inspection.html`、`frontend_chat.html`、`rag.html`，只保留 `web/index.html`。
+  - 更新 README 中的前端目录结构和说明。
+- 影响范围：
+  - `web/index.html`
+  - `web/chat.html`
+  - `web/detection.html`
+  - `web/expert_inspection.html`
+  - `web/frontend_chat.html`
+  - `web/rag.html`
+  - `README.md`
+  - `USER.md`
+- 验证结果：
+  - `web/` 目录下仅剩 `index.html` 一个 HTML 页面。
