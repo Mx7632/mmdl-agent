@@ -107,6 +107,41 @@ APP_RAG_MULTIMODAL_EMBEDDING_MODEL=multimodal-embedding-v1
 - `APP_CHECKPOINT_BACKEND=postgres` 时需要配置可访问的 PostgreSQL；未配置数据库或依赖不可用时，运行时会回退到内存 checkpoint。
 - `APP_VISION_DETECTOR_BACKEND=qwen` 默认走通用视觉模型；设为 `anomalygpt` 时默认走专业 HTTP 后端。
 
+### 推荐启动模式
+
+#### 模式 A：本地快速联调
+
+适合先把 API、LangGraph、多 Agent 流程和前端工作台跑起来。
+
+建议 `.env` 最少这样配：
+
+```env
+APP_OPENAI_API_KEY=your_key
+APP_CHECKPOINT_BACKEND=memory
+APP_VISION_DETECTOR_BACKEND=qwen
+```
+
+这套模式不依赖 PostgreSQL，也不要求先启动本地 AnomalyGPT sidecar。
+
+#### 模式 B：完整运行态
+
+适合验证持久化 checkpoint、RAG 数据和专业检测后端联动。
+
+建议额外准备：
+
+- PostgreSQL
+- `data_sets/mvtec_anomaly_detection` 数据集
+- 可选的 `services/anomalygpt_local/` sidecar
+
+常见配置：
+
+```env
+APP_CHECKPOINT_BACKEND=postgres
+APP_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mmdl_agent
+APP_VISION_DETECTOR_BACKEND=anomalygpt
+APP_PROFESSIONAL_VISION_DETECTOR_URL=http://127.0.0.1:9001/detect
+```
+
 ### 4. 启动后端
 
 ```powershell
@@ -121,6 +156,28 @@ http://127.0.0.1:8000/web/index.html
 
 也可以直接用浏览器打开 `web/index.html`，页面会调用同源或本地后端 API。
 
+### 5. 启动可选的本地专业检测 sidecar
+
+如果你要联调 `anomalygpt` 专业检测后端，可以进入：
+
+```powershell
+cd services/anomalygpt_local
+```
+
+然后按该目录下的 [README](services/anomalygpt_local/README.md) 或 `docker-compose.yml` 启动。
+
+### 6. 初始化 RAG（可选）
+
+如果要验证知识检索链路，可以先建库：
+
+```powershell
+curl -X POST http://127.0.0.1:8000/v1/rag/build `
+  -H "Content-Type: application/json" `
+  -d "{\"dataset_root\":\"data_sets/mvtec_anomaly_detection\",\"include_normal\":false}"
+```
+
+RAG 构建是可选的；不建库也可以先调通检测、澄清和报告主流程。
+
 ## 前端工作流
 
 当前前端只维护一个主入口：`web/index.html`。
@@ -133,6 +190,127 @@ http://127.0.0.1:8000/web/index.html
 4. 如果任务进入 `pending`，输入补充信息并调用 `POST /v1/continue`。
 5. 对已有任务继续追问，调用 `POST /v1/chat`。
 6. 点击“生成报告”，调用 `POST /v1/generate_report`。
+
+## 调试指南
+
+### 最短调试路径
+
+建议按这个顺序排查：
+
+1. 启动后端：
+
+```powershell
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+
+2. 健康检查：
+
+```powershell
+curl http://127.0.0.1:8000/health
+```
+
+3. 看 OpenAPI schema：
+
+```text
+http://127.0.0.1:8000/openapi.json
+```
+
+4. 打开前端工作台：
+
+```text
+http://127.0.0.1:8000/web/index.html
+```
+
+5. 先走一次最小检测请求，再看日志和响应中的 `metadata.agent_trace / execution_events`。
+
+### 推荐调试入口
+
+- 接口联调：`/v1/detect`、`/v1/chat`、`/v1/continue`
+- 实时流程调试：`/v1/stream`
+- 待澄清任务排查：`/v1/pending/{task_id}`
+- 报告链路验证：`/v1/generate_report`
+- RAG 验证：`/v1/rag/build`、`/v1/rag/query`
+
+### 调试多 Agent 流程时重点看什么
+
+当前后端已经暴露这些运行态信息：
+
+- `metadata.agent_trace`
+- `metadata.execution_plan`
+- `metadata.step_status`
+- `metadata.step_attempts`
+- `metadata.execution_events`
+
+前端 `web/index.html` 也已经有时间线面板，适合排查：
+
+- supervisor 实际规划了哪些 specialist
+- 哪一步失败或重试
+- 是否进入 `pending`
+- 继续澄清后是否恢复执行
+
+### 常用测试命令
+
+回归主链路：
+
+```powershell
+pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py tests/test_agent.py -q
+```
+
+只看多 Agent 编排：
+
+```powershell
+pytest tests/test_phase1_multi_agent.py -q
+```
+
+只看 API 主流程：
+
+```powershell
+pytest tests/test_main_flow_smoke.py -q
+```
+
+### 常见问题
+
+#### 1. 后端启动时报静态目录或上传目录错误
+
+确认这些目录存在：
+
+- `web/`
+- `data/uploads/`
+- `data/rag/`（如果启用了 RAG）
+
+#### 2. PostgreSQL 没起好，项目无法保存 checkpoint
+
+本地开发可以先把：
+
+```env
+APP_CHECKPOINT_BACKEND=memory
+```
+
+先切到内存模式，把主流程跑通之后再接回 PostgreSQL。
+
+#### 3. `pending` 之后不知道怎么继续
+
+先查：
+
+```text
+GET /v1/pending/{task_id}
+```
+
+确认 `pending_question`，再调用：
+
+```text
+POST /v1/continue
+```
+
+#### 4. 想看执行过程而不是只看最终答案
+
+优先用：
+
+```text
+POST /v1/stream
+```
+
+或者直接看前端时间线面板。
 
 ## 工作流细节
 

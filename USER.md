@@ -431,3 +431,13 @@
   - python -m py_compile app/memory/state.py app/memory/conversation.py app/core/answer_node.py app/agents/report/service.py app/services/state_rehydration.py
   - pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py tests/test_agent.py -q
   - 结果：38 passed, 1 skipped
+### 2026-04-27 | Documentation Update | startup and debugging guide refresh
+- 完成内容：
+  - 更新 README.md 的启动说明，补充“本地快速联调”和“完整运行态”两种推荐模式。
+  - 补充 nomalygpt sidecar、RAG 初始化、健康检查、OpenAPI、SSE 流式接口和前端时间线的调试路径。
+  - 新增常用测试命令与常见问题处理，方便按文档直接启动和排障。
+- 影响范围：
+  - README.md
+  - USER.md
+- 验证结果：
+  - 文档更新后将按 README 实际执行一次后端启动和前端/接口联调验证。
