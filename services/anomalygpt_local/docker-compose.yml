@@ -1,0 +1,35 @@
+services:
+  anomalygpt-local:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${ANOMALYGPT_DOCKER_IMAGE:-mmdl/anomalygpt-local:latest}
+    container_name: anomalygpt-local
+    ports:
+      - "${ANOMALYGPT_SERVICE_PORT:-9001}:9001"
+    environment:
+      ANOMALYGPT_SERVICE_REPO_DIR: /opt/AnomalyGPT
+      ANOMALYGPT_SERVICE_HOST: 0.0.0.0
+      ANOMALYGPT_SERVICE_PORT: 9001
+      ANOMALYGPT_SERVICE_DEVICE: ${ANOMALYGPT_SERVICE_DEVICE:-cuda}
+      ANOMALYGPT_SERVICE_PRECISION: ${ANOMALYGPT_SERVICE_PRECISION:-fp16}
+      ANOMALYGPT_SERVICE_IMAGEBIND_CKPT_PATH: ${ANOMALYGPT_SERVICE_IMAGEBIND_CKPT_PATH:-../pretrained_ckpt/imagebind_ckpt/imagebind_huge.pth}
+      ANOMALYGPT_SERVICE_VICUNA_CKPT_PATH: ${ANOMALYGPT_SERVICE_VICUNA_CKPT_PATH:-../pretrained_ckpt/vicuna_ckpt/7b_v0}
+      ANOMALYGPT_SERVICE_ANOMALYGPT_CKPT_PATH: ${ANOMALYGPT_SERVICE_ANOMALYGPT_CKPT_PATH:-./ckpt/train_supervised/pytorch_model.pt}
+      ANOMALYGPT_SERVICE_DELTA_CKPT_PATH: ${ANOMALYGPT_SERVICE_DELTA_CKPT_PATH:-../pretrained_ckpt/pandagpt_ckpt/7b/pytorch_model.pt}
+      ANOMALYGPT_SERVICE_STAGE: ${ANOMALYGPT_SERVICE_STAGE:-2}
+      ANOMALYGPT_SERVICE_MAX_TGT_LEN: ${ANOMALYGPT_SERVICE_MAX_TGT_LEN:-128}
+      ANOMALYGPT_SERVICE_TOP_P: ${ANOMALYGPT_SERVICE_TOP_P:-0.01}
+      ANOMALYGPT_SERVICE_TEMPERATURE: ${ANOMALYGPT_SERVICE_TEMPERATURE:-1.0}
+      ANOMALYGPT_SERVICE_MASK_THRESHOLD: ${ANOMALYGPT_SERVICE_MASK_THRESHOLD:-0.5}
+    volumes:
+      - ${ANOMALYGPT_REPO_DIR:?set ANOMALYGPT_REPO_DIR in .env.docker}:/opt/AnomalyGPT:ro
+    gpus: all
+    shm_size: "8gb"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request;print(json.load(urllib.request.urlopen('http://127.0.0.1:9001/health')))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s

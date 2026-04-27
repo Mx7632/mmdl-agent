@@ -1,109 +1,1184 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MMDL@NUAA Dashboard</title>
-    <link rel="stylesheet" href="assets/css/style.css">
-    <link rel="stylesheet" href="assets/css/dashboard.css">
+    <title>MMDL-Agent</title>
+    <style>
+        :root {
+            --bg: #f3f5f7;
+            --panel: #fbfcfd;
+            --panel-strong: #ffffff;
+            --line: #d8dde6;
+            --line-soft: #e8ecf2;
+            --text: #12202f;
+            --muted: #5f6b7a;
+            --accent: #2563eb;
+            --accent-soft: #dbeafe;
+            --assistant: #ffffff;
+            --user: #1f6feb;
+            --user-text: #f8fbff;
+            --system: #eef3f8;
+            --warn: #8a5a14;
+            --warn-soft: #fff2d6;
+            --ok: #146534;
+            --ok-soft: #ddfbe8;
+            --error: #b42318;
+            --error-soft: #fee8e7;
+            --shadow: 0 18px 40px rgba(17, 24, 39, 0.08);
+            --radius-xl: 26px;
+            --radius-lg: 20px;
+            --radius-md: 16px;
+            --radius-sm: 12px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            min-height: 100%;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(37, 99, 235, 0.09), transparent 28%),
+                linear-gradient(180deg, #f7f9fb 0%, #eef2f6 100%);
+            font-family: "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        }
+
+        body {
+            padding: 16px;
+        }
+
+        .app-shell {
+            display: grid;
+            grid-template-columns: 320px minmax(0, 1fr);
+            gap: 16px;
+            min-height: calc(100vh - 32px);
+        }
+
+        .sidebar,
+        .main-panel {
+            border: 1px solid rgba(216, 221, 230, 0.9);
+            border-radius: var(--radius-xl);
+            background: rgba(251, 252, 253, 0.88);
+            backdrop-filter: blur(12px);
+            box-shadow: var(--shadow);
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .brand {
+            padding: 24px 22px 18px;
+            border-bottom: 1px solid var(--line-soft);
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.74));
+        }
+
+        .brand-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .brand h1 {
+            margin: 12px 0 8px;
+            font-size: 26px;
+            line-height: 1.1;
+            letter-spacing: -0.03em;
+        }
+
+        .brand p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
+        .sidebar-scroll {
+            flex: 1;
+            overflow: auto;
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .card {
+            padding: 16px;
+            border: 1px solid var(--line-soft);
+            border-radius: var(--radius-lg);
+            background: var(--panel-strong);
+        }
+
+        .card h2 {
+            margin: 0 0 12px;
+            font-size: 15px;
+            letter-spacing: -0.01em;
+        }
+
+        .meta-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .meta-item small {
+            display: block;
+            margin-bottom: 4px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .mono {
+            font-family: Consolas, "SFMono-Regular", monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .field {
+            margin-top: 14px;
+        }
+
+        .field:first-of-type {
+            margin-top: 0;
+        }
+
+        .field label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .field input,
+        .field textarea {
+            width: 100%;
+            border: 1px solid var(--line);
+            border-radius: var(--radius-md);
+            background: #fff;
+            padding: 12px 14px;
+            color: var(--text);
+            font: inherit;
+            resize: vertical;
+        }
+
+        .field textarea {
+            min-height: 94px;
+        }
+
+        .hint {
+            margin-top: 8px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .preview {
+            margin-top: 14px;
+            border: 1px dashed var(--line);
+            border-radius: var(--radius-lg);
+            background: #f7f9fc;
+            padding: 12px;
+        }
+
+        .preview-stage {
+            position: relative;
+            margin-top: 10px;
+            border-radius: 16px;
+            overflow: hidden;
+            background: #e9edf3;
+        }
+
+        .preview img {
+            display: none;
+            width: 100%;
+            max-height: 280px;
+            object-fit: contain;
+            background: #e9edf3;
+        }
+
+        .mask-overlay {
+            position: absolute;
+            inset: 0;
+            display: none;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            opacity: 0.28;
+            mix-blend-mode: multiply;
+            pointer-events: none;
+        }
+
+        .bbox-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        .bbox-item {
+            position: absolute;
+            border: 2px solid #b42318;
+            border-radius: 10px;
+            background: rgba(180, 35, 24, 0.08);
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.34) inset;
+        }
+
+        .bbox-item::before {
+            content: attr(data-label);
+            position: absolute;
+            top: -28px;
+            left: 0;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: rgba(180, 35, 24, 0.94);
+            color: #fff;
+            font-size: 11px;
+            white-space: nowrap;
+        }
+
+        .localization-note {
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .button-row,
+        .composer-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        button {
+            border: 0;
+            border-radius: 14px;
+            padding: 11px 14px;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.16s ease, opacity 0.16s ease, background 0.16s ease;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+        }
+
+        button:disabled {
+            opacity: 0.48;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .primary {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .secondary {
+            background: #edf1f6;
+            color: var(--text);
+        }
+
+        .ghost {
+            background: transparent;
+            color: var(--accent);
+            border: 1px solid rgba(37, 99, 235, 0.22);
+        }
+
+        .message {
+            display: none;
+            margin-top: 12px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .message.show {
+            display: block;
+        }
+
+        .message.info {
+            background: var(--accent-soft);
+            color: #1f4fb9;
+        }
+
+        .message.success {
+            background: var(--ok-soft);
+            color: var(--ok);
+        }
+
+        .message.warning {
+            background: var(--warn-soft);
+            color: var(--warn);
+        }
+
+        .message.error {
+            background: var(--error-soft);
+            color: var(--error);
+        }
+
+        .main-panel {
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr) auto;
+            overflow: hidden;
+        }
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 18px 22px;
+            border-bottom: 1px solid var(--line-soft);
+            background: rgba(255, 255, 255, 0.66);
+        }
+
+        .topbar h2 {
+            margin: 0;
+            font-size: 18px;
+            letter-spacing: -0.02em;
+        }
+
+        .topbar p {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .status-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: #eef2f7;
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .conversation {
+            overflow: auto;
+            padding: 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .bubble-row {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        .bubble-row.user {
+            justify-content: flex-end;
+        }
+
+        .avatar {
+            flex: 0 0 auto;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            font-size: 12px;
+            font-weight: 800;
+            background: #e9edf3;
+            color: var(--text);
+        }
+
+        .bubble-row.user .avatar {
+            order: 2;
+            background: rgba(31, 111, 235, 0.16);
+            color: var(--accent);
+        }
+
+        .bubble-wrap {
+            max-width: min(860px, 78%);
+        }
+
+        .bubble-meta {
+            margin-bottom: 6px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .bubble {
+            padding: 14px 16px;
+            border-radius: 18px;
+            border: 1px solid var(--line-soft);
+            background: var(--assistant);
+            line-height: 1.72;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .bubble-row.user .bubble {
+            background: linear-gradient(180deg, #2b78f0, #1f6feb);
+            color: var(--user-text);
+            border-color: transparent;
+        }
+
+        .bubble-row.system .bubble {
+            background: var(--system);
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .result-card {
+            padding: 16px;
+            border-radius: 18px;
+            border: 1px solid var(--line-soft);
+            background: rgba(255, 255, 255, 0.86);
+        }
+
+        .result-card h3 {
+            margin: 0 0 10px;
+            font-size: 14px;
+        }
+
+        .result-copy {
+            min-height: 56px;
+            white-space: pre-wrap;
+            line-height: 1.7;
+            color: var(--text);
+        }
+
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .chip {
+            padding: 7px 11px;
+            border-radius: 999px;
+            background: #eef4ff;
+            color: #214f9f;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .composer {
+            padding: 18px 22px 22px;
+            border-top: 1px solid var(--line-soft);
+            background: rgba(251, 252, 253, 0.92);
+        }
+
+        .composer-shell {
+            border: 1px solid var(--line);
+            border-radius: 22px;
+            background: #fff;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+            padding: 14px;
+        }
+
+        .composer textarea {
+            width: 100%;
+            min-height: 92px;
+            border: 0;
+            resize: vertical;
+            font: inherit;
+            color: var(--text);
+            outline: none;
+            background: transparent;
+        }
+
+        .composer-foot {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: flex-end;
+            margin-top: 10px;
+        }
+
+        .composer-hint {
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        @media (max-width: 1100px) {
+            .app-shell {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                order: 2;
+            }
+
+            .main-panel {
+                order: 1;
+                min-height: 72vh;
+            }
+        }
+
+        @media (max-width: 760px) {
+            body {
+                padding: 10px;
+            }
+
+            .topbar,
+            .conversation,
+            .composer,
+            .sidebar-scroll {
+                padding-left: 14px;
+                padding-right: 14px;
+            }
+
+            .result-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .bubble-wrap {
+                max-width: 100%;
+            }
+
+            .composer-foot {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
+    </style>
 </head>
 <body>
-    <!-- Navigation -->
-    <nav class="navbar">
-        <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; padding: 0 20px; width: 100%;">
-            <div style="display: flex; align-items: center; gap: 20px; flex: 1;">
-                <h1 style="margin: 0; font-size: 1.5rem; color: #2563eb;">🔍 MMDL@NUAA</h1>
-                <span style="font-size: 0.9rem; color: #888;">Industrial Anomaly Detection</span>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="brand">
+                <span class="brand-tag">MMDL Agent</span>
+                <h1>工业异常检测</h1>
+                <p>保留核心链路：上传图片、发起检测、继续追问、生成报告。布局改为对话式工作台。</p>
             </div>
-            <div style="display: flex; gap: 20px;">
-                <a href="index.html" style="color: #2563eb; text-decoration: none; font-weight: 500;">Dashboard</a>
-                <a href="chat.html" style="color: #666; text-decoration: none;">Q&A Chat</a>
-                <a href="expert_inspection.html" style="color: #666; text-decoration: none;">Expert Inspection</a>
-                <a href="detection.html" style="color: #666; text-decoration: none;">Detection</a>
-                <a href="rag.html" style="color: #666; text-decoration: none;">RAG Console</a>
-                <a href="#" style="color: #666; text-decoration: none;">Status</a>
-            </div>
-        </div>
-    </nav>
 
-    <!-- Header -->
-    <header style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px 20px; text-align: center;">
-        <div style="max-width: 1200px; margin: 0 auto;">
-            <h1 style="margin: 0 0 10px 0; font-size: 2.5rem;">Anomaly Detection Dashboard</h1>
-            <p style="margin: 10px 0 0 0; font-size: 1.1rem; opacity: 0.95;">Real-time monitoring and detection</p>
-            <div style="margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 30;">
-                <div style="text-align: center;">
-                    <div style="font-size: 0.9rem; opacity: 0.85;">System Status</div>
-                    <div id="system-status" class="status-badge loading">🟡 Checking...</div>
+            <div class="sidebar-scroll">
+                <section class="card">
+                    <h2>任务状态</h2>
+                    <div class="meta-list">
+                        <div class="meta-item">
+                            <small>后端状态</small>
+                            <div id="backend-indicator">检查中</div>
+                        </div>
+                        <div class="meta-item">
+                            <small>任务 ID</small>
+                            <div id="task-indicator" class="mono">未创建</div>
+                        </div>
+                        <div class="meta-item">
+                            <small>运行摘要</small>
+                            <div id="status-panel" class="mono">等待发起检测</div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="card">
+                    <h2>任务配置</h2>
+                    <div class="field">
+                        <label for="asset-id">设备 ID</label>
+                        <input id="asset-id" type="text" placeholder="例如 PUMP-001">
+                    </div>
+                    <div class="field">
+                        <label for="image-input">检测图片</label>
+                        <input id="image-input" type="file" accept="image/*">
+                        <div class="hint">首次检测必须上传图片。后续追问复用当前任务上下文。</div>
+                    </div>
+
+                    <div class="preview">
+                        <div id="preview-text" class="hint">还没有选择图片</div>
+                        <div class="preview-stage">
+                            <img id="preview-image" alt="预览图">
+                            <img id="mask-overlay" class="mask-overlay" alt="异常热区">
+                            <div id="bbox-layer" class="bbox-layer"></div>
+                        </div>
+                        <div id="localization-note" class="localization-note">当前还没有异常定位结果。</div>
+                    </div>
+
+                    <div class="button-row" style="margin-top: 14px;">
+                        <button id="detect-button" class="primary" type="button">开始检测</button>
+                        <button id="report-button" class="ghost" type="button" disabled>生成报告</button>
+                        <button id="reset-button" class="secondary" type="button">新任务</button>
+                    </div>
+
+                    <div id="detect-message" class="message info"></div>
+                    <div id="report-message" class="message info"></div>
+                </section>
+
+                <section class="card">
+                    <h2>异常摘要</h2>
+                    <div id="answer-panel" class="result-copy">暂无结果</div>
+                    <div id="anomaly-chips" class="chips"></div>
+                </section>
+
+                <section class="card">
+                    <h2>待澄清信息</h2>
+                    <div id="pending-panel" class="result-copy">当前没有待澄清问题</div>
+                    <div id="followup-message" class="message info"></div>
+                </section>
+
+                <section class="card">
+                    <h2>完整报告</h2>
+                    <div id="report-panel" class="result-copy">尚未生成报告</div>
+                </section>
+            </div>
+        </aside>
+
+        <main class="main-panel">
+            <header class="topbar">
+                <div>
+                    <h2>对话工作台</h2>
+                    <p>首次输入用于发起检测。任务创建后，输入框继续承担追问或澄清。</p>
                 </div>
-                <div style="text-align: center;">
-                    <div style="font-size: 0.9rem; opacity: 0.85;">Version</div>
-                    <div style="font-weight: 600;">1.0.0</div>
+                <div class="status-pills">
+                    <span class="pill">核心流程</span>
+                    <span class="pill" id="mode-indicator">模式：首轮检测</span>
                 </div>
-            </div>
-        </div>
-    </header>
+            </header>
 
-    <!-- Main Content -->
-    <main style="max-width: 1200px; margin: 0 auto; padding: 40px 20px;">
-        <!-- Statistics Section -->
-        <section style="margin-bottom: 40px;">
-            <h2 style="margin-bottom: 20px; font-size: 1.5rem;">Quick Statistics</h2>
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-label">Recent Tasks</div>
-                    <div class="stat-value" id="recent-tasks-count">0</div>
-                    <div class="stat-info">Last 10 detection tasks</div>
+            <section class="conversation">
+                <div id="history-panel"></div>
+
+                <div class="result-grid">
+                    <section class="result-card">
+                        <h3>当前回答</h3>
+                        <div id="answer-panel-inline" class="result-copy">暂无结果</div>
+                    </section>
+                    <section class="result-card">
+                        <h3>报告摘要</h3>
+                        <div id="report-panel-inline" class="result-copy">尚未生成报告</div>
+                    </section>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-label">Anomalies Found</div>
-                    <div class="stat-value" id="anomalies-count">0</div>
-                    <div class="stat-info">Total detected anomalies</div>
+            </section>
+
+            <footer class="composer">
+                <div class="composer-shell">
+                    <textarea id="question" placeholder="输入问题。首次用于发起检测；任务创建后继续追问，若当前为待澄清状态则用于提交澄清。"></textarea>
+                    <div class="composer-foot">
+                        <div class="composer-hint">
+                            首轮：上传图片并点击“开始检测”。
+                            继续：已有任务后可直接点击“发送追问”或“提交澄清”。
+                        </div>
+                        <div class="composer-actions">
+                            <button id="followup-button" class="ghost" type="button" disabled>发送追问</button>
+                            <button id="continue-button" class="primary" type="button" disabled>提交澄清</button>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-label">Success Rate</div>
-                    <div class="stat-value" id="success-rate-count">0%</div>
-                    <div class="stat-info">Detection success rate</div>
+            </footer>
+        </main>
+    </div>
+
+    <script>
+        const API_BASE = '';
+        const state = {
+            taskId: '',
+            pending: false,
+            imageFile: null,
+            history: [],
+            lastResult: null
+        };
+
+        const els = {
+            assetId: document.getElementById('asset-id'),
+            imageInput: document.getElementById('image-input'),
+            previewText: document.getElementById('preview-text'),
+            previewImage: document.getElementById('preview-image'),
+            maskOverlay: document.getElementById('mask-overlay'),
+            bboxLayer: document.getElementById('bbox-layer'),
+            localizationNote: document.getElementById('localization-note'),
+            question: document.getElementById('question'),
+            detectButton: document.getElementById('detect-button'),
+            followupButton: document.getElementById('followup-button'),
+            continueButton: document.getElementById('continue-button'),
+            reportButton: document.getElementById('report-button'),
+            resetButton: document.getElementById('reset-button'),
+            detectMessage: document.getElementById('detect-message'),
+            followupMessage: document.getElementById('followup-message'),
+            reportMessage: document.getElementById('report-message'),
+            backendIndicator: document.getElementById('backend-indicator'),
+            taskIndicator: document.getElementById('task-indicator'),
+            statusPanel: document.getElementById('status-panel'),
+            answerPanel: document.getElementById('answer-panel'),
+            answerPanelInline: document.getElementById('answer-panel-inline'),
+            pendingPanel: document.getElementById('pending-panel'),
+            reportPanel: document.getElementById('report-panel'),
+            reportPanelInline: document.getElementById('report-panel-inline'),
+            anomalyChips: document.getElementById('anomaly-chips'),
+            historyPanel: document.getElementById('history-panel'),
+            modeIndicator: document.getElementById('mode-indicator')
+        };
+
+        function newTaskId() {
+            return `task-${Date.now()}`;
+        }
+
+        function nowIso() {
+            return new Date().toISOString();
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#39;');
+        }
+
+        function setMessage(element, type, text) {
+            element.className = `message ${type}${text ? ' show' : ''}`;
+            element.textContent = text || '';
+        }
+
+        function getResultMetadata(result) {
+            return result?.metadata?.result_metadata || {};
+        }
+
+        function clearLocalizationOverlay() {
+            els.bboxLayer.innerHTML = '';
+            els.maskOverlay.style.display = 'none';
+            els.maskOverlay.removeAttribute('src');
+            els.localizationNote.textContent = '当前还没有异常定位结果。';
+        }
+
+        function renderLocalization(anomalies, result) {
+            clearLocalizationOverlay();
+
+            if (!Array.isArray(anomalies) || anomalies.length === 0) {
+                return;
+            }
+
+            const renderedWidth = els.previewImage.clientWidth;
+            const renderedHeight = els.previewImage.clientHeight;
+            const naturalWidth = els.previewImage.naturalWidth || renderedWidth;
+            const naturalHeight = els.previewImage.naturalHeight || renderedHeight;
+
+            if (!renderedWidth || !renderedHeight || !naturalWidth || !naturalHeight) {
+                return;
+            }
+
+            const boxes = anomalies.map((item, index) => {
+                const bbox = Array.isArray(item?.bbox) && item.bbox.length === 4 ? item.bbox.map(Number) : null;
+                if (!bbox) return '';
+
+                const [x1, y1, x2, y2] = bbox;
+                const left = Math.max(0, (x1 / naturalWidth) * renderedWidth);
+                const top = Math.max(0, (y1 / naturalHeight) * renderedHeight);
+                const width = Math.max(2, ((x2 - x1) / naturalWidth) * renderedWidth);
+                const height = Math.max(2, ((y2 - y1) / naturalHeight) * renderedHeight);
+                const label = item?.type || item?.label || `异常 ${index + 1}`;
+                const location = item?.location ? ` · ${item.location}` : '';
+
+                return `
+                    <div
+                        class="bbox-item"
+                        data-label="${escapeHtml(label + location)}"
+                        style="left:${left}px;top:${top}px;width:${width}px;height:${height}px;"
+                    ></div>
+                `;
+            }).filter(Boolean);
+
+            els.bboxLayer.innerHTML = boxes.join('');
+
+            const resultMetadata = getResultMetadata(result);
+            const maskBase64 = resultMetadata?.localization_mask_base64;
+            if (maskBase64) {
+                els.maskOverlay.src = `data:image/png;base64,${maskBase64}`;
+                els.maskOverlay.style.display = 'block';
+            }
+
+            const localizedCount = anomalies.filter(item => item?.has_localization).length;
+            if (localizedCount > 0) {
+                els.localizationNote.textContent = `已标出 ${localizedCount} 处异常位置。`;
+            } else if (maskBase64) {
+                els.localizationNote.textContent = '已显示异常热区，但当前没有可绘制的边界框。';
+            } else {
+                els.localizationNote.textContent = '已检出异常，但当前结果没有返回可绘制的位置框。';
+            }
+        }
+
+        function pushHistory(role, text, tone = '') {
+            if (!text) return;
+            state.history.push({ role, text, tone, time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) });
+            renderHistory();
+        }
+
+        function renderHistory() {
+            if (!state.history.length) {
+                els.historyPanel.innerHTML = `
+                    <div class="bubble-row system">
+                        <div class="avatar">AI</div>
+                        <div class="bubble-wrap">
+                            <div class="bubble-meta">系统</div>
+                            <div class="bubble">等待上传图片并发起首轮检测。</div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            els.historyPanel.innerHTML = state.history.map(item => `
+                <div class="bubble-row ${escapeHtml(item.role)} ${escapeHtml(item.tone || '')}">
+                    <div class="avatar">${item.role === 'user' ? '你' : item.role === 'assistant' ? 'AI' : '系'}</div>
+                    <div class="bubble-wrap">
+                        <div class="bubble-meta">${item.role === 'user' ? '你' : item.role === 'assistant' ? '助手' : '系统'} · ${escapeHtml(item.time)}</div>
+                        <div class="bubble">${escapeHtml(item.text)}</div>
+                    </div>
                 </div>
-            </div>
-        </section>
+            `).join('');
 
-        <!-- Quick Actions -->
-        <section style="margin-bottom: 40px;">
-            <h2 style="margin-bottom: 20px; font-size: 1.5rem;">Quick Actions</h2>
-            <div class="quick-actions">
-                <button class="btn btn-primary" onclick="window.location.href='chat.html'">
-                    💬 Autonomous Q&A Chat
-                </button>
-                <button class="btn btn-secondary" onclick="window.location.href='expert_inspection.html'">
-                    🤖 Expert Inspection
-                </button>
-                <button class="btn btn-outline" onclick="window.location.href='detection.html'">
-                    ➕ Quick Detection
-                </button>
-            </div>
-        </section>
+            els.historyPanel.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
 
-        <!-- Recent Detections -->
-        <section style="margin-bottom: 40px;">
-            <h2 style="margin-bottom: 20px; font-size: 1.5rem;">Recent Detections</h2>
-            <div id="recent-list" style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                <p style="color: #888; text-align: center; padding: 20px;">
-                    No detections yet. <a href="detection.html" style="color: #2563eb; text-decoration: none;">Start a new detection task</a>
-                </p>
-            </div>
-        </section>
+        function renderTaskState() {
+            els.taskIndicator.textContent = state.taskId || '未创建';
+            els.followupButton.disabled = !state.taskId || state.pending;
+            els.continueButton.disabled = !state.taskId || !state.pending;
+            els.reportButton.disabled = !state.taskId;
+            els.modeIndicator.textContent = state.pending ? '模式：等待澄清' : (state.taskId ? '模式：对话追问' : '模式：首轮检测');
+        }
 
-    </main>
+        function renderAnomalies(anomalies) {
+            if (!Array.isArray(anomalies) || anomalies.length === 0) {
+                els.anomalyChips.innerHTML = '';
+                return;
+            }
 
-    <!-- Footer -->
-    <footer class="footer">
-        <p>&copy; 2026 MMDL@NUAA. All rights reserved.</p>
-    </footer>
+            els.anomalyChips.innerHTML = anomalies.map((item, index) => {
+                const label = item?.type || item?.label || `异常 ${index + 1}`;
+                const location = item?.location ? ` · ${item.location}` : '';
+                return `<span class="chip">${escapeHtml(label + location)}</span>`;
+            }).join('');
+        }
 
-    <!-- API Client -->
-    <script src="assets/js/api-client.js"></script>
-    <!-- Dashboard Script -->
-    <script src="assets/js/dashboard.js"></script>
+        function applyResult(result, sourceLabel) {
+            state.lastResult = result;
+            state.pending = result.status === 'pending';
+            renderTaskState();
+
+            els.statusPanel.textContent = [
+                `status: ${result.status || 'unknown'}`,
+                `source: ${sourceLabel}`,
+                result.task_id ? `task_id: ${result.task_id}` : null
+            ].filter(Boolean).join('\n');
+
+            if (result.answer) {
+                els.answerPanel.textContent = result.answer;
+                els.answerPanelInline.textContent = result.answer;
+                pushHistory('assistant', result.answer);
+            }
+
+            if (result.summary) {
+                els.reportPanel.textContent = result.summary;
+                els.reportPanelInline.textContent = result.summary;
+            }
+
+            renderAnomalies(result.anomalies);
+            renderLocalization(result.anomalies, result);
+
+            if (state.pending) {
+                const pendingText = [
+                    result.pending_question || '',
+                    result.pending_clarification || ''
+                ].filter(Boolean).join('\n\n');
+                els.pendingPanel.textContent = pendingText || '任务处于待澄清状态';
+                pushHistory('system', pendingText || '任务处于待澄清状态');
+            } else {
+                els.pendingPanel.textContent = '当前没有待澄清问题';
+            }
+        }
+
+        async function checkHealth() {
+            try {
+                const res = await fetch(`${API_BASE}/health`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                els.backendIndicator.textContent = '已连接';
+            } catch (error) {
+                els.backendIndicator.textContent = '不可用';
+            }
+        }
+
+        function resetTask() {
+            state.taskId = '';
+            state.pending = false;
+            state.imageFile = null;
+            state.history = [];
+            state.lastResult = null;
+
+            els.assetId.value = '';
+            els.question.value = '';
+            els.imageInput.value = '';
+            els.previewText.textContent = '还没有选择图片';
+            els.previewImage.style.display = 'none';
+            els.previewImage.removeAttribute('src');
+            clearLocalizationOverlay();
+
+            els.statusPanel.textContent = '等待发起检测';
+            els.answerPanel.textContent = '暂无结果';
+            els.answerPanelInline.textContent = '暂无结果';
+            els.pendingPanel.textContent = '当前没有待澄清问题';
+            els.reportPanel.textContent = '尚未生成报告';
+            els.reportPanelInline.textContent = '尚未生成报告';
+            els.anomalyChips.innerHTML = '';
+
+            setMessage(els.detectMessage, 'info', '');
+            setMessage(els.followupMessage, 'info', '');
+            setMessage(els.reportMessage, 'info', '');
+
+            renderHistory();
+            renderTaskState();
+        }
+
+        async function startDetection() {
+            const assetId = els.assetId.value.trim();
+            const question = els.question.value.trim();
+            const image = els.imageInput.files[0];
+
+            if (!assetId) {
+                setMessage(els.detectMessage, 'warning', '请先填写设备 ID。');
+                return;
+            }
+            if (!image) {
+                setMessage(els.detectMessage, 'warning', '请先上传检测图片。');
+                return;
+            }
+
+            const taskId = newTaskId();
+            state.taskId = taskId;
+            renderTaskState();
+            setMessage(els.detectMessage, 'info', '检测任务已提交，等待结果。');
+            setMessage(els.followupMessage, 'info', '');
+            setMessage(els.reportMessage, 'info', '');
+            pushHistory('user', question || '请分析当前图片');
+
+            const form = new FormData();
+            form.append('task_id', taskId);
+            form.append('asset_id', assetId);
+            form.append('start_time', nowIso());
+            form.append('end_time', nowIso());
+            form.append('question', question);
+            form.append('image', image);
+
+            els.detectButton.disabled = true;
+            try {
+                const res = await fetch(`${API_BASE}/v1/detect`, {
+                    method: 'POST',
+                    body: form
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data.message || data.detail || `HTTP ${res.status}`);
+                }
+
+                applyResult(data, 'detect');
+                setMessage(
+                    els.detectMessage,
+                    data.status === 'pending' ? 'warning' : 'success',
+                    data.status === 'pending' ? '检测已暂停，等待人工澄清。' : '检测完成，可以继续追问或生成报告。'
+                );
+                els.question.value = '';
+            } catch (error) {
+                setMessage(els.detectMessage, 'error', `检测失败：${error.message}`);
+                els.statusPanel.textContent = `status: failed\nreason: ${error.message}`;
+            } finally {
+                els.detectButton.disabled = false;
+                renderTaskState();
+            }
+        }
+
+        async function sendFollowup() {
+            const question = els.question.value.trim();
+            if (!state.taskId) {
+                setMessage(els.followupMessage, 'warning', '请先完成第一轮检测。');
+                return;
+            }
+            if (!question) {
+                setMessage(els.followupMessage, 'warning', '请输入追问内容。');
+                return;
+            }
+
+            setMessage(els.followupMessage, 'info', '正在发送追问。');
+            pushHistory('user', question);
+            els.followupButton.disabled = true;
+            try {
+                const res = await fetch(`${API_BASE}/v1/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        task_id: state.taskId,
+                        question
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data.message || data.detail || `HTTP ${res.status}`);
+                }
+
+                applyResult(data, 'chat');
+                setMessage(els.followupMessage, 'success', '追问完成。');
+                els.question.value = '';
+            } catch (error) {
+                setMessage(els.followupMessage, 'error', `追问失败：${error.message}`);
+            } finally {
+                renderTaskState();
+            }
+        }
+
+        async function continueTask() {
+            const userReply = els.question.value.trim();
+            if (!state.taskId) {
+                setMessage(els.followupMessage, 'warning', '请先完成第一轮检测。');
+                return;
+            }
+            if (!state.pending) {
+                setMessage(els.followupMessage, 'warning', '当前任务不需要澄清。');
+                return;
+            }
+            if (!userReply) {
+                setMessage(els.followupMessage, 'warning', '请输入澄清内容。');
+                return;
+            }
+
+            setMessage(els.followupMessage, 'info', '正在提交澄清。');
+            pushHistory('user', userReply);
+            els.continueButton.disabled = true;
+            try {
+                const res = await fetch(`${API_BASE}/v1/continue`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        task_id: state.taskId,
+                        user_reply: userReply
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data.message || data.detail || `HTTP ${res.status}`);
+                }
+
+                applyResult(data, 'continue');
+                setMessage(
+                    els.followupMessage,
+                    data.status === 'pending' ? 'warning' : 'success',
+                    data.status === 'pending' ? '仍需进一步澄清。' : '澄清已提交并完成后续处理。'
+                );
+                els.question.value = '';
+            } catch (error) {
+                setMessage(els.followupMessage, 'error', `澄清失败：${error.message}`);
+            } finally {
+                renderTaskState();
+            }
+        }
+
+        async function generateReport() {
+            if (!state.taskId) {
+                setMessage(els.reportMessage, 'warning', '请先完成检测任务。');
+                return;
+            }
+
+            setMessage(els.reportMessage, 'info', '正在生成报告。');
+            els.reportButton.disabled = true;
+            try {
+                const res = await fetch(`${API_BASE}/v1/generate_report`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ task_id: state.taskId })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data.message || data.detail || `HTTP ${res.status}`);
+                }
+
+                applyResult(data, 'report');
+                if (data.summary) {
+                    pushHistory('assistant', `报告已生成：\n${data.summary}`);
+                }
+                setMessage(els.reportMessage, 'success', '完整报告已生成。');
+            } catch (error) {
+                setMessage(els.reportMessage, 'error', `报告生成失败：${error.message}`);
+            } finally {
+                renderTaskState();
+            }
+        }
+
+        els.imageInput.addEventListener('change', () => {
+            const file = els.imageInput.files[0];
+            state.imageFile = file || null;
+            state.lastResult = null;
+
+            if (!file) {
+                els.previewText.textContent = '还没有选择图片';
+                els.previewImage.style.display = 'none';
+                els.previewImage.removeAttribute('src');
+                clearLocalizationOverlay();
+                return;
+            }
+
+            els.previewText.textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} KB`;
+            const reader = new FileReader();
+            reader.onload = event => {
+                els.previewImage.src = event.target.result;
+                els.previewImage.style.display = 'block';
+                clearLocalizationOverlay();
+            };
+            reader.readAsDataURL(file);
+        });
+
+        els.previewImage.addEventListener('load', () => {
+            if (state.lastResult) {
+                renderLocalization(state.lastResult.anomalies, state.lastResult);
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            if (state.lastResult) {
+                renderLocalization(state.lastResult.anomalies, state.lastResult);
+            }
+        });
+
+        els.detectButton.addEventListener('click', startDetection);
+        els.followupButton.addEventListener('click', sendFollowup);
+        els.continueButton.addEventListener('click', continueTask);
+        els.reportButton.addEventListener('click', generateReport);
+        els.resetButton.addEventListener('click', resetTask);
+
+        els.question.addEventListener('keydown', event => {
+            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                event.preventDefault();
+                if (!state.taskId) {
+                    startDetection();
+                } else if (state.pending) {
+                    continueTask();
+                } else {
+                    sendFollowup();
+                }
+            }
+        });
+
+        resetTask();
+        checkHealth();
+    </script>
 </body>
 </html>

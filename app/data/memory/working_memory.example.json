@@ -1,0 +1,15 @@
+[
+    {
+        "task_id": "example-task-001",
+        "step_id": 1,
+        "user_id": "example_user",
+        "agent_context": {
+            "question": "请分析这张图像中的异常情况",
+            "answer": "示例工作记忆：这里保留数据结构，不保留真实运行内容。",
+            "anomaly_count": 1,
+            "asset_id": "asset-example-001"
+        },
+        "create_time": "2026-04-26 10:00:00",
+        "expire_time": "2026-04-26 10:30:00"
+    }
+]

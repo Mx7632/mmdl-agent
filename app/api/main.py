@@ -294,7 +294,7 @@ async def rag_ingest_feedback(payload: RagIngestFeedbackRequest) -> RagIngestFee
 # ── 检测端点（合并本地 + 远程逻辑）─────────────────────────────────────────────
 
 
-@app.post("/v1/detect", response_model=DetectionResult)
+@app.post("/v1/detect")
 async def detect(request: Request):
     """
     创建检测任务并执行循环工作流。
@@ -343,7 +343,7 @@ async def detect(request: Request):
     if isinstance(upload, StarletteUploadFile) and getattr(upload, "filename", None):
         image_bytes = await upload.read()
         image_b64 = base64.b64encode(image_bytes).decode("ascii")
-        parameters.setdefault("tool_type", "qwen3.5-plus")
+        parameters.setdefault("tool_type", settings.vision_detector_backend)
         parameters["image_base64"] = image_b64
         parameters["image_mime"] = getattr(upload, "content_type", None) or "image/jpeg"
         input_type = "image"
@@ -395,7 +395,7 @@ async def pending(task_id: str):
     查询挂起任务的澄清内容。
     前端轮询此接口展示"等待用户输入"界面。
     """
-    info = get_pending_task(task_id)
+    info = await get_pending_task(task_id)
     if info is None:
         return JSONResponse(
             status_code=404,
@@ -474,8 +474,14 @@ async def stream_chat(request: Request):
         if isinstance(upload, StarletteUploadFile) and getattr(upload, "filename", None):
             logger.info(f"[stream_chat] Image upload detected: {upload.filename}")
             image_bytes = await upload.read()
-            parameters["image_base64"] = base64.b64encode(image_bytes).decode("ascii")
+            image_b64 = base64.b64encode(image_bytes).decode("ascii")
+            parameters.setdefault("tool_type", settings.vision_detector_backend)
+            parameters["image_base64"] = image_b64
+            parameters["image_mime"] = getattr(upload, "content_type", None) or "image/jpeg"
             input_type = "image"
+            logger.info(f"[stream_chat] Image processed, base64 length: {len(image_b64)}")
+        else:
+            logger.info("[stream_chat] No image upload detected in current request")
 
         task = DetectionTask(
             task_id=task_id,
@@ -566,7 +572,7 @@ async def detect_with_report(request: Request):
     if isinstance(upload, StarletteUploadFile) and getattr(upload, "filename", None):
         image_bytes = await upload.read()
         image_b64 = base64.b64encode(image_bytes).decode("ascii")
-        parameters.setdefault("tool_type", "qwen3.5-plus")
+        parameters.setdefault("tool_type", settings.vision_detector_backend)
         parameters["image_base64"] = image_b64
         parameters["image_mime"] = getattr(upload, "content_type", None) or "image/jpeg"
         input_type = "image"

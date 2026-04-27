@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     app_name: str = "industrial-anomaly-agent"
     log_level: str = "INFO"
     enable_tracing: bool = False
+    checkpoint_backend: str = "postgres"
+    database_url: str = ""
+    database_schema: str = "public"
 
     # 异常检测服务配置（供 HttpAnomalyDetectionTool 使用）
     anomaly_detection_url: str = "http://localhost:8080/"  # TODO: 后续改为可配置/服务发现
@@ -28,6 +31,13 @@ class Settings(BaseSettings):
 
     # Vision LLM (qwen3.5-plus) config (for image anomaly detection)
     llm_vision_model: str = "qwen3.5-plus"  # TODO: Switching to local CV makes this unused.
+    vision_detector_backend: str = "qwen"
+    professional_vision_detector_type: str = "anomalygpt"
+    professional_vision_detector_url: str = ""
+    professional_vision_detector_timeout: float = 30.0
+    professional_vision_detector_aliases: str = (
+        "anomalygpt,anomaly_gpt,specialist-http,specialist_http,professional"
+    )
 
     # RAG 配置
     rag_enabled: bool = True
