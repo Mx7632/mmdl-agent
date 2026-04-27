@@ -441,3 +441,18 @@
   - USER.md
 - 验证结果：
   - 文档更新后将按 README 实际执行一次后端启动和前端/接口联调验证。
+### 2026-04-27 | README Smoke Verification | startup path validated on local Windows environment
+- 完成内容：
+  - 按 README.md 实际启动后端并验证 GET /health、GET /openapi.json、/web/index.html 等基础入口可用。
+  - 在 APP_CHECKPOINT_BACKEND=memory 模式下，使用本地测试图片实际走通 detect -> chat -> generate_report 主链路。
+  - 记录并修正文档中的两个联调注意点：Windows 下本地推荐优先使用 memory backend；JSON 接口示例优先提供 Invoke-RestMethod 版本以规避 PowerShell 转义问题。
+- 影响范围：
+  - README.md
+  - USER.md
+- 验证结果：
+  - GET http://127.0.0.1:8000/health
+  - GET http://127.0.0.1:8000/openapi.json
+  - GET http://127.0.0.1:8000/web/index.html
+  - POST http://127.0.0.1:8001/v1/detect
+  - POST http://127.0.0.1:8001/v1/chat
+  - POST http://127.0.0.1:8001/v1/generate_report

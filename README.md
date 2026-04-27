@@ -123,6 +123,10 @@ APP_VISION_DETECTOR_BACKEND=qwen
 
 这套模式不依赖 PostgreSQL，也不要求先启动本地 AnomalyGPT sidecar。
 
+> 在 Windows 本地联调时，推荐优先使用这一模式。当前 `postgres` checkpoint
+> 后端在 Windows 默认事件循环下可能触发 psycopg async 兼容问题，此时先切到
+> `APP_CHECKPOINT_BACKEND=memory` 更稳。
+
 #### 模式 B：完整运行态
 
 适合验证持久化 checkpoint、RAG 数据和专业检测后端联动。
@@ -385,6 +389,9 @@ curl -X POST http://127.0.0.1:8000/v1/detect `
   -F "image=@C:\path\to\image.jpg"
 ```
 
+如果你在 Windows PowerShell 下遇到 `parameters must be valid JSON string`，
+最简单的做法是先省略 `parameters`，把主链路跑通后再逐步补调参字段。
+
 成功响应字段通常包括：
 
 - `task_id`
@@ -415,6 +422,21 @@ curl -X POST http://127.0.0.1:8000/v1/detect `
 }
 ```
 
+PowerShell 推荐写法：
+
+```powershell
+$payload = @{
+  task_id = "test-001"
+  question = "这个异常可能是什么原因导致的？"
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/v1/chat" `
+  -ContentType "application/json" `
+  -Body $payload
+```
+
 ### `POST /v1/continue`
 
 为 pending 任务提交人工澄清。
@@ -428,6 +450,21 @@ curl -X POST http://127.0.0.1:8000/v1/detect `
 }
 ```
 
+PowerShell 推荐写法：
+
+```powershell
+$payload = @{
+  task_id = "test-001"
+  user_reply = "异常位于图像右下角，现场观察到轻微裂纹。"
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/v1/continue" `
+  -ContentType "application/json" `
+  -Body $payload
+```
+
 ### `GET /v1/pending/{task_id}`
 
 查询某个任务是否处于待澄清状态。
@@ -435,6 +472,20 @@ curl -X POST http://127.0.0.1:8000/v1/detect `
 ### `POST /v1/generate_report`
 
 基于已有任务状态生成完整报告。
+
+PowerShell 推荐写法：
+
+```powershell
+$payload = @{
+  task_id = "test-001"
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/v1/generate_report" `
+  -ContentType "application/json" `
+  -Body $payload
+```
 
 请求体：
 
