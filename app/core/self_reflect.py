@@ -77,7 +77,7 @@ async def self_reflect_node(state: DetectionState) -> DetectionState:
 
     result = _ensure_result_from_shared_context(state)
     user_id = (task_runtime.task.parameters or {}).get("user_id", "default_user")
-    long_term_memories = memory_manager.get_long_term_memory(user_id)
+    long_term_memories = memory_manager.get_long_term_memory(user_id, asset_id=task_runtime.task.asset_id)
     history_text = "\n".join(f"- {item.memory_summary[:200]}" for item in long_term_memories[-3:])
 
     if not settings.openai_api_key:

@@ -9,8 +9,9 @@ from pydantic import SecretStr
 
 from app.config.settings import settings
 from app.exceptions.base import ConfigurationError
+from app.memory.conversation import compact_state_conversation
 from app.memory.memory_manager import memory_manager
-from app.memory.models import WorkingMemory
+from app.memory.models import ShortTermMemory, WorkingMemory
 from app.memory.state import DetectionState
 from app.orchestration.context_store import get_prompt_context
 from app.schemas.detection import DetectionResult
@@ -29,6 +30,7 @@ Memory and knowledge context:
 User task context:
 Asset ID: {asset_id}
 Conversation history: {conversation_history}
+Conversation summary: {conversation_summary}
 Current question: {question}
 
 Requirements:
@@ -73,6 +75,7 @@ async def answer_node(state: DetectionState) -> DetectionState:
     memory_context_text = (
         f"[Short-term same asset]\n{mem_ctx['short_term']}\n\n"
         f"[Long-term history]\n{mem_ctx['long_term']}\n\n"
+        f"[Tool effectiveness]\n{mem_ctx['tool_effect']}\n\n"
         f"[Knowledge retrieval]\n{knowledge_context}"
     )
 
@@ -97,6 +100,7 @@ async def answer_node(state: DetectionState) -> DetectionState:
         result_json=result_json,
         memory_context=memory_context_text,
         conversation_history=history_text or "(first turn)",
+        conversation_summary=state.context.get("conversation_summary", "(no earlier summary)"),
         question=question,
         asset_id=asset_id or "unknown asset",
     )
@@ -147,9 +151,37 @@ async def answer_node(state: DetectionState) -> DetectionState:
         )
     )
 
+    if step_id == 1 and asset_id:
+        anomaly_types = [
+            item.get("type", "unknown")
+            for item in (result.anomalies or [])
+            if isinstance(item, dict)
+        ]
+        summary = (
+            f"检出 {len(result.anomalies or [])} 个异常：{', '.join(anomaly_types)}"
+            if anomaly_types
+            else "未检出明显异常"
+        )
+        memory_manager.add_short_term_memory(
+            ShortTermMemory(
+                asset_id=asset_id,
+                user_id=user_id,
+                memory_summary=summary,
+                memory_details={
+                    "task_id": task.task_id,
+                    "question": question,
+                    "anomalies": result.anomalies or [],
+                    "answer": answer,
+                },
+                tags=anomaly_types,
+                anomaly_count=len(result.anomalies or []),
+            )
+        )
+
     task_runtime.conversation_history.append({"role": "assistant", "content": answer})
     task_runtime.current_step = step_id + 1
     state.apply_task_runtime(task_runtime)
+    compact_state_conversation(state)
     state.context["answer"] = answer
     state.context["has_report"] = False
     state.logs.append(

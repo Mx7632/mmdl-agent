@@ -36,3 +36,4 @@ AI_GUIDE.md
 app/data/memory/working_memory.json
 app/data/memory/long_term_memory.json
 app/data/memory/short_term_memory.json
+app/data/memory/tool_context.json

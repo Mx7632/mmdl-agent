@@ -4,6 +4,7 @@ import logging
 from typing import Any, Optional
 
 from app.exceptions.base import AppError
+from app.memory.conversation import compact_state_conversation
 from app.memory.state import DetectionState
 from app.orchestration.context_store import get_pending_context_from_mapping
 
@@ -99,5 +100,6 @@ def prepare_followup_state(
     task_runtime = state.task_runtime()
     task_runtime.user_reply = None
     state.apply_task_runtime(task_runtime)
+    compact_state_conversation(state)
 
     return state

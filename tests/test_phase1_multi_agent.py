@@ -13,6 +13,7 @@ from app.core.agent import get_pending_task, stream_detection
 from app.core.self_reflect import self_reflect_node
 from app.core.supervisor import supervisor_execute_node, supervisor_merge_node, supervisor_plan_node
 from app.core.wait_user import wait_user_node
+from app.memory.conversation import compact_state_conversation
 from app.memory.state import DetectionState
 from app.orchestration.envelope import AgentEnvelope
 from app.schemas.detection import DetectionResult, DetectionTask
@@ -349,7 +350,10 @@ def test_self_reflect_sets_retry_target(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr("app.core.self_reflect.ChatOpenAI", lambda *args, **kwargs: FakeChatOpenAI())
     monkeypatch.setattr("app.core.self_reflect.settings.openai_api_key", "fake-key")
-    monkeypatch.setattr("app.core.self_reflect.memory_manager.get_long_term_memory", lambda user_id: [])
+    monkeypatch.setattr(
+        "app.core.self_reflect.memory_manager.get_long_term_memory",
+        lambda user_id, asset_id=None: [],
+    )
 
     state = build_state()
     state.shared_context["vision"] = {"anomalies": [{"type": "dent", "details": "metal dent"}]}
@@ -372,6 +376,10 @@ def test_answer_node_prefers_shared_context(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr("app.core.answer_node.ChatOpenAI", lambda *args, **kwargs: FakeChatOpenAI())
     monkeypatch.setattr("app.core.answer_node.settings.openai_api_key", "fake-key")
+    short_term_calls: list[object] = []
+    working_calls: list[object] = []
+    monkeypatch.setattr("app.core.answer_node.memory_manager.add_short_term_memory", lambda memory: short_term_calls.append(memory))
+    monkeypatch.setattr("app.core.answer_node.memory_manager.add_working_memory", lambda memory: working_calls.append(memory))
 
     state = build_state()
     state.shared_context["vision"] = {
@@ -387,6 +395,9 @@ def test_answer_node_prefers_shared_context(monkeypatch: pytest.MonkeyPatch):
     assert updated.result.anomalies[0]["type"] == "dent"
     assert updated.result.metadata["confidence"] == 0.88
     assert updated.current_step == 2
+    assert len(short_term_calls) == 1
+    assert short_term_calls[0].asset_id == "asset-001"
+    assert working_calls[0].task_id == state.task.task_id
 
 
 def test_generate_report_state_prefers_shared_context(monkeypatch: pytest.MonkeyPatch):
@@ -467,6 +478,73 @@ def test_wait_user_records_suspend_and_resume_events():
     suspended.user_reply = "Confirmed, it is near the upper edge."
     resumed = asyncio.run(wait_user_node(suspended))
     assert resumed.execution_events[-1]["type"] == "task_resumed"
+
+
+def test_compact_state_conversation_keeps_recent_turns():
+    state = build_state()
+    state.conversation_history = [
+        {"role": "user", "content": f"user-{index}"}
+        if index % 2 == 0
+        else {"role": "assistant", "content": f"assistant-{index}"}
+        for index in range(8)
+    ]
+
+    compacted = compact_state_conversation(state)
+
+    assert compacted == 2
+    assert len(state.conversation_history) == 6
+    assert "user-0" in state.context["conversation_summary"]
+    assert state.context["conversation_compacted_turns"] == 2
+
+
+def test_prepare_followup_state_compacts_history():
+    previous_state = build_state().model_dump()
+    previous_state["conversation_history"] = [
+        {"role": "user", "content": f"turn-{index}"}
+        for index in range(6)
+    ]
+
+    from app.services.state_rehydration import prepare_followup_state
+
+    updated = prepare_followup_state(previous_state, question="latest question")
+
+    assert len(updated.conversation_history) == 6
+    assert updated.conversation_history[-1]["content"] == "latest question"
+    assert updated.context["conversation_compacted_turns"] == 1
+
+
+def test_supervisor_execute_records_tool_context(monkeypatch: pytest.MonkeyPatch):
+    state = build_state()
+    state.execution_plan = {
+        "steps": [
+            {
+                "id": "vision-1",
+                "agent": "vision",
+                "goal": "detect anomalies",
+                "depends_on": [],
+                "retryable": True,
+            }
+        ]
+    }
+    tool_context_calls: list[object] = []
+
+    async def fake_vision_run(self, task):
+        return AgentEnvelope(
+            agent_name="vision",
+            summary="vision done",
+            payload={"anomalies": [{"type": "scratch"}]},
+            confidence=0.8,
+        )
+
+    monkeypatch.setattr("app.agents.vision.agent.VisionAgent.run", fake_vision_run)
+    monkeypatch.setattr("app.orchestration.planner_runtime.memory_manager.add_tool_context", lambda memory: tool_context_calls.append(memory))
+
+    updated = asyncio.run(supervisor_execute_node(state))
+
+    assert updated.step_status["vision-1"] == "success"
+    assert len(tool_context_calls) == 1
+    assert tool_context_calls[0].tool_name == "vision_agent"
+    assert tool_context_calls[0].tool_output["anomaly_count"] == 1
 
 
 def test_stream_detection_emits_execution_events_and_final_metadata(monkeypatch: pytest.MonkeyPatch):

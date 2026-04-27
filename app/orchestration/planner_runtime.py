@@ -5,11 +5,21 @@ import logging
 from typing import Any
 
 from app.agents.factory import get_specialist_agents, get_supervisor_agent
+from app.memory.memory_manager import memory_manager
+from app.memory.models import ToolContextMemory
 from app.memory.state import DetectionState
 from app.orchestration.events import append_execution_event
 from app.orchestration.step_executor import run_supervisor_step
 
 logger = logging.getLogger(__name__)
+
+
+def _step_number(step_id: str, attempt: int) -> int:
+    suffix = step_id.rsplit("-", 1)[-1]
+    try:
+        return int(suffix)
+    except ValueError:
+        return attempt
 
 
 def get_ready_steps(planned_steps: list[dict[str, Any]], completed_step_ids: set[str]) -> list[dict[str, Any]]:
@@ -141,6 +151,28 @@ async def supervisor_execute_node(state: DetectionState) -> DetectionState:
             state.apply_domain_runtime(domain)
             orchestration.step_outputs[step_id] = envelope.model_dump()
             orchestration.step_status[step_id] = envelope.status
+            memory_manager.add_tool_context(
+                ToolContextMemory(
+                    task_id=state.task.task_id,
+                    step_id=_step_number(step_id, attempt),
+                    asset_id=state.task.asset_id,
+                    tool_name=f"{agent_name}_agent",
+                    tool_input={
+                        "goal": step.get("goal"),
+                        "depends_on": list(step.get("depends_on") or []),
+                        "agent": agent_name,
+                        "attempt": attempt,
+                    },
+                    tool_output={
+                        "status": envelope.status,
+                        "summary": envelope.summary,
+                        "anomaly_count": len((envelope.payload or {}).get("anomalies", []))
+                        if isinstance(envelope.payload, dict)
+                        else 0,
+                        "confidence": envelope.confidence,
+                    },
+                )
+            )
             append_execution_event(
                 state,
                 "step_completed",

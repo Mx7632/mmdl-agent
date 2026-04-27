@@ -390,3 +390,27 @@
   - `USER.md`
 - 楠岃瘉缁撴灉锛?
   - `web/` 鐩綍涓嬩粎鍓?`index.html` 涓�涓?HTML 椤甸潰銆?
+
+### 2026-04-27 | Memory Convergence | short-term writes, tool audit, and conversation compaction
+- 完成内容：
+  - nswer_node 在首次回答后补齐 ShortTermMemory 写入，并把 	ool_effect 纳入最终回答上下文。
+  - planner_runtime 在 specialist step 成功后写入 ToolContextMemory，让工具审计链路真正落地。
+  - 新增 pp/memory/conversation.py，对会话历史执行轻量压缩：保留最近若干轮，其余折叠为 conversation_summary。
+  - state_rehydration、wait_user、eport 路径接入会话压缩/摘要读取，减少长任务上下文膨胀。
+  - 将 	ool_context.json 也调整为 runtime-only 文件，仓库只保留 	ool_context.example.json 示例。
+- 影响范围：
+  - pp/core/answer_node.py
+  - pp/orchestration/planner_runtime.py
+  - pp/core/wait_user.py
+  - pp/services/state_rehydration.py
+  - pp/agents/report/service.py
+  - pp/memory/config.py
+  - pp/memory/memory_manager.py
+  - pp/memory/conversation.py
+  - .gitignore
+  - pp/data/memory/tool_context.example.json
+  - 	ests/test_phase1_multi_agent.py
+- 验证结果：
+  - python -m py_compile app/memory/config.py app/memory/memory_manager.py app/memory/conversation.py app/core/answer_node.py app/agents/report/service.py app/orchestration/planner_runtime.py app/services/state_rehydration.py app/core/wait_user.py app/core/self_reflect.py
+  - pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py tests/test_agent.py -q
+  - 结果：38 passed, 1 skipped

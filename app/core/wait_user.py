@@ -4,6 +4,7 @@ import copy
 import logging
 from typing import Union
 
+from app.memory.conversation import compact_state_conversation
 from app.memory.state import DetectionState
 from app.orchestration.context_store import clear_pending_clarification, set_pending_clarification
 
@@ -70,6 +71,8 @@ async def wait_user_node(state: DetectionState) -> DetectionState:
             )
 
     state.apply_task_runtime(task_runtime)
+    if task_runtime.conversation_history:
+        compact_state_conversation(state)
     state.apply_orchestration_runtime(orchestration_runtime)
     return state
 
