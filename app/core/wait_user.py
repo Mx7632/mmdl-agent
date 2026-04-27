@@ -4,40 +4,76 @@ import copy
 import logging
 from typing import Union
 
+from app.memory.conversation import compact_state_conversation
 from app.memory.state import DetectionState
+from app.orchestration.context_store import clear_pending_clarification, set_pending_clarification
 
 logger = logging.getLogger(__name__)
 
 
 async def wait_user_node(state: DetectionState) -> DetectionState:
-    clarification_ctx = state.shared_context.clarification
+    task_runtime = state.task_runtime()
+    orchestration_runtime = state.orchestration_runtime()
+    clarification_ctx = state.domain_runtime().shared_context.clarification
 
-    if state.user_reply:
-        state.conversation_history.append({"role": "user", "content": state.user_reply})
+    if task_runtime.user_reply:
+        task_runtime.conversation_history.append({"role": "user", "content": task_runtime.user_reply})
         state.context["user_reply_received"] = True
-        state.context["pending_clarification"] = None
-        state.context["pending_question"] = None
-        if clarification_ctx:
-            clarification_ctx.pending_clarification = None
-            clarification_ctx.pending_question = None
-            clarification_ctx.requires_human = False
+        clear_pending_clarification(state)
         state.logs.append(
-            f"[WaitUser] Received user reply, conversation turns={len(state.conversation_history)}"
+            f"[WaitUser] Received user reply, conversation turns={len(task_runtime.conversation_history)}"
         )
-        state.user_reply = None
-        state.needs_user_input = False
+        orchestration_runtime.execution_events.append(
+            {
+                "type": "task_resumed",
+                "task_id": state.task.task_id,
+                "conversation_turns": len(task_runtime.conversation_history),
+            }
+        )
+        task_runtime.user_reply = None
+        orchestration_runtime.needs_user_input = False
     else:
         if clarification_ctx:
-            state.context["pending_clarification"] = clarification_ctx.pending_clarification
-            state.context["pending_question"] = clarification_ctx.pending_question
+            set_pending_clarification(
+                state,
+                pending_clarification=clarification_ctx.pending_clarification,
+                pending_question=clarification_ctx.pending_question,
+                unknown_anomaly_types=list(clarification_ctx.unknown_anomaly_types),
+                requires_human=True,
+            )
             state.logs.append(
                 f"[WaitUser] Suspended for clarification: {clarification_ctx.unknown_anomaly_types}"
             )
+            orchestration_runtime.execution_events.append(
+                {
+                    "type": "task_suspended",
+                    "task_id": state.task.task_id,
+                    "pending_question": clarification_ctx.pending_question,
+                    "unknown_anomaly_types": list(clarification_ctx.unknown_anomaly_types),
+                }
+            )
         else:
-            state.context["pending_clarification"] = "需要补充用户信息。"
-            state.context["pending_question"] = "请补充现场观察到的具体现象。"
+            set_pending_clarification(
+                state,
+                pending_clarification="Additional user information is required.",
+                pending_question="Please provide more concrete observations from the site.",
+                unknown_anomaly_types=[],
+                requires_human=True,
+            )
             state.logs.append("[WaitUser] Suspended without structured clarification context")
+            orchestration_runtime.execution_events.append(
+                {
+                    "type": "task_suspended",
+                    "task_id": state.task.task_id,
+                    "pending_question": state.context["pending_question"],
+                    "unknown_anomaly_types": [],
+                }
+            )
 
+    state.apply_task_runtime(task_runtime)
+    if task_runtime.conversation_history:
+        compact_state_conversation(state)
+    state.apply_orchestration_runtime(orchestration_runtime)
     return state
 
 

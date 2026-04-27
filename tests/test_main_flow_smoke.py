@@ -184,3 +184,34 @@ def test_pending_flow_detect_then_continue(monkeypatch):
         ("detect", task_id),
         ("continue", task_id),
     ]
+
+
+def test_stream_endpoint_dispatches_continue_flow(monkeypatch):
+    client = TestClient(api_main.app)
+
+    async def fake_stream_continue_detection(task_id: str, user_reply: str):
+        assert task_id == "stream-continue-001"
+        assert user_reply == "confirmed by operator"
+        yield 'data: {"type":"execution_event","event":{"type":"task_resumed"}}\n\n'
+        yield (
+            'data: {"type":"final_result","task_id":"stream-continue-001","status":"success",'
+            '"answer":"streamed continue answer","anomalies":[],"metadata":{"execution_events":[{"type":"task_resumed"}]}}\n\n'
+        )
+        yield "event: close\ndata: close\n\n"
+
+    monkeypatch.setattr("app.services.stream_continue_detection", fake_stream_continue_detection)
+
+    response = client.post(
+        "/v1/stream",
+        data={
+            "task_id": "stream-continue-001",
+            "asset_id": "asset-001",
+            "user_reply": "confirmed by operator",
+        },
+    )
+
+    assert response.status_code == 200
+    text = response.text
+    assert '"type":"execution_event"' in text
+    assert '"type":"final_result"' in text
+    assert '"answer":"streamed continue answer"' in text

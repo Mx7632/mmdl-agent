@@ -16,8 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.config.settings import settings
-from app.core.agent import run_detection, continue_detection, get_pending_task, run_chat, generate_report
 from app.exceptions.base import AppError, DataMissingError, ResponseParseError
+from app.services import continue_detection, generate_report, get_pending_task, run_chat, run_detection
 from app.schemas.detection import DetectionResult, DetectionTask
 from app.schemas.detection import (
     RagBuildRequest,
@@ -456,6 +456,7 @@ async def stream_chat(request: Request):
         task_id = get_form_text(form, "task_id") or f"chat-{int(time.time())}"
         asset_id = get_form_text(form, "asset_id") or "EQUIP-001"
         question = get_form_text(form, "question")
+        user_reply = get_form_text(form, "user_reply").strip()
         
         logger.info(f"[stream_chat] Received request: task_id={task_id}, asset_id={asset_id}, question={question}")
         
@@ -483,22 +484,25 @@ async def stream_chat(request: Request):
         else:
             logger.info("[stream_chat] No image upload detected in current request")
 
-        task = DetectionTask(
-            task_id=task_id,
-            asset_id=asset_id,
-            question=question,
-            input_type=input_type,
-            parameters=parameters,
-            start_time=datetime.now().isoformat(),
-            end_time=datetime.now().isoformat()
-        )
-
-        from app.core.agent import stream_detection
+        from app.services import stream_continue_detection, stream_detection
         
         async def wrapped_stream():
             try:
-                async for chunk in stream_detection(task):
-                    yield chunk
+                if user_reply:
+                    async for chunk in stream_continue_detection(task_id, user_reply):
+                        yield chunk
+                else:
+                    task = DetectionTask(
+                        task_id=task_id,
+                        asset_id=asset_id,
+                        question=question,
+                        input_type=input_type,
+                        parameters=parameters,
+                        start_time=datetime.now().isoformat(),
+                        end_time=datetime.now().isoformat()
+                    )
+                    async for chunk in stream_detection(task):
+                        yield chunk
             except Exception as e:
                 import traceback
                 logger.error(f"[stream_chat] Error during streaming: {e}\n{traceback.format_exc()}")

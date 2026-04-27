@@ -9,54 +9,59 @@ from pydantic import SecretStr
 
 from app.config.settings import settings
 from app.exceptions.base import ConfigurationError
+from app.memory.conversation import compact_state_conversation
 from app.memory.memory_manager import memory_manager
-from app.memory.models import WorkingMemory
+from app.memory.models import ShortTermMemory, WorkingMemory
 from app.memory.state import DetectionState
+from app.orchestration.context_store import get_prompt_context
 from app.schemas.detection import DetectionResult
 
 logger = logging.getLogger(__name__)
 
-ANSWER_PROMPT_TEMPLATE = """你是一名工业异常诊断专家。
+ANSWER_PROMPT_TEMPLATE = """You are an industrial anomaly diagnosis expert.
+Use the current detection result, retrieved knowledge, and memory context to answer the user directly.
 
-请基于当前检测结果、检索知识和历史记忆，直接给出结构化专业结论。
-
-## 当前检测结果
+Current detection result:
 {result_json}
 
-## 知识与记忆上下文
+Memory and knowledge context:
 {memory_context}
 
-## 用户问题
-资产ID: {asset_id}
-对话历史: {conversation_history}
-当前问题: {question}
+User task context:
+Asset ID: {asset_id}
+Conversation history: {conversation_history}
+Conversation summary: {conversation_summary}
+Current question: {question}
 
-回答要求：
-- 使用中文
-- 输出包括【状态判定】【核心依据】【后续建议】
-- 不要提及 JSON、字段、API、模型分数等系统实现细节
-- 如果信息充分，可提示用户点击“生成报告”获取完整技术报告
+Requirements:
+- Respond in Chinese.
+- Include status judgment, key evidence, and next-step suggestion.
+- Do not mention JSON, field names, APIs, or model internals.
+- If the information is already sufficient, you may suggest generating a full report.
 """
 
 
 def _ensure_result_from_shared_context(state: DetectionState) -> DetectionResult:
-    if state.result is None:
-        state.result = DetectionResult(task_id=state.task.task_id, status="success")
+    domain_runtime = state.domain_runtime()
+    if domain_runtime.result is None:
+        domain_runtime.result = DetectionResult(task_id=state.task.task_id, status="success")
 
-    vision_ctx = state.shared_context.vision
-    if vision_ctx and vision_ctx.anomalies and not state.result.anomalies:
-        state.result.anomalies = list(vision_ctx.anomalies)
+    vision_ctx = domain_runtime.shared_context.vision
+    if vision_ctx and vision_ctx.anomalies and not domain_runtime.result.anomalies:
+        domain_runtime.result.anomalies = list(vision_ctx.anomalies)
     if vision_ctx and vision_ctx.metadata:
-        state.result.metadata.update(vision_ctx.metadata)
-    if vision_ctx and vision_ctx.answer and not state.result.answer:
-        state.result.answer = vision_ctx.answer
+        domain_runtime.result.metadata.update(vision_ctx.metadata)
+    if vision_ctx and vision_ctx.answer and not domain_runtime.result.answer:
+        domain_runtime.result.answer = vision_ctx.answer
 
+    state.apply_domain_runtime(domain_runtime)
     return state.result
 
 
 async def answer_node(state: DetectionState) -> DetectionState:
-    task = state.task
-    question = task.question or "请分析这张图像中的异常情况"
+    task_runtime = state.task_runtime()
+    task = task_runtime.task
+    question = task.question or "Please analyze the anomaly in this image."
     user_id = (task.parameters or {}).get("user_id", "default_user")
     asset_id = task.asset_id
     result = _ensure_result_from_shared_context(state)
@@ -66,15 +71,12 @@ async def answer_node(state: DetectionState) -> DetectionState:
         asset_id=asset_id,
         task_id=task.task_id,
     )
-    knowledge_context = (
-        state.shared_context.knowledge.prompt_context
-        if state.shared_context.knowledge and state.shared_context.knowledge.prompt_context
-        else "（无额外知识检索结果）"
-    )
+    knowledge_context = get_prompt_context(state) or "(no extra retrieved knowledge)"
     memory_context_text = (
-        f"【中期同设备】\n{mem_ctx['short_term']}\n\n"
-        f"【长期积累】\n{mem_ctx['long_term']}\n\n"
-        f"【知识检索】\n{knowledge_context}"
+        f"[Short-term same asset]\n{mem_ctx['short_term']}\n\n"
+        f"[Long-term history]\n{mem_ctx['long_term']}\n\n"
+        f"[Tool effectiveness]\n{mem_ctx['tool_effect']}\n\n"
+        f"[Knowledge retrieval]\n{knowledge_context}"
     )
 
     result_json = json.dumps(
@@ -89,23 +91,24 @@ async def answer_node(state: DetectionState) -> DetectionState:
     )
 
     history_text = ""
-    if state.conversation_history:
-        for msg in state.conversation_history:
-            role = "用户" if msg.get("role") == "user" else "助手"
+    if task_runtime.conversation_history:
+        for msg in task_runtime.conversation_history:
+            role = "user" if msg.get("role") == "user" else "assistant"
             history_text += f"{role}: {msg.get('content', '')}\n"
 
     prompt = ANSWER_PROMPT_TEMPLATE.format(
         result_json=result_json,
         memory_context=memory_context_text,
-        conversation_history=history_text or "（首次对话）",
+        conversation_history=history_text or "(first turn)",
+        conversation_summary=task_runtime.conversation_summary or "(no earlier summary)",
         question=question,
-        asset_id=asset_id or "未知资产",
+        asset_id=asset_id or "unknown asset",
     )
 
     try:
         if not settings.openai_api_key:
             raise ConfigurationError(
-                "openai_api_key 未配置",
+                "openai_api_key is not configured",
                 config_key="APP_OPENAI_API_KEY",
             )
 
@@ -120,7 +123,7 @@ async def answer_node(state: DetectionState) -> DetectionState:
         )
         response = await llm.ainvoke(
             [
-                SystemMessage(content="你是一名工业异常诊断专家。"),
+                SystemMessage(content="You are an industrial anomaly diagnosis expert."),
                 HumanMessage(content=prompt),
             ],
             config={"tags": ["final_answer"], "metadata": {"langgraph_node": "answer"}},
@@ -129,11 +132,11 @@ async def answer_node(state: DetectionState) -> DetectionState:
     except Exception as exc:
         logger.error("[Answer] LLM call failed: %s", exc)
         state.errors.append(f"answer_generation_failed: {exc}")
-        state.context["answer"] = "抱歉，生成回答时出现错误，请稍后重试。"
+        state.context["answer"] = "Sorry, an error occurred while generating the answer. Please try again later."
         state.context["has_report"] = False
         return state
 
-    step_id = state.current_step
+    step_id = task_runtime.current_step
     memory_manager.add_working_memory(
         WorkingMemory(
             task_id=task.task_id,
@@ -148,10 +151,39 @@ async def answer_node(state: DetectionState) -> DetectionState:
         )
     )
 
-    state.conversation_history.append({"role": "assistant", "content": answer})
+    if step_id == 1 and asset_id:
+        anomaly_types = [
+            item.get("type", "unknown")
+            for item in (result.anomalies or [])
+            if isinstance(item, dict)
+        ]
+        summary = (
+            f"检出 {len(result.anomalies or [])} 个异常：{', '.join(anomaly_types)}"
+            if anomaly_types
+            else "未检出明显异常"
+        )
+        memory_manager.add_short_term_memory(
+            ShortTermMemory(
+                asset_id=asset_id,
+                user_id=user_id,
+                memory_summary=summary,
+                memory_details={
+                    "task_id": task.task_id,
+                    "question": question,
+                    "anomalies": result.anomalies or [],
+                    "answer": answer,
+                },
+                tags=anomaly_types,
+                anomaly_count=len(result.anomalies or []),
+            )
+        )
+
+    task_runtime.conversation_history.append({"role": "assistant", "content": answer})
+    task_runtime.current_step = step_id + 1
+    state.apply_task_runtime(task_runtime)
+    compact_state_conversation(state)
     state.context["answer"] = answer
     state.context["has_report"] = False
-    state.current_step = step_id + 1
     state.logs.append(
         f"[Answer] step={step_id}, anomalies={len(result.anomalies or [])}, answer_len={len(answer)}"
     )
