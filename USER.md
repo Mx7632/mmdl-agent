@@ -414,3 +414,20 @@
   - python -m py_compile app/memory/config.py app/memory/memory_manager.py app/memory/conversation.py app/core/answer_node.py app/agents/report/service.py app/orchestration/planner_runtime.py app/services/state_rehydration.py app/core/wait_user.py app/core/self_reflect.py
   - pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py tests/test_agent.py -q
   - 结果：38 passed, 1 skipped
+### 2026-04-27 | Memory Convergence Follow-up | promote conversation summary into grouped task runtime
+- 完成内容：
+  - 将 conversation_summary 与 conversation_compacted_turns 从 context 兼容字段提升为 DetectionState / TaskRuntimeState 的正式字段。
+  - nswer_node 与 eport 路径改为优先读取 runtime view 中的会话摘要，不再默认从 context 取值。
+  - state_rehydration.restore_state() 增加兼容迁移：旧 checkpoint 若只保存了 context[conversation_summary]，恢复时会自动映射到新字段。
+  - pp/memory/conversation.py 继续保留 context shadow 输出，兼容当前 API payload 与前端读取路径。
+- 影响范围：
+  - pp/memory/state.py
+  - pp/memory/conversation.py
+  - pp/core/answer_node.py
+  - pp/agents/report/service.py
+  - pp/services/state_rehydration.py
+  - 	ests/test_phase1_multi_agent.py
+- 验证结果：
+  - python -m py_compile app/memory/state.py app/memory/conversation.py app/core/answer_node.py app/agents/report/service.py app/services/state_rehydration.py
+  - pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py tests/test_agent.py -q
+  - 结果：38 passed, 1 skipped

@@ -27,7 +27,12 @@ def extract_pending_context(state_dict: dict[str, Any]) -> tuple[str | None, str
 
 def restore_state(state_dict: dict[str, Any]) -> DetectionState:
     try:
-        return DetectionState.model_validate(state_dict)
+        state = DetectionState.model_validate(state_dict)
+        if not state.conversation_summary:
+            state.conversation_summary = state.context.get("conversation_summary")
+        if not state.conversation_compacted_turns:
+            state.conversation_compacted_turns = state.context.get("conversation_compacted_turns", 0)
+        return state
     except Exception as exc:
         logger.error("[state_rehydration] state restore failed: %s. keys=%s", exc, state_dict.keys())
         raise AppError(f"Task state is corrupted and cannot be restored: {exc}") from exc

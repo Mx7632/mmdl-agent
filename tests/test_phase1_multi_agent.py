@@ -47,6 +47,8 @@ def test_supervisor_fallback_returns_structured_vision_plan(monkeypatch: pytest.
 def test_detection_state_runtime_views_group_fields():
     state = build_state()
     state.conversation_history.append({"role": "user", "content": "Need a second pass."})
+    state.conversation_summary = "Earlier user asked for a baseline check."
+    state.conversation_compacted_turns = 2
     state.user_reply = "Operator confirmed the defect."
     state.current_step = 3
     state.report_requested = True
@@ -69,6 +71,8 @@ def test_detection_state_runtime_views_group_fields():
     assert task_runtime.task.task_id == state.task.task_id
     assert task_runtime.user_reply == "Operator confirmed the defect."
     assert task_runtime.current_step == 3
+    assert task_runtime.conversation_summary == "Earlier user asked for a baseline check."
+    assert task_runtime.conversation_compacted_turns == 2
     assert task_runtime.report_requested is True
     assert orchestration_runtime.active_agent == "vision"
     assert orchestration_runtime.execution_plan["steps"][0]["agent"] == "vision"
@@ -510,7 +514,21 @@ def test_prepare_followup_state_compacts_history():
 
     assert len(updated.conversation_history) == 6
     assert updated.conversation_history[-1]["content"] == "latest question"
+    assert updated.conversation_summary is not None
     assert updated.context["conversation_compacted_turns"] == 1
+
+
+def test_restore_state_promotes_legacy_conversation_summary():
+    from app.services.state_rehydration import restore_state
+
+    previous_state = build_state().model_dump()
+    previous_state["context"]["conversation_summary"] = "legacy summary"
+    previous_state["context"]["conversation_compacted_turns"] = 3
+
+    restored = restore_state(previous_state)
+
+    assert restored.conversation_summary == "legacy summary"
+    assert restored.conversation_compacted_turns == 3
 
 
 def test_supervisor_execute_records_tool_context(monkeypatch: pytest.MonkeyPatch):

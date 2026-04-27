@@ -11,6 +11,8 @@ from app.schemas.detection import DetectionResult, DetectionTask
 class TaskRuntimeState(BaseModel):
     task: DetectionTask
     conversation_history: list[dict[str, str]] = Field(default_factory=list)
+    conversation_summary: str | None = None
+    conversation_compacted_turns: int = 0
     user_reply: str | None = None
     current_step: int = 1
     report_requested: bool = False
@@ -79,6 +81,8 @@ class DetectionState(BaseModel):
     last_failed_step: str | None = None
 
     conversation_history: list[dict[str, str]] = Field(default_factory=list)
+    conversation_summary: str | None = None
+    conversation_compacted_turns: int = 0
 
     loop_count: int = 0
     needs_user_input: bool = False
@@ -98,6 +102,8 @@ class DetectionState(BaseModel):
         return TaskRuntimeState(
             task=self.task,
             conversation_history=list(self.conversation_history),
+            conversation_summary=self.conversation_summary,
+            conversation_compacted_turns=self.conversation_compacted_turns,
             user_reply=self.user_reply,
             current_step=self.current_step,
             report_requested=self.report_requested,
@@ -107,6 +113,8 @@ class DetectionState(BaseModel):
     def apply_task_runtime(self, runtime: TaskRuntimeState) -> None:
         self.task = runtime.task
         self.conversation_history = list(runtime.conversation_history)
+        self.conversation_summary = runtime.conversation_summary
+        self.conversation_compacted_turns = runtime.conversation_compacted_turns
         self.user_reply = runtime.user_reply
         self.current_step = runtime.current_step
         self.report_requested = runtime.report_requested

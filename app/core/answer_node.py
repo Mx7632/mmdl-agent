@@ -100,7 +100,7 @@ async def answer_node(state: DetectionState) -> DetectionState:
         result_json=result_json,
         memory_context=memory_context_text,
         conversation_history=history_text or "(first turn)",
-        conversation_summary=state.context.get("conversation_summary", "(no earlier summary)"),
+        conversation_summary=task_runtime.conversation_summary or "(no earlier summary)",
         question=question,
         asset_id=asset_id or "unknown asset",
     )

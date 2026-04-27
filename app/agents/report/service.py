@@ -83,9 +83,9 @@ async def generate_report_state(state: DetectionState) -> DetectionState:
     else:
         dialogue_text = "(no follow-up dialogue)"
 
-    if state.context.get("conversation_summary"):
+    if task_runtime.conversation_summary:
         dialogue_text = (
-            f"[Earlier conversation summary]\n{state.context['conversation_summary']}\n\n"
+            f"[Earlier conversation summary]\n{task_runtime.conversation_summary}\n\n"
             f"{dialogue_text}"
         )
 
