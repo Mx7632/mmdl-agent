@@ -32,6 +32,10 @@ class VisionAgent:
                 "anomalies": anomalies,
                 "metadata": metadata,
                 "answer": result.answer if result else None,
+                "heatmap_path": metadata.get("heatmap_path"),
+                "overlay_path": metadata.get("overlay_path"),
+                "mask_path": metadata.get("mask_path"),
+                "category": metadata.get("category"),
             },
             confidence=float(metadata.get("confidence", 0.0) or 0.0),
         )

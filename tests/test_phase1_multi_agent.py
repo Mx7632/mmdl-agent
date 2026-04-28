@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 import pytest
 
 from app.agents.factory import get_supervisor_agent
+from app.agents.vision.agent import VisionAgent
 from app.agents.report.service import generate_report_state
 from app.core.answer_node import answer_node
 from app.core.agent import get_pending_task, stream_detection
@@ -16,7 +17,9 @@ from app.core.wait_user import wait_user_node
 from app.memory.conversation import compact_state_conversation
 from app.memory.state import DetectionState
 from app.orchestration.envelope import AgentEnvelope
-from app.schemas.detection import DetectionResult, DetectionTask
+from app.schemas.detection import DetectionResult, DetectionTask, ToolResponse
+from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool, resolve_visual_backend
+from app.tools.patchcore_detection import resolve_patchcore_category
 
 
 def build_state(question: str = "Please analyze the anomaly in this image.") -> DetectionState:
@@ -42,6 +45,105 @@ def test_supervisor_fallback_returns_structured_vision_plan(monkeypatch: pytest.
     assert plan.steps[0].agent == "vision"
     assert plan.steps[0].goal
     assert plan.reason == "fallback routing"
+
+
+def test_patchcore_backend_resolution(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("app.tools.image_anomaly_detection.settings.vision_detector_backend", "patchcore")
+    assert resolve_visual_backend("patchcore") == "patchcore"
+    assert resolve_visual_backend(None) == "patchcore"
+
+
+def test_patchcore_category_resolution_prefers_detector_params():
+    task = DetectionTask(
+        task_id="patchcore-001",
+        asset_id="asset-001",
+        start_time="2026-04-27T00:00:00Z",
+        end_time="2026-04-27T00:01:00Z",
+        parameters={
+            "image_base64": "aW1hZ2U=",
+            "patchcore_category": "wood",
+            "detector_params": {"category": "bottle"},
+        },
+    )
+
+    assert resolve_patchcore_category(task) == "bottle"
+
+
+@pytest.mark.asyncio
+async def test_image_tool_routes_to_patchcore_backend():
+    class FakePatchCoreTool:
+        name = "patchcore_image_anomaly_detection"
+
+        async def run(self, task):
+            return ToolResponse(
+                tool_name=self.name,
+                success=True,
+                result=DetectionResult(
+                    task_id=task.task_id,
+                    status="success",
+                    anomalies=[{"type": "surface_anomaly", "bbox": [1, 2, 3, 4]}],
+                    summary="patchcore ok",
+                    metadata={"confidence": 0.9, "heatmap_path": "data/heatmaps/demo.png"},
+                ),
+            )
+
+    task = DetectionTask(
+        task_id="patchcore-route",
+        asset_id="asset-001",
+        start_time="2026-04-27T00:00:00Z",
+        end_time="2026-04-27T00:01:00Z",
+        parameters={"image_base64": "aW1hZ2U=", "tool_type": "patchcore"},
+    )
+    tool = ImageAnomalyDetectionTool(
+        qwen_tool=FakePatchCoreTool(),
+        specialist_tool=FakePatchCoreTool(),
+        patchcore_tool=FakePatchCoreTool(),
+    )
+
+    response = await tool.run(task)
+
+    assert response.tool_name == "patchcore_image_anomaly_detection"
+    assert response.result is not None
+    assert response.result.metadata["selected_backend"] == "patchcore"
+
+
+@pytest.mark.asyncio
+async def test_vision_agent_exposes_patchcore_heatmap_fields():
+    class FakeVisionTool:
+        async def run(self, task):
+            return ToolResponse(
+                tool_name="patchcore_image_anomaly_detection",
+                success=True,
+                result=DetectionResult(
+                    task_id=task.task_id,
+                    status="success",
+                    anomalies=[{"type": "surface_anomaly"}],
+                    summary="done",
+                    metadata={
+                        "confidence": 0.88,
+                        "category": "bottle",
+                        "heatmap_path": "data/heatmaps/bottle/task_heatmap.png",
+                        "overlay_path": "data/heatmaps/bottle/task_overlay.png",
+                        "mask_path": "data/heatmaps/bottle/task_mask.png",
+                    },
+                ),
+            )
+
+    task = DetectionTask(
+        task_id="vision-patchcore",
+        asset_id="asset-001",
+        start_time="2026-04-27T00:00:00Z",
+        end_time="2026-04-27T00:01:00Z",
+        parameters={"image_base64": "aW1hZ2U="},
+    )
+    agent = VisionAgent(tool=FakeVisionTool())
+
+    envelope = await agent.run(task)
+
+    assert envelope.payload["category"] == "bottle"
+    assert envelope.payload["heatmap_path"].endswith("task_heatmap.png")
+    assert envelope.payload["overlay_path"].endswith("task_overlay.png")
+    assert envelope.payload["mask_path"].endswith("task_mask.png")
 
 
 def test_detection_state_runtime_views_group_fields():

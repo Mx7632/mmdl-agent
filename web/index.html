@@ -255,6 +255,61 @@
             line-height: 1.5;
         }
 
+        .analysis-image {
+            position: absolute;
+            inset: 0;
+            display: none;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+        }
+
+        .preview-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .preview-mode-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .mode-button {
+            padding: 8px 10px;
+            border-radius: 12px;
+            background: #eef2f7;
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .mode-button.is-active {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .mode-button:disabled {
+            opacity: 0.4;
+        }
+
+        .preview-opacity {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .preview-opacity input {
+            width: 120px;
+        }
+
         .button-row,
         .composer-actions {
             display: flex;
@@ -910,8 +965,21 @@
                         <div id="preview-text" class="hint">还没有选择图片</div>
                         <div class="preview-stage">
                             <img id="preview-image" alt="预览图">
+                            <img id="analysis-image" class="analysis-image" alt="分析视图">
                             <img id="mask-overlay" class="mask-overlay" alt="异常热区">
                             <div id="bbox-layer" class="bbox-layer"></div>
+                        </div>
+                        <div class="preview-toolbar">
+                            <div id="preview-modes" class="preview-mode-group">
+                                <button class="mode-button is-active" type="button" data-visual-mode="original">Original</button>
+                                <button class="mode-button" type="button" data-visual-mode="bbox">BBox</button>
+                                <button class="mode-button" type="button" data-visual-mode="heatmap">Heatmap</button>
+                                <button class="mode-button" type="button" data-visual-mode="overlay">Overlay</button>
+                            </div>
+                            <label class="preview-opacity">
+                                Overlay opacity
+                                <input id="overlay-opacity" type="range" min="20" max="100" value="72">
+                            </label>
                         </div>
                         <div id="localization-note" class="localization-note">当前还没有异常定位结果。</div>
                     </div>
@@ -1062,6 +1130,9 @@
             imageFile: null,
             history: [],
             lastResult: null,
+            visualAssets: {},
+            visualMode: 'original',
+            overlayOpacity: 72,
             executionPlan: null,
             executionEvents: [],
             stepStatus: {},
@@ -1076,9 +1147,12 @@
             imageInput: document.getElementById('image-input'),
             previewText: document.getElementById('preview-text'),
             previewImage: document.getElementById('preview-image'),
+            analysisImage: document.getElementById('analysis-image'),
             maskOverlay: document.getElementById('mask-overlay'),
             bboxLayer: document.getElementById('bbox-layer'),
             localizationNote: document.getElementById('localization-note'),
+            previewModes: document.getElementById('preview-modes'),
+            overlayOpacity: document.getElementById('overlay-opacity'),
             question: document.getElementById('question'),
             detectButton: document.getElementById('detect-button'),
             followupButton: document.getElementById('followup-button'),
@@ -1135,7 +1209,38 @@
         }
 
         function getResultMetadata(result) {
-            return result?.metadata?.result_metadata || {};
+            const topLevel = (result?.metadata && typeof result.metadata === 'object') ? result.metadata : {};
+            const nested = (topLevel?.result_metadata && typeof topLevel.result_metadata === 'object')
+                ? topLevel.result_metadata
+                : {};
+            return { ...topLevel, ...nested };
+        }
+
+        function toStaticAssetUrl(rawPath) {
+            if (!rawPath) return '';
+            if (String(rawPath).startsWith('data:')) return String(rawPath);
+            if (/^https?:\/\//i.test(String(rawPath))) return String(rawPath);
+
+            const normalized = String(rawPath).replaceAll('\\', '/').replace(/^\.?\//, '');
+            if (normalized.startsWith('data/heatmaps/')) {
+                return `${API_BASE}/${normalized}`;
+            }
+            if (normalized.startsWith('data/uploads/')) {
+                return `${API_BASE}/${normalized}`;
+            }
+            return `${API_BASE}/${normalized}`;
+        }
+
+        function getVisualizationAssets(result) {
+            const metadata = getResultMetadata(result);
+            const maskBase64 = metadata?.localization_mask_base64;
+            return {
+                heatmapUrl: toStaticAssetUrl(metadata?.heatmap_path),
+                overlayUrl: toStaticAssetUrl(metadata?.overlay_path),
+                maskUrl: maskBase64 ? `data:image/png;base64,${maskBase64}` : toStaticAssetUrl(metadata?.mask_path),
+                category: metadata?.category || '',
+                hasBbox: Array.isArray(result?.anomalies) && result.anomalies.some(item => Array.isArray(item?.bbox) && item.bbox.length === 4)
+            };
         }
 
         function getExecutionMetadata(result) {
@@ -1507,17 +1612,69 @@
             return finalResult;
         }
 
-        function clearLocalizationOverlay() {
-            els.bboxLayer.innerHTML = '';
+        function renderPreviewModes() {
+            const assets = state.visualAssets || {};
+            const modes = {
+                original: true,
+                bbox: !!assets.hasBbox,
+                heatmap: !!assets.heatmapUrl,
+                overlay: !!assets.overlayUrl
+            };
+
+            Array.from(els.previewModes.querySelectorAll('[data-visual-mode]')).forEach(button => {
+                const mode = button.dataset.visualMode || 'original';
+                const enabled = !!modes[mode];
+                button.disabled = !enabled;
+                button.classList.toggle('is-active', state.visualMode === mode);
+            });
+
+            const overlayMode = state.visualMode === 'heatmap' || state.visualMode === 'overlay';
+            els.overlayOpacity.disabled = !overlayMode;
+        }
+
+        function applyVisualizationMode() {
+            const assets = state.visualAssets || {};
+            const overlayMode = state.visualMode === 'heatmap' || state.visualMode === 'overlay';
+            const overlayUrl = state.visualMode === 'overlay' ? assets.overlayUrl : assets.heatmapUrl;
+
+            els.analysisImage.style.display = 'none';
+            els.analysisImage.removeAttribute('src');
+            els.analysisImage.style.opacity = `${state.overlayOpacity / 100}`;
             els.maskOverlay.style.display = 'none';
             els.maskOverlay.removeAttribute('src');
+            els.bboxLayer.style.display = state.visualMode === 'bbox' ? 'block' : 'none';
+
+            if (overlayMode && overlayUrl) {
+                els.analysisImage.src = overlayUrl;
+                els.analysisImage.style.display = 'block';
+            } else if (state.visualMode === 'bbox' && assets.maskUrl && !els.bboxLayer.innerHTML) {
+                els.maskOverlay.src = assets.maskUrl;
+                els.maskOverlay.style.display = 'block';
+                els.maskOverlay.style.opacity = `${Math.min(0.9, state.overlayOpacity / 100)}`;
+            }
+
+            renderPreviewModes();
+        }
+
+        function clearLocalizationOverlay() {
+            els.bboxLayer.innerHTML = '';
             els.localizationNote.textContent = '当前还没有异常定位结果。';
+            state.visualAssets = {};
+            applyVisualizationMode();
         }
 
         function renderLocalization(anomalies, result) {
             clearLocalizationOverlay();
+            state.visualAssets = getVisualizationAssets(result);
 
             if (!Array.isArray(anomalies) || anomalies.length === 0) {
+                if (state.visualAssets.heatmapUrl || state.visualAssets.overlayUrl || state.visualAssets.maskUrl) {
+                    els.localizationNote.textContent = '已生成可视化热力图，可切换到 Heatmap 或 Overlay 查看。';
+                    if (state.visualAssets.heatmapUrl && state.visualMode === 'original') {
+                        state.visualMode = 'heatmap';
+                    }
+                    applyVisualizationMode();
+                }
                 return;
             }
 
@@ -1553,21 +1710,26 @@
 
             els.bboxLayer.innerHTML = boxes.join('');
 
-            const resultMetadata = getResultMetadata(result);
-            const maskBase64 = resultMetadata?.localization_mask_base64;
-            if (maskBase64) {
-                els.maskOverlay.src = `data:image/png;base64,${maskBase64}`;
-                els.maskOverlay.style.display = 'block';
-            }
-
             const localizedCount = anomalies.filter(item => item?.has_localization).length;
             if (localizedCount > 0) {
                 els.localizationNote.textContent = `已标出 ${localizedCount} 处异常位置。`;
-            } else if (maskBase64) {
+            } else if (state.visualAssets.maskUrl || state.visualAssets.heatmapUrl || state.visualAssets.overlayUrl) {
                 els.localizationNote.textContent = '已显示异常热区，但当前没有可绘制的边界框。';
             } else {
                 els.localizationNote.textContent = '已检出异常，但当前结果没有返回可绘制的位置框。';
             }
+
+            if (state.visualMode === 'bbox' && !state.visualAssets.hasBbox) {
+                state.visualMode = state.visualAssets.heatmapUrl ? 'heatmap' : 'original';
+            }
+            if (state.visualMode === 'heatmap' && !state.visualAssets.heatmapUrl) {
+                state.visualMode = state.visualAssets.overlayUrl ? 'overlay' : (state.visualAssets.hasBbox ? 'bbox' : 'original');
+            }
+            if (state.visualMode === 'overlay' && !state.visualAssets.overlayUrl) {
+                state.visualMode = state.visualAssets.heatmapUrl ? 'heatmap' : (state.visualAssets.hasBbox ? 'bbox' : 'original');
+            }
+
+            applyVisualizationMode();
         }
 
         function pushHistory(role, text, tone = '') {
@@ -1685,6 +1847,9 @@
             state.imageFile = null;
             state.history = [];
             state.lastResult = null;
+            state.visualAssets = {};
+            state.visualMode = 'original';
+            state.overlayOpacity = 72;
             state.executionPlan = null;
             state.executionEvents = [];
             state.stepStatus = {};
@@ -1699,6 +1864,7 @@
             els.previewText.textContent = '还没有选择图片';
             els.previewImage.style.display = 'none';
             els.previewImage.removeAttribute('src');
+            els.overlayOpacity.value = String(state.overlayOpacity);
             clearLocalizationOverlay();
 
             els.statusPanel.textContent = '等待发起检测';
@@ -1716,6 +1882,7 @@
             renderHistory();
             renderTaskState();
             renderExecutionTimeline();
+            renderPreviewModes();
         }
 
         async function startDetection() {
@@ -1880,6 +2047,8 @@
             const file = els.imageInput.files[0];
             state.imageFile = file || null;
             state.lastResult = null;
+            state.visualMode = 'original';
+            state.visualAssets = {};
 
             if (!file) {
                 els.previewText.textContent = '还没有选择图片';
@@ -1895,6 +2064,7 @@
                 els.previewImage.src = event.target.result;
                 els.previewImage.style.display = 'block';
                 clearLocalizationOverlay();
+                renderPreviewModes();
             };
             reader.readAsDataURL(file);
         });
@@ -1909,6 +2079,18 @@
             if (state.lastResult) {
                 renderLocalization(state.lastResult.anomalies, state.lastResult);
             }
+        });
+
+        els.previewModes.addEventListener('click', event => {
+            const button = event.target.closest('[data-visual-mode]');
+            if (!button || button.disabled) return;
+            state.visualMode = button.dataset.visualMode || 'original';
+            applyVisualizationMode();
+        });
+
+        els.overlayOpacity.addEventListener('input', event => {
+            state.overlayOpacity = Number(event.target.value || 72);
+            applyVisualizationMode();
         });
 
         els.timelineFilters.addEventListener('click', event => {
