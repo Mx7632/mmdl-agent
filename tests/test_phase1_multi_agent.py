@@ -19,6 +19,7 @@ from app.memory.state import DetectionState
 from app.orchestration.envelope import AgentEnvelope
 from app.schemas.detection import DetectionResult, DetectionTask, ToolResponse
 from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool, resolve_visual_backend
+from app.orchestration.context_store import get_pending_context_from_mapping
 from app.tools.patchcore_detection import resolve_patchcore_category
 
 
@@ -67,6 +68,23 @@ def test_patchcore_category_resolution_prefers_detector_params():
     )
 
     assert resolve_patchcore_category(task) == "bottle"
+
+
+def test_pending_context_mapping_handles_null_clarification():
+    state_dict = {
+        "context": {
+            "pending_clarification": "Need operator confirmation",
+            "pending_question": "Please confirm whether the mark is acceptable.",
+        },
+        "shared_context": {
+            "clarification": None,
+        },
+    }
+
+    pending_clarification, pending_question = get_pending_context_from_mapping(state_dict)
+
+    assert pending_clarification == "Need operator confirmation"
+    assert pending_question == "Please confirm whether the mark is acceptable."
 
 
 @pytest.mark.asyncio
