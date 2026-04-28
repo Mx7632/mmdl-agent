@@ -22,12 +22,15 @@ from app.exceptions.base import (
 )
 from app.schemas.detection import DetectionResult, DetectionTask, ToolResponse
 from app.tools.anomaly_detection import BaseTool
+from app.tools.patchcore_detection import LocalPatchCoreImageAnomalyDetectionTool
 
 QWEN_BACKEND = "qwen"
 SPECIALIST_BACKEND = "specialist"
+PATCHCORE_BACKEND = "patchcore"
 
 _JSON_RE = re.compile(r"\{[\s\S]*\}")
 _QWEN_ALIASES = {"qwen", "qwen_vl", "qwen3_5_plus", "qwen3.5_plus"}
+_PATCHCORE_ALIASES = {"patchcore", "patch_core"}
 _SPECIALIST_ALIASES = {
     "anomalygpt",
     "anomaly_gpt",
@@ -54,9 +57,16 @@ def resolve_visual_backend(tool_type: str | None) -> str:
     requested = _normalize_detector_name(tool_type)
     default_backend = _normalize_detector_name(settings.vision_detector_backend) or QWEN_BACKEND
     specialist_aliases = _configured_specialist_aliases()
+    patchcore_aliases = {
+        alias
+        for alias in (_normalize_detector_name(item) for item in settings.patchcore_detector_aliases.split(","))
+        if alias
+    } | _PATCHCORE_ALIASES
 
     if requested in specialist_aliases or requested.startswith("anomaly"):
         return SPECIALIST_BACKEND
+    if requested in patchcore_aliases or requested.startswith("patchcore"):
+        return PATCHCORE_BACKEND
     if requested in _QWEN_ALIASES or requested.startswith("qwen"):
         return QWEN_BACKEND
 
@@ -66,6 +76,8 @@ def resolve_visual_backend(tool_type: str | None) -> str:
         "professional",
     }:
         return SPECIALIST_BACKEND
+    if default_backend in patchcore_aliases or default_backend == PATCHCORE_BACKEND:
+        return PATCHCORE_BACKEND
     return QWEN_BACKEND
 
 
@@ -377,14 +389,21 @@ class ImageAnomalyDetectionTool(BaseTool):
         self,
         qwen_tool: BaseTool | None = None,
         specialist_tool: BaseTool | None = None,
+        patchcore_tool: BaseTool | None = None,
     ) -> None:
         self.qwen_tool = qwen_tool or QwenImageAnomalyDetectionTool()
         self.specialist_tool = specialist_tool or HttpProfessionalImageAnomalyDetectionTool()
+        self.patchcore_tool = patchcore_tool or LocalPatchCoreImageAnomalyDetectionTool()
 
     async def run(self, task: DetectionTask) -> ToolResponse:
         tool_type = (task.parameters or {}).get("tool_type")
         backend = resolve_visual_backend(tool_type)
-        selected_tool = self.specialist_tool if backend == SPECIALIST_BACKEND else self.qwen_tool
+        if backend == SPECIALIST_BACKEND:
+            selected_tool = self.specialist_tool
+        elif backend == PATCHCORE_BACKEND:
+            selected_tool = self.patchcore_tool
+        else:
+            selected_tool = self.qwen_tool
         response = await selected_tool.run(task)
 
         if response.result:

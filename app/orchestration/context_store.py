@@ -68,7 +68,8 @@ def get_pending_context_from_state(state: DetectionState) -> tuple[str | None, s
 def get_pending_context_from_mapping(state_dict: Mapping[str, Any]) -> tuple[str | None, str | None]:
     ctx = state_dict.get("context", {}) or {}
     shared_context = state_dict.get("shared_context", {}) or {}
-    clarification = shared_context.get("clarification", {}) if isinstance(shared_context, Mapping) else {}
+    clarification_raw = shared_context.get("clarification", {}) if isinstance(shared_context, Mapping) else {}
+    clarification = clarification_raw if isinstance(clarification_raw, Mapping) else {}
     pending_clarification = clarification.get("pending_clarification") or ctx.get("pending_clarification")
     pending_question = clarification.get("pending_question") or ctx.get("pending_question")
     return pending_clarification, pending_question

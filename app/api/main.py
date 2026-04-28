@@ -49,10 +49,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+Path("data/uploads").mkdir(parents=True, exist_ok=True)
+Path("data/heatmaps").mkdir(parents=True, exist_ok=True)
+
 # 挂载前端静态文件
 app.mount("/web", StaticFiles(directory="web"), name="web")
 # 也可以挂载数据文件（如图片预览）
 app.mount("/data/uploads", StaticFiles(directory="data/uploads"), name="uploads")
+app.mount("/data/heatmaps", StaticFiles(directory="data/heatmaps"), name="heatmaps")
 
 logger = setup_logger(level=settings.log_level)
 

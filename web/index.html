@@ -255,6 +255,61 @@
             line-height: 1.5;
         }
 
+        .analysis-image {
+            position: absolute;
+            inset: 0;
+            display: none;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+        }
+
+        .preview-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .preview-mode-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .mode-button {
+            padding: 8px 10px;
+            border-radius: 12px;
+            background: #eef2f7;
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .mode-button.is-active {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .mode-button:disabled {
+            opacity: 0.4;
+        }
+
+        .preview-opacity {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .preview-opacity input {
+            width: 120px;
+        }
+
         .button-row,
         .composer-actions {
             display: flex;
@@ -910,8 +965,21 @@
                         <div id="preview-text" class="hint">还没有选择图片</div>
                         <div class="preview-stage">
                             <img id="preview-image" alt="预览图">
+                            <img id="analysis-image" class="analysis-image" alt="分析视图">
                             <img id="mask-overlay" class="mask-overlay" alt="异常热区">
                             <div id="bbox-layer" class="bbox-layer"></div>
+                        </div>
+                        <div class="preview-toolbar">
+                            <div id="preview-modes" class="preview-mode-group">
+                                <button class="mode-button is-active" type="button" data-visual-mode="original">Original</button>
+                                <button class="mode-button" type="button" data-visual-mode="bbox">BBox</button>
+                                <button class="mode-button" type="button" data-visual-mode="heatmap">Heatmap</button>
+                                <button class="mode-button" type="button" data-visual-mode="overlay">Overlay</button>
+                            </div>
+                            <label class="preview-opacity">
+                                Overlay opacity
+                                <input id="overlay-opacity" type="range" min="20" max="100" value="72">
+                            </label>
                         </div>
                         <div id="localization-note" class="localization-note">当前还没有异常定位结果。</div>
                     </div>
@@ -1062,6 +1130,9 @@
             imageFile: null,
             history: [],
             lastResult: null,
+            visualAssets: {},
+            visualMode: 'original',
+            overlayOpacity: 72,
             executionPlan: null,
             executionEvents: [],
             stepStatus: {},
@@ -1076,9 +1147,12 @@
             imageInput: document.getElementById('image-input'),
             previewText: document.getElementById('preview-text'),
             previewImage: document.getElementById('preview-image'),
+            analysisImage: document.getElementById('analysis-image'),
             maskOverlay: document.getElementById('mask-overlay'),
             bboxLayer: document.getElementById('bbox-layer'),
             localizationNote: document.getElementById('localization-note'),
+            previewModes: document.getElementById('preview-modes'),
+            overlayOpacity: document.getElementById('overlay-opacity'),
             question: document.getElementById('question'),
             detectButton: document.getElementById('detect-button'),
             followupButton: document.getElementById('followup-button'),
@@ -1135,7 +1209,38 @@
         }
 
         function getResultMetadata(result) {
-            return result?.metadata?.result_metadata || {};
+            const topLevel = (result?.metadata && typeof result.metadata === 'object') ? result.metadata : {};
+            const nested = (topLevel?.result_metadata && typeof topLevel.result_metadata === 'object')
+                ? topLevel.result_metadata
+                : {};
+            return { ...topLevel, ...nested };
+        }
+
+        function toStaticAssetUrl(rawPath) {
+            if (!rawPath) return '';
+            if (String(rawPath).startsWith('data:')) return String(rawPath);
+            if (/^https?:\/\//i.test(String(rawPath))) return String(rawPath);
+
+            const normalized = String(rawPath).replaceAll('\\', '/').replace(/^\.?\//, '');
+            if (normalized.startsWith('data/heatmaps/')) {
+                return `${API_BASE}/${normalized}`;
+            }
+            if (normalized.startsWith('data/uploads/')) {
+                return `${API_BASE}/${normalized}`;
+            }
+            return `${API_BASE}/${normalized}`;
+        }
+
+        function getVisualizationAssets(result) {
+            const metadata = getResultMetadata(result);
+            const maskBase64 = metadata?.localization_mask_base64;
+            return {
+                heatmapUrl: toStaticAssetUrl(metadata?.heatmap_path),
+                overlayUrl: toStaticAssetUrl(metadata?.overlay_path),
+                maskUrl: maskBase64 ? `data:image/png;base64,${maskBase64}` : toStaticAssetUrl(metadata?.mask_path),
+                category: metadata?.category || '',
+                hasBbox: Array.isArray(result?.anomalies) && result.anomalies.some(item => Array.isArray(item?.bbox) && item.bbox.length === 4)
+            };
         }
 
         function getExecutionMetadata(result) {
@@ -1144,6 +1249,51 @@
                 return {};
             }
             return metadata;
+        }
+
+        function displayAgentName(agent) {
+            const mapping = {
+                supervisor: '主控',
+                vision: '视觉分析',
+                knowledge: '知识检索',
+                clarification: '澄清助手',
+                report: '报告生成'
+            };
+            return mapping[agent] || agent || '未知节点';
+        }
+
+        function displayStatus(status) {
+            const mapping = {
+                planned: '待执行',
+                running: '执行中',
+                success: '已完成',
+                failed: '失败',
+                pending: '等待中'
+            };
+            return mapping[status] || status || '未知状态';
+        }
+
+        function displayNodeName(node) {
+            const mapping = {
+                supervisor_plan: '主控制定计划',
+                supervisor_execute: '主控执行步骤',
+                supervisor_merge: '主控合并结果',
+                self_reflect: '自反思评估',
+                wait_user: '等待用户澄清',
+                answer: '生成回答',
+                report: '生成报告'
+            };
+            return mapping[node] || node || '节点';
+        }
+
+        function localizeGoal(goal) {
+            if (!goal) return '未提供执行目标';
+            return String(goal)
+                .replace('retry visual anomaly analysis', '重新执行视觉异常分析')
+                .replace('detect and localize visual anomalies', '检测并定位图像中的异常区域')
+                .replace('retrieve similar cases and maintenance knowledge', '检索相似案例、知识库与维修建议')
+                .replace('prepare a structured clarification request for the user', '生成结构化澄清问题，等待用户补充信息')
+                .replace('generate a complete technical report', '生成完整技术报告');
         }
 
         function normalizeStepState(rawStatus, pending) {
@@ -1161,41 +1311,41 @@
                     return {
                         title: '计划已生成',
                         tone: 'planned',
-                        meta: `steps: ${event.step_count || 0}${event.reason ? `\nreason: ${event.reason}` : ''}`
+                        meta: `步骤数：${event.step_count || 0}${event.reason ? `\n原因：${event.reason}` : ''}`
                     };
                 case 'step_started':
                     return {
-                        title: `${event.agent || 'agent'} 开始执行${stepId}`,
+                        title: `${displayAgentName(event.agent)} 开始执行${stepId}`,
                         tone: 'running',
-                        meta: `attempt: ${event.attempt || 1}${Array.isArray(event.depends_on) && event.depends_on.length ? `\ndepends_on: ${event.depends_on.join(', ')}` : ''}`
+                        meta: `第 ${event.attempt || 1} 次尝试${Array.isArray(event.depends_on) && event.depends_on.length ? `\n依赖：${event.depends_on.join(', ')}` : ''}`
                     };
                 case 'step_completed':
                     return {
-                        title: `${event.agent || 'agent'} 已完成${stepId}`,
+                        title: `${displayAgentName(event.agent)} 已完成${stepId}`,
                         tone: event.requires_human ? 'pending' : 'success',
-                        meta: `status: ${event.status || 'success'}${typeof event.confidence === 'number' ? `\nconfidence: ${event.confidence}` : ''}`
+                        meta: `状态：${displayStatus(event.status || 'success')}${typeof event.confidence === 'number' ? `\n置信度：${event.confidence}` : ''}`
                     };
                 case 'step_failed':
                     return {
-                        title: `${event.agent || 'agent'} 执行失败${stepId}`,
+                        title: `${displayAgentName(event.agent)} 执行失败${stepId}`,
                         tone: 'failed',
-                        meta: event.error || 'unknown error'
+                        meta: event.error || '未知错误'
                     };
                 case 'task_suspended':
                     return {
                         title: '任务已挂起，等待澄清',
                         tone: 'pending',
-                        meta: `${event.pending_question || 'pending question unavailable'}${Array.isArray(event.unknown_anomaly_types) && event.unknown_anomaly_types.length ? `\nunknown: ${event.unknown_anomaly_types.join(', ')}` : ''}`
+                        meta: `${event.pending_question || '当前没有待显示的问题'}${Array.isArray(event.unknown_anomaly_types) && event.unknown_anomaly_types.length ? `\n未识别类型：${event.unknown_anomaly_types.join(', ')}` : ''}`
                     };
                 case 'task_resumed':
                     return {
                         title: '任务已恢复执行',
                         tone: 'running',
-                        meta: `conversation_turns: ${event.conversation_turns || 0}`
+                        meta: `对话轮次：${event.conversation_turns || 0}`
                     };
                 default:
                     return {
-                        title: event?.type || 'unknown_event',
+                        title: event?.type || '未知事件',
                         tone: 'planned',
                         meta: JSON.stringify(event || {}, null, 2)
                     };
@@ -1224,19 +1374,19 @@
                     index,
                     status,
                     attempt: stepAttempts[step.agent] || 0,
-                    title: step.agent || `step-${index + 1}`,
-                    subtitle: step.goal || 'No goal provided',
+                    title: displayAgentName(step.agent) || `步骤 ${index + 1}`,
+                    subtitle: localizeGoal(step.goal),
                     badges: [
-                        status,
-                        `attempt ${stepAttempts[step.agent] || 0}`,
-                        step.retryable === false ? 'fixed' : 'retryable'
+                        displayStatus(status),
+                        `第 ${stepAttempts[step.agent] || 0} 次`,
+                        step.retryable === false ? '不可重试' : '可重试'
                     ],
                     details: {
                         step_id: step.id || '-',
-                        agent: step.agent || '-',
-                        goal: step.goal || '-',
-                        depends_on: dependsOn.length ? dependsOn.join(', ') : 'none',
-                        retryable: step.retryable === false ? 'no' : 'yes'
+                        agent: displayAgentName(step.agent),
+                        goal: localizeGoal(step.goal),
+                        depends_on: dependsOn.length ? dependsOn.join(', ') : '无',
+                        retryable: step.retryable === false ? '否' : '是'
                     },
                     raw: step
                 };
@@ -1253,18 +1403,18 @@
                     index,
                     status: summary.tone,
                     title: summary.title,
-                    subtitle: summary.meta || 'No event details',
+                    subtitle: summary.meta || '暂无事件细节',
                     badges: [
                         event?.type || 'event',
-                        event?.agent || null,
+                        event?.agent ? displayAgentName(event.agent) : null,
                         event?.step_id || null
                     ].filter(Boolean),
                     details: {
                         type: event?.type || '-',
-                        agent: event?.agent || '-',
+                        agent: event?.agent ? displayAgentName(event.agent) : '-',
                         step_id: event?.step_id || '-',
                         attempt: event?.attempt ?? '-',
-                        status: event?.status || summary.tone
+                        status: displayStatus(event?.status || summary.tone)
                     },
                     raw: event
                 };
@@ -1322,7 +1472,7 @@
             els.timelineDetails.innerHTML = `
                 <div class="timeline-details-header">
                     <h4>${escapeHtml(selectedCard.title)}</h4>
-                    <p>${escapeHtml(selectedCard.subtitle || 'No additional detail')}</p>
+                    <p>${escapeHtml(selectedCard.subtitle || '暂无补充细节')}</p>
                 </div>
                 <div class="timeline-badges">${selectedCard.badges.map(badge => `<span class="timeline-chip">${escapeHtml(badge)}</span>`).join('')}</div>
                 <div class="timeline-kv">${kvItems}</div>
@@ -1346,11 +1496,11 @@
             ensureTimelineSelection(stepCards, eventCards);
 
             els.timelineSummary.innerHTML = [
-                `<span class="pill">steps ${stepCards.length}</span>`,
-                `<span class="pill">events ${eventCards.length}</span>`,
-                `<span class="pill">running ${summaryItems.running}</span>`,
-                `<span class="pill">failed ${summaryItems.failed}</span>`,
-                `<span class="pill">waiting ${summaryItems.pending}</span>`
+                `<span class="pill">步骤 ${stepCards.length}</span>`,
+                `<span class="pill">事件 ${eventCards.length}</span>`,
+                `<span class="pill">执行中 ${summaryItems.running}</span>`,
+                `<span class="pill">失败 ${summaryItems.failed}</span>`,
+                `<span class="pill">等待 ${summaryItems.pending}</span>`
             ].join('');
 
             renderTimelineFilters(summaryItems);
@@ -1363,8 +1513,8 @@
             els.timelineToggleEvents.classList.toggle('is-active', !!state.timelinePanels.events);
             els.timelineStepsBody.classList.toggle('is-collapsed', !state.timelinePanels.steps);
             els.timelineEventsBody.classList.toggle('is-collapsed', !state.timelinePanels.events);
-            els.timelineStepsNote.textContent = `${filteredSteps.length}/${stepCards.length} steps visible`;
-            els.timelineEventsNote.textContent = `${filteredEvents.length}/${eventCards.length} events visible`;
+            els.timelineStepsNote.textContent = `当前显示 ${filteredSteps.length}/${stepCards.length} 个步骤`;
+            els.timelineEventsNote.textContent = `当前显示 ${filteredEvents.length}/${eventCards.length} 个事件`;
 
             if (!stepCards.length) {
                 els.timelineSteps.innerHTML = '<div class="timeline-empty">任务启动后，这里会显示结构化 step 计划。</div>';
@@ -1376,7 +1526,7 @@
                     return `
                         <article class="timeline-item ${escapeHtml(step.status)} ${isSelected ? 'is-selected' : ''}" data-kind="step" data-key="${escapeHtml(step.key)}">
                             <div class="timeline-item-top">
-                                <span class="timeline-index">step ${step.index + 1}</span>
+                                <span class="timeline-index">步骤 ${step.index + 1}</span>
                                 <div class="timeline-badges">${step.badges.map(badge => `<span class="timeline-chip">${escapeHtml(badge)}</span>`).join('')}</div>
                             </div>
                             <div class="timeline-title">
@@ -1398,7 +1548,7 @@
                     return `
                         <article class="event-item ${escapeHtml(event.status)} ${isSelected ? 'is-selected' : ''}" data-kind="event" data-key="${escapeHtml(event.key)}">
                             <div class="event-item-top">
-                                <span class="event-index">event ${event.index + 1}</span>
+                                <span class="event-index">事件 ${event.index + 1}</span>
                                 <div class="timeline-badges">${event.badges.map(badge => `<span class="timeline-chip">${escapeHtml(badge)}</span>`).join('')}</div>
                             </div>
                             <div class="event-title">
@@ -1467,7 +1617,16 @@
 
             await readSseStream(response, payload => {
                 if (payload.type === 'node_start') {
-                    setStreamingStatus(sourceLabel, `node: ${payload.node}`);
+                    setStreamingStatus(sourceLabel, `节点：${displayNodeName(payload.node)}`);
+                    return;
+                }
+
+                if (payload.type === 'execution_snapshot') {
+                    state.executionPlan = payload.execution_plan || state.executionPlan;
+                    state.stepStatus = payload.step_status || state.stepStatus;
+                    state.stepAttempts = payload.step_attempts || state.stepAttempts;
+                    state.executionEvents = Array.isArray(payload.execution_events) ? payload.execution_events : state.executionEvents;
+                    renderExecutionTimeline();
                     return;
                 }
 
@@ -1507,17 +1666,69 @@
             return finalResult;
         }
 
-        function clearLocalizationOverlay() {
-            els.bboxLayer.innerHTML = '';
+        function renderPreviewModes() {
+            const assets = state.visualAssets || {};
+            const modes = {
+                original: true,
+                bbox: !!assets.hasBbox,
+                heatmap: !!assets.heatmapUrl,
+                overlay: !!assets.overlayUrl
+            };
+
+            Array.from(els.previewModes.querySelectorAll('[data-visual-mode]')).forEach(button => {
+                const mode = button.dataset.visualMode || 'original';
+                const enabled = !!modes[mode];
+                button.disabled = !enabled;
+                button.classList.toggle('is-active', state.visualMode === mode);
+            });
+
+            const overlayMode = state.visualMode === 'heatmap' || state.visualMode === 'overlay';
+            els.overlayOpacity.disabled = !overlayMode;
+        }
+
+        function applyVisualizationMode() {
+            const assets = state.visualAssets || {};
+            const overlayMode = state.visualMode === 'heatmap' || state.visualMode === 'overlay';
+            const overlayUrl = state.visualMode === 'overlay' ? assets.overlayUrl : assets.heatmapUrl;
+
+            els.analysisImage.style.display = 'none';
+            els.analysisImage.removeAttribute('src');
+            els.analysisImage.style.opacity = `${state.overlayOpacity / 100}`;
             els.maskOverlay.style.display = 'none';
             els.maskOverlay.removeAttribute('src');
+            els.bboxLayer.style.display = state.visualMode === 'bbox' ? 'block' : 'none';
+
+            if (overlayMode && overlayUrl) {
+                els.analysisImage.src = overlayUrl;
+                els.analysisImage.style.display = 'block';
+            } else if (state.visualMode === 'bbox' && assets.maskUrl && !els.bboxLayer.innerHTML) {
+                els.maskOverlay.src = assets.maskUrl;
+                els.maskOverlay.style.display = 'block';
+                els.maskOverlay.style.opacity = `${Math.min(0.9, state.overlayOpacity / 100)}`;
+            }
+
+            renderPreviewModes();
+        }
+
+        function clearLocalizationOverlay() {
+            els.bboxLayer.innerHTML = '';
             els.localizationNote.textContent = '当前还没有异常定位结果。';
+            state.visualAssets = {};
+            applyVisualizationMode();
         }
 
         function renderLocalization(anomalies, result) {
             clearLocalizationOverlay();
+            state.visualAssets = getVisualizationAssets(result);
 
             if (!Array.isArray(anomalies) || anomalies.length === 0) {
+                if (state.visualAssets.heatmapUrl || state.visualAssets.overlayUrl || state.visualAssets.maskUrl) {
+                    els.localizationNote.textContent = '已生成可视化热力图，可切换到 Heatmap 或 Overlay 查看。';
+                    if (state.visualAssets.heatmapUrl && state.visualMode === 'original') {
+                        state.visualMode = 'heatmap';
+                    }
+                    applyVisualizationMode();
+                }
                 return;
             }
 
@@ -1553,21 +1764,26 @@
 
             els.bboxLayer.innerHTML = boxes.join('');
 
-            const resultMetadata = getResultMetadata(result);
-            const maskBase64 = resultMetadata?.localization_mask_base64;
-            if (maskBase64) {
-                els.maskOverlay.src = `data:image/png;base64,${maskBase64}`;
-                els.maskOverlay.style.display = 'block';
-            }
-
             const localizedCount = anomalies.filter(item => item?.has_localization).length;
             if (localizedCount > 0) {
                 els.localizationNote.textContent = `已标出 ${localizedCount} 处异常位置。`;
-            } else if (maskBase64) {
+            } else if (state.visualAssets.maskUrl || state.visualAssets.heatmapUrl || state.visualAssets.overlayUrl) {
                 els.localizationNote.textContent = '已显示异常热区，但当前没有可绘制的边界框。';
             } else {
                 els.localizationNote.textContent = '已检出异常，但当前结果没有返回可绘制的位置框。';
             }
+
+            if (state.visualMode === 'bbox' && !state.visualAssets.hasBbox) {
+                state.visualMode = state.visualAssets.heatmapUrl ? 'heatmap' : 'original';
+            }
+            if (state.visualMode === 'heatmap' && !state.visualAssets.heatmapUrl) {
+                state.visualMode = state.visualAssets.overlayUrl ? 'overlay' : (state.visualAssets.hasBbox ? 'bbox' : 'original');
+            }
+            if (state.visualMode === 'overlay' && !state.visualAssets.overlayUrl) {
+                state.visualMode = state.visualAssets.heatmapUrl ? 'heatmap' : (state.visualAssets.hasBbox ? 'bbox' : 'original');
+            }
+
+            applyVisualizationMode();
         }
 
         function pushHistory(role, text, tone = '') {
@@ -1685,6 +1901,9 @@
             state.imageFile = null;
             state.history = [];
             state.lastResult = null;
+            state.visualAssets = {};
+            state.visualMode = 'original';
+            state.overlayOpacity = 72;
             state.executionPlan = null;
             state.executionEvents = [];
             state.stepStatus = {};
@@ -1699,6 +1918,7 @@
             els.previewText.textContent = '还没有选择图片';
             els.previewImage.style.display = 'none';
             els.previewImage.removeAttribute('src');
+            els.overlayOpacity.value = String(state.overlayOpacity);
             clearLocalizationOverlay();
 
             els.statusPanel.textContent = '等待发起检测';
@@ -1716,6 +1936,7 @@
             renderHistory();
             renderTaskState();
             renderExecutionTimeline();
+            renderPreviewModes();
         }
 
         async function startDetection() {
@@ -1724,11 +1945,11 @@
             const image = els.imageInput.files[0];
 
             if (!assetId) {
-                setMessage(els.detectMessage, 'warning', '?????? ID?');
+                setMessage(els.detectMessage, 'warning', '请先填写设备 ID。');
                 return;
             }
             if (!image) {
-                setMessage(els.detectMessage, 'warning', '?????????');
+                setMessage(els.detectMessage, 'warning', '请先选择要检测的图片。');
                 return;
             }
 
@@ -1741,10 +1962,10 @@
             state.selectedTimelineItem = null;
             renderTaskState();
             renderExecutionTimeline();
-            setMessage(els.detectMessage, 'info', '???????????????????');
+            setMessage(els.detectMessage, 'info', '正在上传图片并启动首轮检测...');
             setMessage(els.followupMessage, 'info', '');
             setMessage(els.reportMessage, 'info', '');
-            pushHistory('user', question || '???????');
+            pushHistory('user', question || '请先分析这张图片中的异常。');
 
             const form = new FormData();
             form.append('task_id', taskId);
@@ -1762,12 +1983,12 @@
                     els.detectMessage,
                     data.status === 'pending' ? 'warning' : 'success',
                     data.status === 'pending'
-                        ? '?????????????'
-                        : '?????????????????'
+                        ? '检测已完成，但还需要你补充澄清信息。'
+                        : '首轮检测已完成，可以继续追问或生成报告。'
                 );
                 els.question.value = '';
             } catch (error) {
-                setMessage(els.detectMessage, 'error', `?????${error.message}`);
+                setMessage(els.detectMessage, 'error', `检测失败：${error.message}`);
                 els.statusPanel.textContent = `status: failed\nreason: ${error.message}`;
             } finally {
                 els.detectButton.disabled = false;
@@ -1778,15 +1999,15 @@
         async function sendFollowup() {
             const question = els.question.value.trim();
             if (!state.taskId) {
-                setMessage(els.followupMessage, 'warning', '??????????');
+                setMessage(els.followupMessage, 'warning', '请先完成首轮检测。');
                 return;
             }
             if (!question) {
-                setMessage(els.followupMessage, 'warning', '????????');
+                setMessage(els.followupMessage, 'warning', '请输入追问内容。');
                 return;
             }
 
-            setMessage(els.followupMessage, 'info', '?????????');
+            setMessage(els.followupMessage, 'info', '正在发送追问...');
             pushHistory('user', question);
             els.followupButton.disabled = true;
             try {
@@ -1797,10 +2018,10 @@
 
                 const data = await submitStreamingTask(form, 'chat');
                 applyResult(data, 'chat');
-                setMessage(els.followupMessage, 'success', '?????');
+                setMessage(els.followupMessage, 'success', '追问已完成。');
                 els.question.value = '';
             } catch (error) {
-                setMessage(els.followupMessage, 'error', `?????${error.message}`);
+                setMessage(els.followupMessage, 'error', `追问失败：${error.message}`);
             } finally {
                 renderTaskState();
             }
@@ -1809,19 +2030,19 @@
         async function continueTask() {
             const userReply = els.question.value.trim();
             if (!state.taskId) {
-                setMessage(els.followupMessage, 'warning', '??????????');
+                setMessage(els.followupMessage, 'warning', '请先完成首轮检测。');
                 return;
             }
             if (!state.pending) {
-                setMessage(els.followupMessage, 'warning', '??????????');
+                setMessage(els.followupMessage, 'warning', '当前任务并不处于待澄清状态。');
                 return;
             }
             if (!userReply) {
-                setMessage(els.followupMessage, 'warning', '????????');
+                setMessage(els.followupMessage, 'warning', '请输入澄清回复。');
                 return;
             }
 
-            setMessage(els.followupMessage, 'info', '?????????');
+            setMessage(els.followupMessage, 'info', '正在提交澄清...');
             pushHistory('user', userReply);
             els.continueButton.disabled = true;
             try {
@@ -1835,11 +2056,11 @@
                 setMessage(
                     els.followupMessage,
                     data.status === 'pending' ? 'warning' : 'success',
-                    data.status === 'pending' ? '????????' : '?????????????'
+                    data.status === 'pending' ? '仍需更多澄清信息。' : '澄清已提交，任务继续完成。'
                 );
                 els.question.value = '';
             } catch (error) {
-                setMessage(els.followupMessage, 'error', `?????${error.message}`);
+                setMessage(els.followupMessage, 'error', `澄清失败：${error.message}`);
             } finally {
                 renderTaskState();
             }
@@ -1880,6 +2101,8 @@
             const file = els.imageInput.files[0];
             state.imageFile = file || null;
             state.lastResult = null;
+            state.visualMode = 'original';
+            state.visualAssets = {};
 
             if (!file) {
                 els.previewText.textContent = '还没有选择图片';
@@ -1895,6 +2118,7 @@
                 els.previewImage.src = event.target.result;
                 els.previewImage.style.display = 'block';
                 clearLocalizationOverlay();
+                renderPreviewModes();
             };
             reader.readAsDataURL(file);
         });
@@ -1909,6 +2133,18 @@
             if (state.lastResult) {
                 renderLocalization(state.lastResult.anomalies, state.lastResult);
             }
+        });
+
+        els.previewModes.addEventListener('click', event => {
+            const button = event.target.closest('[data-visual-mode]');
+            if (!button || button.disabled) return;
+            state.visualMode = button.dataset.visualMode || 'original';
+            applyVisualizationMode();
+        });
+
+        els.overlayOpacity.addEventListener('input', event => {
+            state.overlayOpacity = Number(event.target.value || 72);
+            applyVisualizationMode();
         });
 
         els.timelineFilters.addEventListener('click', event => {

@@ -18,6 +18,9 @@ KNOWLEDGE_KEYWORDS = (
     "案例",
     "风险",
     "维修",
+    "rag",
+    "检索",
+    "知识库",
     "repair",
     "reason",
     "knowledge",
@@ -73,15 +76,15 @@ class SupervisorAgent:
         orchestration = state.orchestration_runtime()
         if agent_name == "vision":
             if orchestration.retry_target == "vision":
-                return f"retry visual anomaly analysis ({orchestration.retry_strategy or 'rerun'})"
-            return "detect and localize visual anomalies"
+                return f"重新执行视觉异常分析（策略：{orchestration.retry_strategy or 'rerun'}）"
+            return "检测并定位图像中的异常区域"
         if agent_name == "knowledge":
-            return "retrieve similar cases and maintenance knowledge"
+            return "检索相似案例、知识库与维修建议"
         if agent_name == "clarification":
-            return "prepare a structured clarification request for the user"
+            return "生成结构化澄清问题，等待用户补充信息"
         if agent_name == "report":
-            return "generate a complete technical report"
-        return f"run {agent_name}"
+            return "生成完整技术报告"
+        return f"执行 {agent_name}"
 
     def _build_execution_plan(
         self,
@@ -124,20 +127,20 @@ class SupervisorAgent:
         clarification_ctx = domain.shared_context.clarification
 
         if task_runtime.report_requested:
-            return self._build_execution_plan(state, ["report"], reason="report requested")
+            return self._build_execution_plan(state, ["report"], reason="用户请求生成报告")
 
         if orchestration.reflection_decision == "retry" and orchestration.retry_target:
             return self._build_execution_plan(
                 state,
                 [orchestration.retry_target],
-                reason=orchestration.retry_reason or "retry requested by self_reflect",
+                reason=orchestration.retry_reason or "自反思节点要求重试",
             )
 
         if orchestration.needs_user_input and not (clarification_ctx and clarification_ctx.pending_question):
             return self._build_execution_plan(
                 state,
                 ["clarification"],
-                reason="need structured clarification before continuing",
+                reason="继续执行前需要先生成澄清问题",
             )
 
         if has_image and not domain.agent_outputs.get("vision"):
@@ -149,7 +152,7 @@ class SupervisorAgent:
         if not requested and has_image and not domain.agent_outputs.get("vision"):
             requested.append("vision")
 
-        return self._build_execution_plan(state, requested, reason="fallback routing")
+        return self._build_execution_plan(state, requested, reason="规则回退路由")
 
     def _build_plan_payload(self, state: DetectionState) -> dict[str, Any]:
         task_runtime = state.task_runtime()
