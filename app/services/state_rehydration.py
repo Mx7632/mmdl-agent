@@ -65,6 +65,7 @@ def prepare_followup_state(
     parameters: Optional[dict[str, Any]] = None,
 ) -> DetectionState:
     state = restore_state(previous_state)
+    has_new_image = bool(parameters and parameters.get("image_base64"))
     task_runtime = state.task_runtime()
     task_runtime.task.question = question
     if parameters:
@@ -75,15 +76,17 @@ def prepare_followup_state(
     task_runtime.stage = "chat"
     state.apply_task_runtime(task_runtime)
 
-    from app.orchestration import SharedContext
-
     domain_runtime = state.domain_runtime()
     domain_runtime.intermediate_steps = []
     domain_runtime.tool_calls = []
     domain_runtime.tool_outputs = []
-    domain_runtime.agent_outputs = {}
     domain_runtime.agent_trace = []
-    domain_runtime.shared_context = SharedContext()
+    if has_new_image:
+        from app.orchestration import SharedContext
+
+        domain_runtime.result = None
+        domain_runtime.agent_outputs = {}
+        domain_runtime.shared_context = SharedContext()
     state.apply_domain_runtime(domain_runtime)
 
     orchestration_runtime = state.orchestration_runtime()

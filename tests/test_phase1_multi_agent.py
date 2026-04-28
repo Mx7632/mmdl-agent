@@ -638,6 +638,53 @@ def test_prepare_followup_state_compacts_history():
     assert updated.context["conversation_compacted_turns"] == 1
 
 
+def test_prepare_followup_state_preserves_existing_vision_context_without_new_image():
+    previous = build_state()
+    previous.result = DetectionResult(
+        task_id=previous.task.task_id,
+        status="success",
+        anomalies=[{"type": "scratch", "details": "surface scratch"}],
+        summary="initial summary",
+    )
+    previous.shared_context["vision"] = {
+        "anomalies": [{"type": "scratch", "details": "surface scratch"}],
+        "metadata": {"selected_backend": "qwen", "confidence": 0.82},
+        "answer": "initial answer",
+    }
+    previous.agent_outputs["vision"] = {
+        "payload": {
+            "anomalies": [{"type": "scratch", "details": "surface scratch"}],
+            "metadata": {"selected_backend": "qwen", "confidence": 0.82},
+            "answer": "initial answer",
+        }
+    }
+
+    from app.services.state_rehydration import prepare_followup_state
+
+    updated = prepare_followup_state(previous.model_dump(), question="有没有使用rag")
+
+    assert updated.result is not None
+    assert updated.result.anomalies[0]["type"] == "scratch"
+    assert updated.shared_context.vision is not None
+    assert updated.shared_context.vision.metadata["selected_backend"] == "qwen"
+    assert "vision" in updated.agent_outputs
+
+
+def test_supervisor_fallback_adds_knowledge_for_rag_question(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("app.agents.supervisor.agent.settings.openai_api_key", "")
+    supervisor = get_supervisor_agent()
+    state = build_state("有没有使用rag")
+    state.agent_outputs["vision"] = {"payload": {"anomalies": [{"type": "scratch"}]}}
+    state.shared_context["vision"] = {
+        "anomalies": [{"type": "scratch"}],
+        "metadata": {"selected_backend": "qwen"},
+    }
+
+    plan = supervisor.plan(state)
+
+    assert [step.agent for step in plan.steps] == ["knowledge"]
+
+
 def test_restore_state_promotes_legacy_conversation_summary():
     from app.services.state_rehydration import restore_state
 
