@@ -45,7 +45,7 @@ def test_supervisor_fallback_returns_structured_vision_plan(monkeypatch: pytest.
     assert len(plan.steps) == 1
     assert plan.steps[0].agent == "vision"
     assert plan.steps[0].goal
-    assert plan.reason == "fallback routing"
+    assert plan.reason == "规则回退路由"
 
 
 def test_patchcore_backend_resolution(monkeypatch: pytest.MonkeyPatch):
@@ -277,7 +277,7 @@ def test_supervisor_retry_plan_allows_rerun(monkeypatch: pytest.MonkeyPatch):
 
     assert [step.agent for step in plan.steps] == ["vision"]
     assert plan.steps[0].id == "vision-2"
-    assert "retry" in plan.steps[0].goal
+    assert "重新执行" in plan.steps[0].goal
 
 
 def test_supervisor_prefers_llm_structured_plan(monkeypatch: pytest.MonkeyPatch):
@@ -783,6 +783,11 @@ def test_stream_detection_emits_execution_events_and_final_metadata(monkeypatch:
         for chunk in chunks
         if chunk.startswith("data: ") and '"type": "execution_event"' in chunk
     ]
+    snapshot_payloads = [
+        json.loads(chunk.removeprefix("data: ").strip())
+        for chunk in chunks
+        if chunk.startswith("data: ") and '"type": "execution_snapshot"' in chunk
+    ]
     final_payloads = [
         json.loads(chunk.removeprefix("data: ").strip())
         for chunk in chunks
@@ -790,6 +795,8 @@ def test_stream_detection_emits_execution_events_and_final_metadata(monkeypatch:
     ]
 
     assert len(execution_payloads) == 3
+    assert snapshot_payloads[0]["execution_plan"]["steps"][0]["id"] == "vision-1"
+    assert snapshot_payloads[0]["step_status"]["vision-1"] == "success"
     assert execution_payloads[0]["event"]["type"] == "plan_created"
     assert final_payloads[0]["metadata"]["step_status"]["vision-1"] == "success"
     assert final_payloads[0]["metadata"]["execution_events"][-1]["type"] == "step_completed"

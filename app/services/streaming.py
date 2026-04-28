@@ -56,6 +56,12 @@ async def stream_langgraph_events(
 ) -> AsyncGenerator[str, None]:
     emitted_execution_events = 0
 
+    def build_execution_snapshot(output: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "type": "execution_snapshot",
+            **build_execution_metadata(output),
+        }
+
     async for event in graph.astream_events(invoke_input, config=config, version="v2"):
         kind = event["event"]
         name = event["name"]
@@ -90,6 +96,7 @@ async def stream_langgraph_events(
         elif kind == "on_chain_end" and name in ["supervisor_plan", "supervisor_execute", "supervisor_merge", "wait_user"]:
             output = event.get("data", {}).get("output")
             if isinstance(output, dict):
+                yield f"data: {json.dumps(build_execution_snapshot(output))}\n\n"
                 execution_events = list(output.get("execution_events", []))
                 new_events = execution_events[emitted_execution_events:]
                 for item in new_events:
