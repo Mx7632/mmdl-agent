@@ -22,14 +22,18 @@ def _step_number(step_id: str, attempt: int) -> int:
         return attempt
 
 
-def get_ready_steps(planned_steps: list[dict[str, Any]], completed_step_ids: set[str]) -> list[dict[str, Any]]:
+def get_ready_steps(
+    planned_steps: list[dict[str, Any]],
+    successful_step_ids: set[str],
+    terminal_step_ids: set[str],
+) -> list[dict[str, Any]]:
     ready_steps: list[dict[str, Any]] = []
     for step in planned_steps:
         step_id = step["id"]
-        if step_id in completed_step_ids:
+        if step_id in terminal_step_ids:
             continue
         depends_on = step.get("depends_on") or []
-        if all(dep in completed_step_ids for dep in depends_on):
+        if all(dep in successful_step_ids for dep in depends_on):
             ready_steps.append(step)
     return ready_steps
 
@@ -71,13 +75,41 @@ async def supervisor_execute_node(state: DetectionState) -> DetectionState:
     orchestration.loop_count += 1
     state.apply_orchestration_runtime(orchestration)
 
-    completed_step_ids = {
+    successful_step_ids = {
+        step_id for step_id, status in orchestration.step_status.items() if status == "success"
+    }
+    terminal_step_ids = {
         step_id for step_id, status in orchestration.step_status.items() if status in {"success", "failed"}
     }
 
-    while len(completed_step_ids) < len(planned_steps):
-        ready_steps = get_ready_steps(planned_steps, completed_step_ids)
+    while len(terminal_step_ids) < len(planned_steps):
+        ready_steps = get_ready_steps(planned_steps, successful_step_ids, terminal_step_ids)
         if not ready_steps:
+            remaining_steps = [step for step in planned_steps if step["id"] not in terminal_step_ids]
+            blocked_steps = [
+                step
+                for step in remaining_steps
+                if any(dep in terminal_step_ids and dep not in successful_step_ids for dep in (step.get("depends_on") or []))
+            ]
+            if blocked_steps:
+                for step in blocked_steps:
+                    step_id = step["id"]
+                    failed_dependencies = [
+                        dep for dep in (step.get("depends_on") or []) if dep in terminal_step_ids and dep not in successful_step_ids
+                    ]
+                    orchestration.step_status[step_id] = "failed"
+                    orchestration.last_failed_step = failed_dependencies[-1] if failed_dependencies else step_id
+                    append_execution_event(
+                        state,
+                        "step_failed",
+                        step_id=step_id,
+                        agent=step["agent"],
+                        error=f"dependency_failed:{','.join(failed_dependencies)}",
+                    )
+                    terminal_step_ids.add(step_id)
+                orchestration.execution_events = list(state.execution_events)
+                state.apply_orchestration_runtime(orchestration)
+                continue
             state.errors.append("supervisor_deadlock: no dependency-ready steps available")
             state.logs.append("[Supervisor] Deadlock detected while resolving execution plan dependencies")
             break
@@ -123,7 +155,7 @@ async def supervisor_execute_node(state: DetectionState) -> DetectionState:
                 orchestration.execution_events = list(state.execution_events)
                 state.apply_orchestration_runtime(orchestration)
                 state.logs.append(f"[Supervisor] Agent failed: {agent_name} (step={step_id})")
-                completed_step_ids.add(step_id)
+                terminal_step_ids.add(step_id)
                 continue
 
             _, _, attempt, envelope, error = outcome
@@ -143,14 +175,10 @@ async def supervisor_execute_node(state: DetectionState) -> DetectionState:
                 orchestration.execution_events = list(state.execution_events)
                 state.apply_orchestration_runtime(orchestration)
                 state.logs.append(f"[Supervisor] Agent failed: {agent_name} (step={step_id})")
-                completed_step_ids.add(step_id)
+                terminal_step_ids.add(step_id)
                 continue
 
-            domain = state.domain_runtime()
-            domain.agent_outputs[agent_name] = envelope.model_dump()
-            state.apply_domain_runtime(domain)
             orchestration.step_outputs[step_id] = envelope.model_dump()
-            orchestration.step_status[step_id] = envelope.status
             memory_manager.add_tool_context(
                 ToolContextMemory(
                     task_id=state.task.task_id,
@@ -173,6 +201,41 @@ async def supervisor_execute_node(state: DetectionState) -> DetectionState:
                     },
                 )
             )
+            if envelope.status != "success":
+                orchestration.step_status[step_id] = "failed"
+                orchestration.last_failed_step = step_id
+                append_execution_event(
+                    state,
+                    "step_failed",
+                    step_id=step_id,
+                    agent=agent_name,
+                    attempt=attempt,
+                    error=envelope.summary or "agent returned failed status",
+                )
+                orchestration.execution_events = list(state.execution_events)
+                domain = state.domain_runtime()
+                domain.agent_trace.append(
+                    {
+                        "step_id": step_id,
+                        "agent": agent_name,
+                        "attempt": attempt,
+                        "status": "failed",
+                        "summary": envelope.summary,
+                        "confidence": envelope.confidence,
+                        "requires_human": envelope.requires_human,
+                        "next_recommendation": envelope.next_recommendation,
+                    }
+                )
+                state.apply_domain_runtime(domain)
+                state.apply_orchestration_runtime(orchestration)
+                terminal_step_ids.add(step_id)
+                state.logs.append(f"[Supervisor] Agent reported failed status: {agent_name} (step={step_id})")
+                continue
+
+            domain = state.domain_runtime()
+            domain.agent_outputs[agent_name] = envelope.model_dump()
+            state.apply_domain_runtime(domain)
+            orchestration.step_status[step_id] = "success"
             append_execution_event(
                 state,
                 "step_completed",
@@ -199,7 +262,8 @@ async def supervisor_execute_node(state: DetectionState) -> DetectionState:
             )
             state.apply_domain_runtime(domain)
             state.apply_orchestration_runtime(orchestration)
-            completed_step_ids.add(step_id)
+            successful_step_ids.add(step_id)
+            terminal_step_ids.add(step_id)
 
     orchestration.active_agent = None
     state.apply_orchestration_runtime(orchestration)

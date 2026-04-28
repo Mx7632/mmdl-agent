@@ -44,7 +44,8 @@ Requirements:
 def _ensure_result_from_shared_context(state: DetectionState) -> DetectionResult:
     domain_runtime = state.domain_runtime()
     if domain_runtime.result is None:
-        domain_runtime.result = DetectionResult(task_id=state.task.task_id, status="success")
+        default_status = "success" if domain_runtime.agent_outputs else ("failed" if state.last_failed_step else "success")
+        domain_runtime.result = DetectionResult(task_id=state.task.task_id, status=default_status)
 
     vision_ctx = domain_runtime.shared_context.vision
     if vision_ctx and vision_ctx.anomalies and not domain_runtime.result.anomalies:
@@ -65,6 +66,19 @@ async def answer_node(state: DetectionState) -> DetectionState:
     user_id = (task.parameters or {}).get("user_id", "default_user")
     asset_id = task.asset_id
     result = _ensure_result_from_shared_context(state)
+
+    if result.status == "failed" and not (result.anomalies or []):
+        failed_step = state.orchestration_runtime().last_failed_step or "vision"
+        answer = f"本次检测未能得到可靠结果，{failed_step} 执行失败，当前不能据此判断设备正常。请重试检测，或检查 PatchCore 类别、模型产物和输入图片后再试。"
+        task_runtime.conversation_history.append({"role": "assistant", "content": answer})
+        task_runtime.current_step += 1
+        state.apply_task_runtime(task_runtime)
+        compact_state_conversation(state)
+        state.context["answer"] = answer
+        state.context["has_report"] = False
+        result.summary = result.summary or "检测流程失败，未得到可靠的视觉结论。"
+        state.logs.append(f"[Answer] generated deterministic failure answer for step={failed_step}")
+        return state
 
     mem_ctx = memory_manager.build_memory_context(
         user_id=user_id,
@@ -151,7 +165,7 @@ async def answer_node(state: DetectionState) -> DetectionState:
         )
     )
 
-    if step_id == 1 and asset_id:
+    if step_id == 1 and asset_id and result.status == "success":
         anomaly_types = [
             item.get("type", "unknown")
             for item in (result.anomalies or [])

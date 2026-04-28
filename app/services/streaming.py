@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 
 def build_stream_final_payload(task_id: str, final_output: dict[str, Any]) -> dict[str, Any]:
     needs_suspend = final_output.get("needs_user_input") and not final_output.get("user_reply")
+    result_obj = final_output.get("result")
+    result_status = (
+        result_obj.get("status")
+        if isinstance(result_obj, dict)
+        else getattr(result_obj, "status", None)
+    )
     anomalies = extract_anomalies(final_output.get("result"))
     result_metadata = extract_result_metadata(final_output.get("result"))
     context = final_output.get("context", {}) or {}
@@ -30,7 +36,7 @@ def build_stream_final_payload(task_id: str, final_output: dict[str, Any]) -> di
     return {
         "type": "final_result",
         "task_id": task_id,
-        "status": "pending" if needs_suspend else "success",
+        "status": "pending" if needs_suspend else (result_status or "success"),
         "answer": context.get("answer", ""),
         "anomalies": anomalies,
         "summary": final_output.get("result", {}).get("summary") if isinstance(final_output.get("result"), dict) else getattr(final_output.get("result"), "summary", None),

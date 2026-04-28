@@ -17,21 +17,25 @@ class VisionAgent:
         anomalies = result.anomalies if result else []
         metadata = result.metadata if result else {}
         summary = result.summary if result else None
+        status = "success" if response.success else "failed"
 
         if not summary:
-            if anomalies:
+            if status != "success":
+                summary = response.error or "视觉分析执行失败，未得到可靠的检测结果。"
+            elif anomalies:
                 summary = f"Detected {len(anomalies)} visual anomaly item(s)."
             else:
                 summary = "No obvious visual anomaly was detected."
 
         return AgentEnvelope(
             agent_name=self.name,
-            status="success" if response.success else "failed",
+            status=status,
             summary=summary,
             payload={
                 "anomalies": anomalies,
                 "metadata": metadata,
                 "answer": result.answer if result else None,
+                "error": response.error,
                 "heatmap_path": metadata.get("heatmap_path"),
                 "overlay_path": metadata.get("overlay_path"),
                 "mask_path": metadata.get("mask_path"),

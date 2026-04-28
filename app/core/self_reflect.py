@@ -22,7 +22,8 @@ CONFIDENCE_THRESHOLD = 0.7
 def _ensure_result_from_shared_context(state: DetectionState) -> DetectionResult:
     domain_runtime = state.domain_runtime()
     if domain_runtime.result is None:
-        domain_runtime.result = DetectionResult(task_id=state.task.task_id, status="success")
+        default_status = "success" if domain_runtime.agent_outputs else ("failed" if state.last_failed_step else "success")
+        domain_runtime.result = DetectionResult(task_id=state.task.task_id, status=default_status)
 
     vision_ctx = domain_runtime.shared_context.vision
     if vision_ctx and vision_ctx.anomalies and not domain_runtime.result.anomalies:
@@ -76,6 +77,22 @@ async def self_reflect_node(state: DetectionState) -> DetectionState:
         return state
 
     result = _ensure_result_from_shared_context(state)
+    if orchestration.last_failed_step:
+        failed_output = orchestration.step_outputs.get(orchestration.last_failed_step, {}) or {}
+        failed_agent = failed_output.get("agent_name") or orchestration.last_failed_step.split("-", 1)[0]
+        orchestration.confidence = 0.0
+        orchestration.unknown_anomaly_types = []
+        orchestration.reflection_decision = "retry"
+        orchestration.needs_user_input = False
+        orchestration.retry_target = failed_agent if failed_agent in {"vision", "knowledge"} else "vision"
+        orchestration.retry_reason = failed_output.get("summary") or "specialist step failed and needs another run"
+        orchestration.retry_strategy = "rerun_after_failure"
+        state.logs.append(
+            f"[SelfReflect] detected failed step {orchestration.last_failed_step}, retry {orchestration.retry_target}"
+        )
+        state.apply_orchestration_runtime(orchestration)
+        return state
+
     user_id = (task_runtime.task.parameters or {}).get("user_id", "default_user")
     long_term_memories = memory_manager.get_long_term_memory(user_id, asset_id=task_runtime.task.asset_id)
     history_text = "\n".join(f"- {item.memory_summary[:200]}" for item in long_term_memories[-3:])
@@ -113,12 +130,12 @@ async def self_reflect_node(state: DetectionState) -> DetectionState:
         retry_strategy = parsed.get("retry_strategy")
         retry_reason = parsed.get("reason")
     else:
-        orchestration.confidence = float(result.metadata.get("confidence", CONFIDENCE_THRESHOLD) or CONFIDENCE_THRESHOLD)
+        orchestration.confidence = float(result.metadata.get("confidence", 0.0) or 0.0)
         orchestration.unknown_anomaly_types = []
-        can_proceed = True
+        can_proceed = result.status != "failed"
         retry_target = None
         retry_strategy = None
-        retry_reason = None
+        retry_reason = "result remains unreliable after fallback reflection" if not can_proceed else None
 
     if not can_proceed:
         if orchestration.unknown_anomaly_types:

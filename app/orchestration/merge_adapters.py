@@ -8,7 +8,8 @@ from app.schemas.detection import DetectionResult
 def ensure_result(state: DetectionState) -> DetectionResult:
     domain = state.domain_runtime()
     if domain.result is None:
-        domain.result = DetectionResult(task_id=state.task.task_id, status="success")
+        default_status = "success" if domain.agent_outputs else ("failed" if state.last_failed_step else "success")
+        domain.result = DetectionResult(task_id=state.task.task_id, status=default_status)
         state.apply_domain_runtime(domain)
     return state.result
 
@@ -18,6 +19,7 @@ def merge_vision_output(state: DetectionState, payload: dict, result: DetectionR
     domain.tool_outputs.append({"tool": "vision_agent", "anomalies": payload.get("anomalies", [])})
     domain.shared_context["vision"] = payload
     state.apply_domain_runtime(domain)
+    result.status = "success"
     result.anomalies = list(payload.get("anomalies", []))
     if payload.get("answer"):
         result.answer = payload["answer"]

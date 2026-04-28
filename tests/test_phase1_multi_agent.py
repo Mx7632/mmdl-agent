@@ -164,6 +164,39 @@ async def test_vision_agent_exposes_patchcore_heatmap_fields():
     assert envelope.payload["mask_path"].endswith("task_mask.png")
 
 
+@pytest.mark.asyncio
+async def test_vision_agent_failure_does_not_fallback_to_normal_summary():
+    class FakeVisionTool:
+        async def run(self, task):
+            return ToolResponse(
+                tool_name="patchcore_image_anomaly_detection",
+                success=False,
+                result=DetectionResult(
+                    task_id=task.task_id,
+                    status="failed",
+                    anomalies=[],
+                    summary=None,
+                    metadata={},
+                ),
+                error="patchcore backend failed",
+            )
+
+    task = DetectionTask(
+        task_id="vision-failed",
+        asset_id="asset-001",
+        start_time="2026-04-27T00:00:00Z",
+        end_time="2026-04-27T00:01:00Z",
+        parameters={"image_base64": "aW1hZ2U="},
+    )
+    agent = VisionAgent(tool=FakeVisionTool())
+
+    envelope = await agent.run(task)
+
+    assert envelope.status == "failed"
+    assert "No obvious visual anomaly" not in (envelope.summary or "")
+    assert "failed" in (envelope.summary or "")
+
+
 def test_detection_state_runtime_views_group_fields():
     state = build_state()
     state.conversation_history.append({"role": "user", "content": "Need a second pass."})
@@ -732,6 +765,49 @@ def test_supervisor_execute_records_tool_context(monkeypatch: pytest.MonkeyPatch
     assert tool_context_calls[0].tool_output["anomaly_count"] == 1
 
 
+def test_supervisor_execute_failed_envelope_does_not_merge_as_success(monkeypatch: pytest.MonkeyPatch):
+    state = build_state()
+    state.execution_plan = {
+        "steps": [
+            {
+                "id": "vision-1",
+                "agent": "vision",
+                "goal": "detect anomalies",
+                "depends_on": [],
+                "retryable": True,
+            }
+        ]
+    }
+
+    async def fake_vision_run(self, task):
+        return AgentEnvelope(
+            agent_name="vision",
+            status="failed",
+            summary="patchcore execution failed",
+            payload={"anomalies": [], "metadata": {}},
+            confidence=0.0,
+        )
+
+    monkeypatch.setattr("app.agents.vision.agent.VisionAgent.run", fake_vision_run)
+
+    updated = asyncio.run(supervisor_execute_node(state))
+
+    assert updated.step_status["vision-1"] == "failed"
+    assert "vision" not in updated.agent_outputs
+    assert updated.execution_events[-1]["type"] == "step_failed"
+
+
+def test_answer_node_returns_failure_message_for_failed_result(monkeypatch: pytest.MonkeyPatch):
+    state = build_state()
+    state.last_failed_step = "vision-1"
+    state.result = DetectionResult(task_id=state.task.task_id, status="failed", anomalies=[])
+
+    updated = asyncio.run(answer_node(state))
+
+    assert "不能据此判断设备正常" in updated.context["answer"]
+    assert updated.current_step == 2
+
+
 def test_stream_detection_emits_execution_events_and_final_metadata(monkeypatch: pytest.MonkeyPatch):
     task = DetectionTask(
         task_id="stream-001",
@@ -800,3 +876,19 @@ def test_stream_detection_emits_execution_events_and_final_metadata(monkeypatch:
     assert execution_payloads[0]["event"]["type"] == "plan_created"
     assert final_payloads[0]["metadata"]["step_status"]["vision-1"] == "success"
     assert final_payloads[0]["metadata"]["execution_events"][-1]["type"] == "step_completed"
+
+
+def test_self_reflect_retries_failed_specialist_without_proceeding():
+    state = build_state()
+    state.last_failed_step = "vision-1"
+    state.step_outputs["vision-1"] = {
+        "agent_name": "vision",
+        "status": "failed",
+        "summary": "patchcore execution failed",
+    }
+
+    updated = asyncio.run(self_reflect_node(state))
+
+    assert updated.reflection_decision == "retry"
+    assert updated.retry_target == "vision"
+    assert updated.retry_strategy == "rerun_after_failure"
