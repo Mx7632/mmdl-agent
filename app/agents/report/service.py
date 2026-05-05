@@ -13,6 +13,7 @@ from app.memory.models import LongTermMemory
 from app.memory.state import DetectionState
 from app.orchestration.context_store import get_prompt_context
 from app.prompts.image_report import IMAGE_REPORT_PROMPT
+from app.rag.knowledge_pipeline import dump_analysis_contracts, format_analysis_contracts
 from app.schemas.detection import DetectionResult
 
 logger = logging.getLogger(__name__)
@@ -43,16 +44,12 @@ def _build_history_text(state: DetectionState, *, user_id: str, asset_id: str | 
     )
 
     history_parts: list[str] = []
-    short_term_text = mem_ctx["short_term"]
-    long_term_text = mem_ctx["long_term"]
-    tool_effect_text = mem_ctx["tool_effect"]
-
-    if asset_id and short_term_text != "(no historical detection records)":
-        history_parts.append(f"[Short-term memory]\n{short_term_text}")
-    if long_term_text != "(no long-term memory)":
-        history_parts.append(f"[Long-term memory]\n{long_term_text}")
-    if asset_id and tool_effect_text != "(no historical tool traces)":
-        history_parts.append(f"[Tool effectiveness]\n{tool_effect_text}")
+    if asset_id and mem_ctx["short_term"] != "(no historical detection records)":
+        history_parts.append(f"[Short-term memory]\n{mem_ctx['short_term']}")
+    if mem_ctx["long_term"] != "(no long-term memory)":
+        history_parts.append(f"[Long-term memory]\n{mem_ctx['long_term']}")
+    if asset_id and mem_ctx["tool_effect"] != "(no historical tool traces)":
+        history_parts.append(f"[Tool effectiveness]\n{mem_ctx['tool_effect']}")
 
     return "\n\n".join(history_parts) or "(no historical detection records)"
 
@@ -79,98 +76,29 @@ def _build_defect_analysis_block(state: DetectionState) -> str:
     knowledge_ctx = state.domain_runtime().shared_context.knowledge
     if not knowledge_ctx:
         return "(no structured defect analysis)"
-
-    defect_block = knowledge_ctx.defect_analysis or {}
-    object_block = knowledge_ctx.object_analysis or {}
-    sections: list[str] = []
-    defect_summary = defect_block.get("analysis_summary") or knowledge_ctx.analysis_summary
-    object_summary = object_block.get("object_summary") or knowledge_ctx.object_summary
-    object_knowledge_summary = object_block.get("object_knowledge_summary") or knowledge_ctx.object_knowledge_summary
-    object_knowledge_hits = object_block.get("object_knowledge_hits") or knowledge_ctx.object_knowledge_hits
-    component_scope = object_block.get("component_scope") or knowledge_ctx.component_scope
-    component_findings = object_block.get("component_findings") or knowledge_ctx.component_findings
-    functional_impact = object_block.get("functional_impact") or knowledge_ctx.functional_impact
-    object_knowledge_notes = object_block.get("object_knowledge_notes") or knowledge_ctx.object_knowledge_notes
-    similar_cases = defect_block.get("similar_cases") or knowledge_ctx.similar_cases
-    possible_causes = defect_block.get("possible_causes") or knowledge_ctx.possible_causes
-    risk_notes = defect_block.get("risk_notes") or knowledge_ctx.risk_notes
-    repair_actions = defect_block.get("repair_actions") or knowledge_ctx.repair_actions
-
-    if defect_summary:
-        sections.append(f"[Analysis summary]\n{defect_summary}")
-    if object_summary:
-        sections.append(f"[Object summary]\n{object_summary}")
-    if object_knowledge_summary:
-        sections.append(f"[Object knowledge summary]\n{object_knowledge_summary}")
-    if object_knowledge_hits:
-        sections.append(
-            "[Object knowledge hits]\n"
-            + "\n".join(
-                f"- {item.get('title')}: {item.get('note')}"
-                for item in object_knowledge_hits
-            )
-        )
-    if component_scope:
-        sections.append("[Component scope]\n" + "\n".join(f"- {item}" for item in component_scope))
-    if component_findings:
-        sections.append(
-            "[Component findings]\n"
-            + "\n".join(
-                f"- {item.get('location')} 对应 {item.get('component')}，异常类型 {item.get('anomaly_type')}"
-                for item in component_findings
-            )
-        )
-    if functional_impact:
-        sections.append("[Component impact assessment]\n" + "\n".join(f"- {item}" for item in functional_impact))
-    if object_knowledge_notes:
-        sections.append("[Object knowledge]\n" + "\n".join(f"- {item}" for item in object_knowledge_notes))
-    if similar_cases:
-        sections.append(
-            "[Similar cases]\n"
-            + "\n".join(f"- {item.get('summary') or item.get('id')}" for item in similar_cases)
-        )
-    if possible_causes:
-        sections.append("[Possible causes]\n" + "\n".join(f"- {item}" for item in possible_causes))
-    if risk_notes:
-        sections.append("[Risk notes]\n" + "\n".join(f"- {item}" for item in risk_notes))
-    if repair_actions:
-        sections.append("[Repair actions]\n" + "\n".join(f"- {item}" for item in repair_actions))
-
-    return "\n\n".join(sections) if sections else "(no structured defect analysis)"
+    return format_analysis_contracts(knowledge_ctx)
 
 
 def _build_analysis_metadata(state: DetectionState) -> dict[str, object]:
     knowledge_ctx = state.domain_runtime().shared_context.knowledge
-    if not knowledge_ctx:
-        return {}
+    return dump_analysis_contracts(knowledge_ctx) if knowledge_ctx else {}
 
-    defect_block = knowledge_ctx.defect_analysis or {}
-    object_block = knowledge_ctx.object_analysis or {}
-    return {
-        "defect_analysis": {
-            "similar_cases": list(defect_block.get("similar_cases") or knowledge_ctx.similar_cases),
-            "possible_causes": list(defect_block.get("possible_causes") or knowledge_ctx.possible_causes),
-            "risk_notes": list(defect_block.get("risk_notes") or knowledge_ctx.risk_notes),
-            "repair_actions": list(defect_block.get("repair_actions") or knowledge_ctx.repair_actions),
-            "analysis_summary": defect_block.get("analysis_summary") or knowledge_ctx.analysis_summary,
-        },
-        "object_analysis": {
-            "object_profile": dict(object_block.get("object_profile") or knowledge_ctx.object_profile),
-            "component_scope": list(object_block.get("component_scope") or knowledge_ctx.component_scope),
-            "component_findings": list(object_block.get("component_findings") or knowledge_ctx.component_findings),
-            "functional_impact": list(object_block.get("functional_impact") or knowledge_ctx.functional_impact),
-            "object_summary": object_block.get("object_summary") or knowledge_ctx.object_summary,
-            "object_knowledge_notes": list(
-                object_block.get("object_knowledge_notes") or knowledge_ctx.object_knowledge_notes
-            ),
-            "object_knowledge_hits": list(
-                object_block.get("object_knowledge_hits") or knowledge_ctx.object_knowledge_hits
-            ),
-            "object_knowledge_summary": (
-                object_block.get("object_knowledge_summary") or knowledge_ctx.object_knowledge_summary
-            ),
-        },
-    }
+
+def _build_dialogue_text(state: DetectionState) -> str:
+    task_runtime = state.task_runtime()
+    if not task_runtime.conversation_history:
+        return "(no follow-up dialogue)"
+
+    dialogue_text = "\n".join(
+        f"[{item['role']}] {item['content']}"
+        for item in task_runtime.conversation_history
+        if item.get("content")
+    )
+    state.logs.append(f"[Report] Included {len(task_runtime.conversation_history)} conversation turn(s)")
+
+    if task_runtime.conversation_summary:
+        return f"[Earlier conversation summary]\n{task_runtime.conversation_summary}\n\n{dialogue_text}"
+    return dialogue_text
 
 
 async def generate_report_state(state: DetectionState) -> DetectionState:
@@ -188,23 +116,7 @@ async def generate_report_state(state: DetectionState) -> DetectionState:
     user_id = (task_runtime.task.parameters or {}).get("user_id") or DEFAULT_USER_ID
     asset_id = task_runtime.task.asset_id
     history_text = _build_history_text(state, user_id=user_id, asset_id=asset_id)
-
-    if task_runtime.conversation_history:
-        dialogue_text = "\n".join(
-            f"[{item['role']}] {item['content']}"
-            for item in task_runtime.conversation_history
-            if item.get("content")
-        )
-        state.logs.append(f"[Report] Included {len(task_runtime.conversation_history)} conversation turn(s)")
-    else:
-        dialogue_text = "(no follow-up dialogue)"
-
-    if task_runtime.conversation_summary:
-        dialogue_text = (
-            f"[Earlier conversation summary]\n{task_runtime.conversation_summary}\n\n"
-            f"{dialogue_text}"
-        )
-
+    dialogue_text = _build_dialogue_text(state)
     rag_context = get_prompt_context(state) or "(no RAG retrieval context)"
     defect_description_text = _build_defect_description_block(result.anomalies or [])
     defect_analysis_text = _build_defect_analysis_block(state)

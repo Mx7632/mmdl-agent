@@ -2451,13 +2451,18 @@
         }
 
         function getStructuredAnalysis(result) {
+            const analysisContracts = result?.metadata?.analysis_contracts || null;
+            if (analysisContracts && (analysisContracts.defect_analysis || analysisContracts.object_analysis)) {
+                return analysisContracts;
+            }
+
             const knowledge = result?.shared_context?.knowledge || result?.metadata?.shared_context?.knowledge || null;
-            if (knowledge && (knowledge.analysis_summary || knowledge.possible_causes || knowledge.risk_notes || knowledge.repair_actions || knowledge.similar_cases || knowledge.object_summary || knowledge.component_scope || knowledge.component_findings || knowledge.functional_impact || knowledge.object_knowledge_notes || knowledge.object_knowledge_hits || knowledge.object_knowledge_summary || knowledge.defect_analysis || knowledge.object_analysis)) {
+            if (knowledge && (knowledge.defect_analysis || knowledge.object_analysis || knowledge.analysis_summary || knowledge.possible_causes || knowledge.risk_notes || knowledge.repair_actions || knowledge.similar_cases || knowledge.object_summary || knowledge.component_scope || knowledge.component_findings || knowledge.functional_impact || knowledge.object_knowledge_notes || knowledge.object_knowledge_hits || knowledge.object_knowledge_summary)) {
                 return knowledge;
             }
 
             const resultMetadata = result?.metadata?.result_metadata || {};
-            if (resultMetadata && (resultMetadata.analysis_summary || resultMetadata.possible_causes || resultMetadata.risk_notes || resultMetadata.repair_actions || resultMetadata.similar_cases || resultMetadata.object_summary || resultMetadata.component_scope || resultMetadata.component_findings || resultMetadata.functional_impact || resultMetadata.object_knowledge_notes || resultMetadata.object_knowledge_hits || resultMetadata.object_knowledge_summary || resultMetadata.defect_analysis || resultMetadata.object_analysis)) {
+            if (resultMetadata && (resultMetadata.defect_analysis || resultMetadata.object_analysis || resultMetadata.analysis_summary || resultMetadata.possible_causes || resultMetadata.risk_notes || resultMetadata.repair_actions || resultMetadata.similar_cases || resultMetadata.object_summary || resultMetadata.component_scope || resultMetadata.component_findings || resultMetadata.functional_impact || resultMetadata.object_knowledge_notes || resultMetadata.object_knowledge_hits || resultMetadata.object_knowledge_summary)) {
                 return resultMetadata;
             }
 

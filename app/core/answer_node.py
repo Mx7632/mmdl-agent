@@ -14,6 +14,7 @@ from app.memory.memory_manager import memory_manager
 from app.memory.models import ShortTermMemory, WorkingMemory
 from app.memory.state import DetectionState
 from app.orchestration.context_store import get_prompt_context
+from app.rag.knowledge_pipeline import dump_analysis_contracts, format_analysis_contracts
 from app.schemas.detection import DetectionResult
 
 logger = logging.getLogger(__name__)
@@ -62,39 +63,36 @@ def _ensure_result_from_shared_context(state: DetectionState) -> DetectionResult
 
 def _build_structured_analysis_metadata(state: DetectionState) -> dict[str, object]:
     knowledge_ctx = state.domain_runtime().shared_context.knowledge
-    if not knowledge_ctx:
-        return {}
+    return dump_analysis_contracts(knowledge_ctx) if knowledge_ctx else {}
 
-    defect_block = knowledge_ctx.defect_analysis or {}
-    object_block = knowledge_ctx.object_analysis or {}
 
-    defect_analysis = {
-        "similar_cases": list(defect_block.get("similar_cases") or knowledge_ctx.similar_cases),
-        "possible_causes": list(defect_block.get("possible_causes") or knowledge_ctx.possible_causes),
-        "risk_notes": list(defect_block.get("risk_notes") or knowledge_ctx.risk_notes),
-        "repair_actions": list(defect_block.get("repair_actions") or knowledge_ctx.repair_actions),
-        "analysis_summary": defect_block.get("analysis_summary") or knowledge_ctx.analysis_summary,
-    }
-    object_analysis = {
-        "object_profile": dict(object_block.get("object_profile") or knowledge_ctx.object_profile),
-        "component_scope": list(object_block.get("component_scope") or knowledge_ctx.component_scope),
-        "component_findings": list(object_block.get("component_findings") or knowledge_ctx.component_findings),
-        "functional_impact": list(object_block.get("functional_impact") or knowledge_ctx.functional_impact),
-        "object_summary": object_block.get("object_summary") or knowledge_ctx.object_summary,
-        "object_knowledge_notes": list(
-            object_block.get("object_knowledge_notes") or knowledge_ctx.object_knowledge_notes
-        ),
-        "object_knowledge_hits": list(
-            object_block.get("object_knowledge_hits") or knowledge_ctx.object_knowledge_hits
-        ),
-        "object_knowledge_summary": (
-            object_block.get("object_knowledge_summary") or knowledge_ctx.object_knowledge_summary
-        ),
-    }
-    return {
-        "defect_analysis": defect_analysis,
-        "object_analysis": object_analysis,
-    }
+def _format_conversation_history(history: list[dict]) -> str:
+    if not history:
+        return "(first turn)"
+    lines: list[str] = []
+    for item in history:
+        role = "user" if item.get("role") == "user" else "assistant"
+        lines.append(f"{role}: {item.get('content', '')}")
+    return "\n".join(lines)
+
+
+def _record_failure_answer(state: DetectionState, result: DetectionResult) -> DetectionState:
+    task_runtime = state.task_runtime()
+    failed_step = state.orchestration_runtime().last_failed_step or "vision"
+    answer = (
+        f"本次检测未能得到可靠结果，{failed_step} 执行失败，"
+        "当前不能据此判断设备正常。请重试检测，或检查 PatchCore 类别、模型产物和输入图片后再试。"
+    )
+    task_runtime.conversation_history.append({"role": "assistant", "content": answer})
+    task_runtime.current_step += 1
+    state.apply_task_runtime(task_runtime)
+    compact_state_conversation(state)
+
+    state.context["answer"] = answer
+    state.context["has_report"] = False
+    result.summary = result.summary or "检测流程失败，未得到可靠的视觉结论。"
+    state.logs.append(f"[Answer] generated deterministic failure answer for step={failed_step}")
+    return state
 
 
 async def answer_node(state: DetectionState) -> DetectionState:
@@ -106,17 +104,7 @@ async def answer_node(state: DetectionState) -> DetectionState:
     result = _ensure_result_from_shared_context(state)
 
     if result.status == "failed" and not (result.anomalies or []):
-        failed_step = state.orchestration_runtime().last_failed_step or "vision"
-        answer = f"本次检测未能得到可靠结果，{failed_step} 执行失败，当前不能据此判断设备正常。请重试检测，或检查 PatchCore 类别、模型产物和输入图片后再试。"
-        task_runtime.conversation_history.append({"role": "assistant", "content": answer})
-        task_runtime.current_step += 1
-        state.apply_task_runtime(task_runtime)
-        compact_state_conversation(state)
-        state.context["answer"] = answer
-        state.context["has_report"] = False
-        result.summary = result.summary or "检测流程失败，未得到可靠的视觉结论。"
-        state.logs.append(f"[Answer] generated deterministic failure answer for step={failed_step}")
-        return state
+        return _record_failure_answer(state, result)
 
     mem_ctx = memory_manager.build_memory_context(
         user_id=user_id,
@@ -125,72 +113,11 @@ async def answer_node(state: DetectionState) -> DetectionState:
     )
     knowledge_context = get_prompt_context(state) or "(no extra retrieved knowledge)"
     knowledge_ctx = state.domain_runtime().shared_context.knowledge
-    structured_analysis = "(no structured defect analysis)"
-    defect_block = knowledge_ctx.defect_analysis if knowledge_ctx and knowledge_ctx.defect_analysis else {}
-    object_block = knowledge_ctx.object_analysis if knowledge_ctx and knowledge_ctx.object_analysis else {}
-    if knowledge_ctx and (
-        knowledge_ctx.possible_causes
-        or knowledge_ctx.risk_notes
-        or knowledge_ctx.repair_actions
-        or knowledge_ctx.analysis_summary
-        or knowledge_ctx.component_scope
-        or knowledge_ctx.component_findings
-        or knowledge_ctx.functional_impact
-        or knowledge_ctx.object_summary
-        or knowledge_ctx.object_knowledge_notes
-        or knowledge_ctx.object_knowledge_hits
-        or knowledge_ctx.object_knowledge_summary
-        or defect_block
-        or object_block
-    ):
-        analysis_lines = []
-        defect_summary = defect_block.get("analysis_summary") or knowledge_ctx.analysis_summary
-        object_summary = object_block.get("object_summary") or knowledge_ctx.object_summary
-        object_knowledge_summary = object_block.get("object_knowledge_summary") or knowledge_ctx.object_knowledge_summary
-        object_knowledge_hits = object_block.get("object_knowledge_hits") or knowledge_ctx.object_knowledge_hits
-        component_scope = object_block.get("component_scope") or knowledge_ctx.component_scope
-        component_findings = object_block.get("component_findings") or knowledge_ctx.component_findings
-        functional_impact = object_block.get("functional_impact") or knowledge_ctx.functional_impact
-        object_knowledge_notes = object_block.get("object_knowledge_notes") or knowledge_ctx.object_knowledge_notes
-        possible_causes = defect_block.get("possible_causes") or knowledge_ctx.possible_causes
-        risk_notes = defect_block.get("risk_notes") or knowledge_ctx.risk_notes
-        repair_actions = defect_block.get("repair_actions") or knowledge_ctx.repair_actions
-
-        if defect_summary:
-            analysis_lines.append(f"[Analysis summary]\n{defect_summary}")
-        if object_summary:
-            analysis_lines.append(f"[Object summary]\n{object_summary}")
-        if object_knowledge_summary:
-            analysis_lines.append(f"[Object knowledge summary]\n{object_knowledge_summary}")
-        if object_knowledge_hits:
-            analysis_lines.append(
-                "[Object knowledge hits]\n"
-                + "\n".join(
-                    f"- {item.get('title')}: {item.get('note')}"
-                    for item in object_knowledge_hits
-                )
-            )
-        if component_scope:
-            analysis_lines.append("[Component scope]\n" + "\n".join(f"- {item}" for item in component_scope))
-        if component_findings:
-            analysis_lines.append(
-                "[Component findings]\n"
-                + "\n".join(
-                    f"- {item.get('location')} 对应 {item.get('component')}，异常类型 {item.get('anomaly_type')}"
-                    for item in component_findings
-                )
-            )
-        if functional_impact:
-            analysis_lines.append("[Functional impact]\n" + "\n".join(f"- {item}" for item in functional_impact))
-        if object_knowledge_notes:
-            analysis_lines.append("[Object knowledge]\n" + "\n".join(f"- {item}" for item in object_knowledge_notes))
-        if possible_causes:
-            analysis_lines.append("[Possible causes]\n" + "\n".join(f"- {item}" for item in possible_causes))
-        if risk_notes:
-            analysis_lines.append("[Risk notes]\n" + "\n".join(f"- {item}" for item in risk_notes))
-        if repair_actions:
-            analysis_lines.append("[Repair actions]\n" + "\n".join(f"- {item}" for item in repair_actions))
-        structured_analysis = "\n\n".join(analysis_lines)
+    structured_analysis = (
+        format_analysis_contracts(knowledge_ctx)
+        if knowledge_ctx
+        else "(no structured defect analysis)"
+    )
     memory_context_text = (
         f"[Short-term same asset]\n{mem_ctx['short_term']}\n\n"
         f"[Long-term history]\n{mem_ctx['long_term']}\n\n"
@@ -209,17 +136,10 @@ async def answer_node(state: DetectionState) -> DetectionState:
         ensure_ascii=False,
         indent=2,
     )
-
-    history_text = ""
-    if task_runtime.conversation_history:
-        for msg in task_runtime.conversation_history:
-            role = "user" if msg.get("role") == "user" else "assistant"
-            history_text += f"{role}: {msg.get('content', '')}\n"
-
     prompt = ANSWER_PROMPT_TEMPLATE.format(
         result_json=result_json,
         memory_context=memory_context_text,
-        conversation_history=history_text or "(first turn)",
+        conversation_history=_format_conversation_history(task_runtime.conversation_history),
         conversation_summary=task_runtime.conversation_summary or "(no earlier summary)",
         question=question,
         asset_id=asset_id or "unknown asset",

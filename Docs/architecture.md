@@ -82,6 +82,29 @@ and is the preferred place for shared domain outputs:
 The long-term goal is for `shared_context` to hold core business context, while
 the generic `context` dict becomes a compatibility/debug layer.
 
+`knowledge` is now split into two typed analysis contracts:
+
+- `defect_analysis`
+  - similar cases
+  - possible causes
+  - risk notes
+  - repair actions
+  - analysis summary
+- `object_analysis`
+  - object profile
+  - component scope
+  - component findings
+  - functional impact
+  - object knowledge hits and summary
+
+The flat knowledge fields (`possible_causes`, `component_scope`, and similar)
+are compatibility mirrors. Active code should consume the nested contracts
+first. `app/rag/knowledge_pipeline.py` coordinates the defect and object
+analysis pipelines before `KnowledgeAgent` emits a unified `KnowledgeContext`.
+Execution metadata also exposes these contracts under `analysis_contracts` so
+SSE snapshots, final results, and frontend analysis panels share the same
+shape.
+
 ## State Grouping
 
 [`app/memory/state.py`](/E:/Computer/Projects/20_products/anomaly-detection/mmdl-agent/app/memory/state.py)

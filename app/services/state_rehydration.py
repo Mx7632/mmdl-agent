@@ -7,8 +7,37 @@ from app.exceptions.base import AppError
 from app.memory.conversation import compact_state_conversation
 from app.memory.state import DetectionState
 from app.orchestration.context_store import get_pending_context_from_mapping
+from app.orchestration.context import KnowledgeContext
+from app.rag.knowledge_pipeline import dump_analysis_contracts
 
 logger = logging.getLogger(__name__)
+
+
+def extract_analysis_contracts(state_dict: dict[str, Any]) -> dict[str, Any]:
+    def read_contracts(source: dict[str, Any]) -> dict[str, Any]:
+        knowledge = KnowledgeContext.model_validate(source)
+        contracts = dump_analysis_contracts(knowledge)
+        return {
+            key: value
+            for key, value in contracts.items()
+            if isinstance(value, dict) and any(item not in (None, "", [], {}) for item in value.values())
+        }
+
+    shared_context = state_dict.get("shared_context") or {}
+    knowledge = shared_context.get("knowledge") or {}
+    if isinstance(knowledge, dict):
+        contracts = read_contracts(knowledge)
+        if contracts:
+            return contracts
+
+    result_obj = state_dict.get("result") or {}
+    result_metadata = result_obj.get("metadata", {}) if isinstance(result_obj, dict) else {}
+    if isinstance(result_metadata, dict):
+        contracts = read_contracts(result_metadata)
+        if contracts:
+            return contracts
+
+    return {}
 
 
 def build_execution_metadata(state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -18,6 +47,7 @@ def build_execution_metadata(state_dict: dict[str, Any]) -> dict[str, Any]:
         "step_status": dict(state_dict.get("step_status", {})),
         "step_attempts": dict(state_dict.get("step_attempts", {})),
         "execution_events": list(state_dict.get("execution_events", [])),
+        "analysis_contracts": extract_analysis_contracts(state_dict),
     }
 
 
