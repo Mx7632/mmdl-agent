@@ -22,9 +22,9 @@ from app.orchestration.envelope import AgentEnvelope
 from app.schemas.detection import DetectionResult, DetectionTask, ToolResponse
 from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool, resolve_visual_backend
 from app.orchestration.context_store import get_pending_context_from_mapping
+from app.rag.defect_analysis import build_structured_analysis
 from app.rag.object_analysis import build_structured_object_analysis
 from app.rag.object_knowledge import query_object_knowledge
-from app.rag.service import build_structured_analysis
 from app.tools.patchcore_detection import _extract_anomalies_from_heatmap, resolve_patchcore_category
 
 
@@ -305,6 +305,8 @@ async def test_knowledge_agent_applies_object_context_override(monkeypatch: pyte
     assert envelope.payload["object_knowledge_notes"]
     assert envelope.payload["object_knowledge_hits"]
     assert envelope.payload["object_knowledge_summary"]
+    assert envelope.payload["defect_analysis"]["possible_causes"]
+    assert envelope.payload["object_analysis"]["component_findings"][0]["component"] == "上封口区"
 
 
 @pytest.mark.asyncio
@@ -505,6 +507,23 @@ def test_supervisor_execute_and_merge(monkeypatch: pytest.MonkeyPatch):
             payload={
                 "rows": [{"id": "case-1"}],
                 "prompt_context": "similar case context",
+                "defect_analysis": {
+                    "similar_cases": [{"id": "case-1", "summary": "similar case context"}],
+                    "possible_causes": ["possible cause"],
+                    "risk_notes": ["risk note"],
+                    "repair_actions": ["repair action"],
+                    "analysis_summary": "analysis summary",
+                },
+                "object_analysis": {
+                    "object_profile": {"display_name": "玻璃瓶"},
+                    "component_scope": ["瓶身", "瓶口封口区"],
+                    "component_findings": [{"location": "middle-right", "component": "瓶身", "anomaly_type": "scratch"}],
+                    "functional_impact": ["可能影响容器密封稳定性。"],
+                    "object_summary": "玻璃瓶 的主要关注部位包括 瓶身、瓶口封口区。",
+                    "object_knowledge_notes": ["本次分析重点部件为：瓶身、瓶口封口区。"],
+                    "object_knowledge_hits": [{"title": "封口区风险", "note": "瓶口封口区异常通常优先影响密封可靠性与内容物保护能力。"}],
+                    "object_knowledge_summary": "结合该对象的默认产品知识，当前更应优先关注瓶身与瓶口封口区。",
+                },
                 "similar_cases": [{"id": "case-1", "summary": "similar case context"}],
                 "possible_causes": ["possible cause"],
                 "risk_notes": ["risk note"],
@@ -617,6 +636,23 @@ def test_supervisor_merge_applies_all_registered_adapters():
             "payload": {
                 "rows": [{"id": "case-1"}],
                 "prompt_context": "retrieved context",
+                "defect_analysis": {
+                    "similar_cases": [{"id": "case-1", "summary": "retrieved context"}],
+                    "possible_causes": ["possible cause"],
+                    "risk_notes": ["risk note"],
+                    "repair_actions": ["repair action"],
+                    "analysis_summary": "analysis summary",
+                },
+                "object_analysis": {
+                    "object_profile": {"display_name": "玻璃瓶"},
+                    "component_scope": ["瓶身", "瓶口封口区"],
+                    "component_findings": [{"location": "middle-right", "component": "瓶身", "anomaly_type": "scratch"}],
+                    "functional_impact": ["可能影响容器密封稳定性。"],
+                    "object_summary": "玻璃瓶 的主要关注部位包括 瓶身、瓶口封口区。",
+                    "object_knowledge_notes": ["本次分析重点部件为：瓶身、瓶口封口区。"],
+                    "object_knowledge_hits": [{"title": "封口区风险", "note": "瓶口封口区异常通常优先影响密封可靠性与内容物保护能力。"}],
+                    "object_knowledge_summary": "结合该对象的默认产品知识，当前更应优先关注瓶身与瓶口封口区。",
+                },
                 "similar_cases": [{"id": "case-1", "summary": "retrieved context"}],
                 "possible_causes": ["possible cause"],
                 "risk_notes": ["risk note"],
@@ -741,6 +777,8 @@ def test_answer_node_prefers_shared_context(monkeypatch: pytest.MonkeyPatch):
     assert updated.context["answer"] == "Structured diagnosis answer"
     assert updated.result.anomalies[0]["type"] == "dent"
     assert updated.result.metadata["confidence"] == 0.88
+    assert updated.result.metadata["defect_analysis"]["possible_causes"]
+    assert updated.result.metadata["object_analysis"]["component_findings"][0]["component"] == "内孔螺纹区"
     assert updated.current_step == 2
     assert len(short_term_calls) == 1
     assert short_term_calls[0].asset_id == "asset-001"
@@ -792,7 +830,8 @@ def test_generate_report_state_prefers_shared_context(monkeypatch: pytest.Monkey
     assert updated.result.anomalies[0]["type"] == "crack"
     assert updated.result.metadata["selected_backend"] == "anomalygpt"
     assert updated.result.metadata["defect_descriptions"][0].startswith("在 middle-right")
-    assert "[Possible causes]" in updated.result.metadata["defect_analysis"]
+    assert updated.result.metadata["defect_analysis"]["possible_causes"]
+    assert updated.result.metadata["defect_analysis_text"].startswith("[Analysis summary]")
     assert updated.result.metadata["object_analysis"]["component_scope"]
     assert updated.result.metadata["object_analysis"]["component_findings"]
     assert updated.result.metadata["object_analysis"]["object_knowledge_notes"]

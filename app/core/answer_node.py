@@ -60,6 +60,43 @@ def _ensure_result_from_shared_context(state: DetectionState) -> DetectionResult
     return state.result
 
 
+def _build_structured_analysis_metadata(state: DetectionState) -> dict[str, object]:
+    knowledge_ctx = state.domain_runtime().shared_context.knowledge
+    if not knowledge_ctx:
+        return {}
+
+    defect_block = knowledge_ctx.defect_analysis or {}
+    object_block = knowledge_ctx.object_analysis or {}
+
+    defect_analysis = {
+        "similar_cases": list(defect_block.get("similar_cases") or knowledge_ctx.similar_cases),
+        "possible_causes": list(defect_block.get("possible_causes") or knowledge_ctx.possible_causes),
+        "risk_notes": list(defect_block.get("risk_notes") or knowledge_ctx.risk_notes),
+        "repair_actions": list(defect_block.get("repair_actions") or knowledge_ctx.repair_actions),
+        "analysis_summary": defect_block.get("analysis_summary") or knowledge_ctx.analysis_summary,
+    }
+    object_analysis = {
+        "object_profile": dict(object_block.get("object_profile") or knowledge_ctx.object_profile),
+        "component_scope": list(object_block.get("component_scope") or knowledge_ctx.component_scope),
+        "component_findings": list(object_block.get("component_findings") or knowledge_ctx.component_findings),
+        "functional_impact": list(object_block.get("functional_impact") or knowledge_ctx.functional_impact),
+        "object_summary": object_block.get("object_summary") or knowledge_ctx.object_summary,
+        "object_knowledge_notes": list(
+            object_block.get("object_knowledge_notes") or knowledge_ctx.object_knowledge_notes
+        ),
+        "object_knowledge_hits": list(
+            object_block.get("object_knowledge_hits") or knowledge_ctx.object_knowledge_hits
+        ),
+        "object_knowledge_summary": (
+            object_block.get("object_knowledge_summary") or knowledge_ctx.object_knowledge_summary
+        ),
+    }
+    return {
+        "defect_analysis": defect_analysis,
+        "object_analysis": object_analysis,
+    }
+
+
 async def answer_node(state: DetectionState) -> DetectionState:
     task_runtime = state.task_runtime()
     task = task_runtime.task
@@ -89,6 +126,8 @@ async def answer_node(state: DetectionState) -> DetectionState:
     knowledge_context = get_prompt_context(state) or "(no extra retrieved knowledge)"
     knowledge_ctx = state.domain_runtime().shared_context.knowledge
     structured_analysis = "(no structured defect analysis)"
+    defect_block = knowledge_ctx.defect_analysis if knowledge_ctx and knowledge_ctx.defect_analysis else {}
+    object_block = knowledge_ctx.object_analysis if knowledge_ctx and knowledge_ctx.object_analysis else {}
     if knowledge_ctx and (
         knowledge_ctx.possible_causes
         or knowledge_ctx.risk_notes
@@ -101,42 +140,56 @@ async def answer_node(state: DetectionState) -> DetectionState:
         or knowledge_ctx.object_knowledge_notes
         or knowledge_ctx.object_knowledge_hits
         or knowledge_ctx.object_knowledge_summary
+        or defect_block
+        or object_block
     ):
         analysis_lines = []
-        if knowledge_ctx.analysis_summary:
-            analysis_lines.append(f"[Analysis summary]\n{knowledge_ctx.analysis_summary}")
-        if knowledge_ctx.object_summary:
-            analysis_lines.append(f"[Object summary]\n{knowledge_ctx.object_summary}")
-        if knowledge_ctx.object_knowledge_summary:
-            analysis_lines.append(f"[Object knowledge summary]\n{knowledge_ctx.object_knowledge_summary}")
-        if knowledge_ctx.object_knowledge_hits:
+        defect_summary = defect_block.get("analysis_summary") or knowledge_ctx.analysis_summary
+        object_summary = object_block.get("object_summary") or knowledge_ctx.object_summary
+        object_knowledge_summary = object_block.get("object_knowledge_summary") or knowledge_ctx.object_knowledge_summary
+        object_knowledge_hits = object_block.get("object_knowledge_hits") or knowledge_ctx.object_knowledge_hits
+        component_scope = object_block.get("component_scope") or knowledge_ctx.component_scope
+        component_findings = object_block.get("component_findings") or knowledge_ctx.component_findings
+        functional_impact = object_block.get("functional_impact") or knowledge_ctx.functional_impact
+        object_knowledge_notes = object_block.get("object_knowledge_notes") or knowledge_ctx.object_knowledge_notes
+        possible_causes = defect_block.get("possible_causes") or knowledge_ctx.possible_causes
+        risk_notes = defect_block.get("risk_notes") or knowledge_ctx.risk_notes
+        repair_actions = defect_block.get("repair_actions") or knowledge_ctx.repair_actions
+
+        if defect_summary:
+            analysis_lines.append(f"[Analysis summary]\n{defect_summary}")
+        if object_summary:
+            analysis_lines.append(f"[Object summary]\n{object_summary}")
+        if object_knowledge_summary:
+            analysis_lines.append(f"[Object knowledge summary]\n{object_knowledge_summary}")
+        if object_knowledge_hits:
             analysis_lines.append(
                 "[Object knowledge hits]\n"
                 + "\n".join(
                     f"- {item.get('title')}: {item.get('note')}"
-                    for item in knowledge_ctx.object_knowledge_hits
+                    for item in object_knowledge_hits
                 )
             )
-        if knowledge_ctx.component_scope:
-            analysis_lines.append("[Component scope]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.component_scope))
-        if knowledge_ctx.component_findings:
+        if component_scope:
+            analysis_lines.append("[Component scope]\n" + "\n".join(f"- {item}" for item in component_scope))
+        if component_findings:
             analysis_lines.append(
                 "[Component findings]\n"
                 + "\n".join(
                     f"- {item.get('location')} 对应 {item.get('component')}，异常类型 {item.get('anomaly_type')}"
-                    for item in knowledge_ctx.component_findings
+                    for item in component_findings
                 )
             )
-        if knowledge_ctx.functional_impact:
-            analysis_lines.append("[Functional impact]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.functional_impact))
-        if knowledge_ctx.object_knowledge_notes:
-            analysis_lines.append("[Object knowledge]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.object_knowledge_notes))
-        if knowledge_ctx.possible_causes:
-            analysis_lines.append("[Possible causes]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.possible_causes))
-        if knowledge_ctx.risk_notes:
-            analysis_lines.append("[Risk notes]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.risk_notes))
-        if knowledge_ctx.repair_actions:
-            analysis_lines.append("[Repair actions]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.repair_actions))
+        if functional_impact:
+            analysis_lines.append("[Functional impact]\n" + "\n".join(f"- {item}" for item in functional_impact))
+        if object_knowledge_notes:
+            analysis_lines.append("[Object knowledge]\n" + "\n".join(f"- {item}" for item in object_knowledge_notes))
+        if possible_causes:
+            analysis_lines.append("[Possible causes]\n" + "\n".join(f"- {item}" for item in possible_causes))
+        if risk_notes:
+            analysis_lines.append("[Risk notes]\n" + "\n".join(f"- {item}" for item in risk_notes))
+        if repair_actions:
+            analysis_lines.append("[Repair actions]\n" + "\n".join(f"- {item}" for item in repair_actions))
         structured_analysis = "\n\n".join(analysis_lines)
     memory_context_text = (
         f"[Short-term same asset]\n{mem_ctx['short_term']}\n\n"
@@ -204,6 +257,10 @@ async def answer_node(state: DetectionState) -> DetectionState:
         return state
 
     step_id = task_runtime.current_step
+    structured_metadata = _build_structured_analysis_metadata(state)
+    if structured_metadata:
+        result.metadata.update(structured_metadata)
+
     memory_manager.add_working_memory(
         WorkingMemory(
             task_id=task.task_id,

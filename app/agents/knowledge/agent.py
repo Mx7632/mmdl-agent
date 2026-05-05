@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from app.orchestration import AgentEnvelope
+from app.rag.defect_analysis import build_anomaly_query_text, build_structured_analysis
 from app.rag.object_analysis import build_structured_object_analysis
-from app.rag.service import build_anomaly_query_text, build_structured_analysis, get_rag_service
+from app.rag.service import get_rag_service
 from app.schemas.detection import DetectionTask
 
 
@@ -61,6 +62,23 @@ class KnowledgeAgent:
             payload={
                 "rows": rows,
                 "prompt_context": prompt_context,
+                "defect_analysis": {
+                    "similar_cases": analysis["similar_cases"],
+                    "possible_causes": analysis["possible_causes"],
+                    "risk_notes": analysis["risk_notes"],
+                    "repair_actions": analysis["repair_actions"],
+                    "analysis_summary": analysis["analysis_summary"],
+                },
+                "object_analysis": {
+                    "object_profile": object_analysis["object_profile"],
+                    "component_scope": object_analysis["component_scope"],
+                    "component_findings": object_analysis["component_findings"],
+                    "functional_impact": object_analysis["functional_impact"],
+                    "object_summary": object_analysis["object_summary"],
+                    "object_knowledge_notes": object_analysis["object_knowledge_notes"],
+                    "object_knowledge_hits": object_analysis["object_knowledge_hits"],
+                    "object_knowledge_summary": object_analysis["object_knowledge_summary"],
+                },
                 "similar_cases": analysis["similar_cases"],
                 "possible_causes": analysis["possible_causes"],
                 "risk_notes": analysis["risk_notes"],

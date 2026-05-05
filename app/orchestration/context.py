@@ -14,6 +14,8 @@ class VisionContext(BaseModel):
 class KnowledgeContext(BaseModel):
     rows: list[dict[str, Any]] = Field(default_factory=list)
     prompt_context: str | None = None
+    defect_analysis: dict[str, Any] = Field(default_factory=dict)
+    object_analysis: dict[str, Any] = Field(default_factory=dict)
     similar_cases: list[dict[str, Any]] = Field(default_factory=list)
     possible_causes: list[str] = Field(default_factory=list)
     risk_notes: list[str] = Field(default_factory=list)
