@@ -21,8 +21,12 @@ class KnowledgeContext(BaseModel):
     analysis_summary: str | None = None
     object_profile: dict[str, Any] = Field(default_factory=dict)
     component_scope: list[str] = Field(default_factory=list)
+    component_findings: list[dict[str, Any]] = Field(default_factory=list)
     functional_impact: list[str] = Field(default_factory=list)
     object_summary: str | None = None
+    object_knowledge_notes: list[str] = Field(default_factory=list)
+    object_knowledge_hits: list[dict[str, Any]] = Field(default_factory=list)
+    object_knowledge_summary: str | None = None
 
 
 class ReportContext(BaseModel):

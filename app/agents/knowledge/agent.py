@@ -12,6 +12,11 @@ class KnowledgeAgent:
     async def run(self, task: DetectionTask, *, anomalies: list[dict] | None = None) -> AgentEnvelope:
         service = get_rag_service()
         detector_params = (task.parameters or {}).get("detector_params") or {}
+        object_context = (
+            (task.parameters or {}).get("object_context")
+            or detector_params.get("object_context")
+            or {}
+        )
         category = (
             detector_params.get("category")
             or (task.parameters or {}).get("category")
@@ -36,6 +41,9 @@ class KnowledgeAgent:
         object_analysis = build_structured_object_analysis(
             category=category,
             anomalies=anomalies,
+            asset_id=task.asset_id,
+            object_context=object_context if isinstance(object_context, dict) else None,
+            query_text=query_text,
         )
         prompt_context = analysis["prompt_context"]
         if object_analysis["prompt_context"]:
@@ -43,6 +51,8 @@ class KnowledgeAgent:
         summary = analysis["analysis_summary"]
         if object_analysis["object_summary"]:
             summary = f"{summary}\n{object_analysis['object_summary']}".strip()
+        if object_analysis["object_knowledge_summary"]:
+            summary = f"{summary}\n{object_analysis['object_knowledge_summary']}".strip()
 
         return AgentEnvelope(
             agent_name=self.name,
@@ -58,8 +68,12 @@ class KnowledgeAgent:
                 "analysis_summary": analysis["analysis_summary"],
                 "object_profile": object_analysis["object_profile"],
                 "component_scope": object_analysis["component_scope"],
+                "component_findings": object_analysis["component_findings"],
                 "functional_impact": object_analysis["functional_impact"],
                 "object_summary": object_analysis["object_summary"],
+                "object_knowledge_notes": object_analysis["object_knowledge_notes"],
+                "object_knowledge_hits": object_analysis["object_knowledge_hits"],
+                "object_knowledge_summary": object_analysis["object_knowledge_summary"],
             },
             confidence=0.7 if rows else 0.3,
         )

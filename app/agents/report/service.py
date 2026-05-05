@@ -85,10 +85,30 @@ def _build_defect_analysis_block(state: DetectionState) -> str:
         sections.append(f"[Analysis summary]\n{knowledge_ctx.analysis_summary}")
     if knowledge_ctx.object_summary:
         sections.append(f"[Object summary]\n{knowledge_ctx.object_summary}")
+    if knowledge_ctx.object_knowledge_summary:
+        sections.append(f"[Object knowledge summary]\n{knowledge_ctx.object_knowledge_summary}")
+    if knowledge_ctx.object_knowledge_hits:
+        sections.append(
+            "[Object knowledge hits]\n"
+            + "\n".join(
+                f"- {item.get('title')}: {item.get('note')}"
+                for item in knowledge_ctx.object_knowledge_hits
+            )
+        )
     if knowledge_ctx.component_scope:
         sections.append("[Component scope]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.component_scope))
+    if knowledge_ctx.component_findings:
+        sections.append(
+            "[Component findings]\n"
+            + "\n".join(
+                f"- {item.get('location')} 对应 {item.get('component')}，异常类型 {item.get('anomaly_type')}"
+                for item in knowledge_ctx.component_findings
+            )
+        )
     if knowledge_ctx.functional_impact:
-        sections.append("[Functional impact]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.functional_impact))
+        sections.append("[Component impact assessment]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.functional_impact))
+    if knowledge_ctx.object_knowledge_notes:
+        sections.append("[Object knowledge]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.object_knowledge_notes))
     if knowledge_ctx.similar_cases:
         sections.append(
             "[Similar cases]\n"
@@ -180,8 +200,12 @@ async def generate_report_state(state: DetectionState) -> DetectionState:
                 result.metadata["object_analysis"] = {
                     "object_summary": domain_runtime.shared_context.knowledge.object_summary,
                     "component_scope": list(domain_runtime.shared_context.knowledge.component_scope),
+                    "component_findings": list(domain_runtime.shared_context.knowledge.component_findings),
                     "functional_impact": list(domain_runtime.shared_context.knowledge.functional_impact),
                     "object_profile": dict(domain_runtime.shared_context.knowledge.object_profile),
+                    "object_knowledge_notes": list(domain_runtime.shared_context.knowledge.object_knowledge_notes),
+                    "object_knowledge_hits": list(domain_runtime.shared_context.knowledge.object_knowledge_hits),
+                    "object_knowledge_summary": domain_runtime.shared_context.knowledge.object_knowledge_summary,
                 }
             state.logs.append(
                 f"[Report] Completed with loop_count={orchestration_runtime.loop_count}, confidence={orchestration_runtime.confidence:.2f}"

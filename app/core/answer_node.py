@@ -95,18 +95,42 @@ async def answer_node(state: DetectionState) -> DetectionState:
         or knowledge_ctx.repair_actions
         or knowledge_ctx.analysis_summary
         or knowledge_ctx.component_scope
+        or knowledge_ctx.component_findings
         or knowledge_ctx.functional_impact
         or knowledge_ctx.object_summary
+        or knowledge_ctx.object_knowledge_notes
+        or knowledge_ctx.object_knowledge_hits
+        or knowledge_ctx.object_knowledge_summary
     ):
         analysis_lines = []
         if knowledge_ctx.analysis_summary:
             analysis_lines.append(f"[Analysis summary]\n{knowledge_ctx.analysis_summary}")
         if knowledge_ctx.object_summary:
             analysis_lines.append(f"[Object summary]\n{knowledge_ctx.object_summary}")
+        if knowledge_ctx.object_knowledge_summary:
+            analysis_lines.append(f"[Object knowledge summary]\n{knowledge_ctx.object_knowledge_summary}")
+        if knowledge_ctx.object_knowledge_hits:
+            analysis_lines.append(
+                "[Object knowledge hits]\n"
+                + "\n".join(
+                    f"- {item.get('title')}: {item.get('note')}"
+                    for item in knowledge_ctx.object_knowledge_hits
+                )
+            )
         if knowledge_ctx.component_scope:
             analysis_lines.append("[Component scope]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.component_scope))
+        if knowledge_ctx.component_findings:
+            analysis_lines.append(
+                "[Component findings]\n"
+                + "\n".join(
+                    f"- {item.get('location')} 对应 {item.get('component')}，异常类型 {item.get('anomaly_type')}"
+                    for item in knowledge_ctx.component_findings
+                )
+            )
         if knowledge_ctx.functional_impact:
             analysis_lines.append("[Functional impact]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.functional_impact))
+        if knowledge_ctx.object_knowledge_notes:
+            analysis_lines.append("[Object knowledge]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.object_knowledge_notes))
         if knowledge_ctx.possible_causes:
             analysis_lines.append("[Possible causes]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.possible_causes))
         if knowledge_ctx.risk_notes:

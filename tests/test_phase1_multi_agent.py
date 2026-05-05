@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from app.agents.factory import get_supervisor_agent
+from app.agents.knowledge.agent import KnowledgeAgent
 from app.agents.vision.agent import VisionAgent
 from app.agents.report.service import generate_report_state
 from app.core.answer_node import answer_node
@@ -22,6 +23,7 @@ from app.schemas.detection import DetectionResult, DetectionTask, ToolResponse
 from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool, resolve_visual_backend
 from app.orchestration.context_store import get_pending_context_from_mapping
 from app.rag.object_analysis import build_structured_object_analysis
+from app.rag.object_knowledge import query_object_knowledge
 from app.rag.service import build_structured_analysis
 from app.tools.patchcore_detection import _extract_anomalies_from_heatmap, resolve_patchcore_category
 
@@ -116,12 +118,46 @@ def test_build_structured_object_analysis_returns_component_and_impact_sections(
     analysis = build_structured_object_analysis(
         category="bottle",
         anomalies=[{"type": "surface_anomaly", "score": 0.82, "location": "middle-right"}],
+        asset_id="asset-001",
     )
 
     assert analysis["object_profile"]["display_name"] == "玻璃瓶"
     assert analysis["component_scope"]
+    assert analysis["component_findings"]
     assert analysis["functional_impact"]
+    assert analysis["object_knowledge_notes"]
+    assert analysis["object_knowledge_summary"]
     assert "[Object profile]" in analysis["prompt_context"]
+
+
+def test_query_object_knowledge_returns_ranked_hits():
+    hits = query_object_knowledge(
+        category="bottle",
+        anomalies=[{"type": "surface_anomaly", "location": "top-right", "description": "seal crack"}],
+        query_text="please check sealing risk",
+    )
+
+    assert hits
+    assert hits[0]["title"]
+    assert hits[0]["note"]
+
+
+def test_build_structured_object_analysis_supports_object_context_override():
+    analysis = build_structured_object_analysis(
+        category="bottle",
+        anomalies=[{"type": "surface_anomaly", "score": 0.52, "location": "top-left"}],
+        asset_id="asset-009",
+        object_context={
+            "display_name": "高压玻璃容器",
+            "function_summary": "承担高压密封与液体承载功能。",
+            "components": ["上封口区", "容器主体", "底部支撑区"],
+            "region_component_map": {"top": "上封口区", "middle": "容器主体", "bottom": "底部支撑区"},
+        },
+    )
+
+    assert analysis["object_profile"]["display_name"] == "高压玻璃容器"
+    assert analysis["component_findings"][0]["component"] == "上封口区"
+    assert "asset_id=asset-009" in analysis["object_summary"]
 
 
 def test_pending_context_mapping_handles_null_clarification():
@@ -224,6 +260,51 @@ async def test_vision_agent_exposes_patchcore_heatmap_fields():
     assert envelope.payload["overlay_path"].endswith("task_overlay.png")
     assert envelope.payload["mask_path"].endswith("task_mask.png")
     assert envelope.payload["anomalies"][0]["description"]
+
+
+@pytest.mark.asyncio
+async def test_knowledge_agent_applies_object_context_override(monkeypatch: pytest.MonkeyPatch):
+    class FakeService:
+        def query_rows(self, query_text: str, category: str | None, top_k: int | None):
+            return [
+                {
+                    "id": "case-1",
+                    "description": "similar bottle case",
+                    "distance": 0.11,
+                    "metadata": {"category": "bottle", "anomaly_type": "crack"},
+                }
+            ]
+
+    monkeypatch.setattr("app.agents.knowledge.agent.get_rag_service", lambda: FakeService())
+
+    task = DetectionTask(
+        task_id="knowledge-object-context",
+        asset_id="asset-ctx-001",
+        start_time="2026-05-05T00:00:00Z",
+        end_time="2026-05-05T00:01:00Z",
+        question="Please analyze the object impact.",
+        parameters={
+            "detector_params": {"category": "bottle"},
+            "object_context": {
+                "display_name": "高压玻璃容器",
+                "function_summary": "承担高压密封与液体承载功能。",
+                "components": ["上封口区", "容器主体", "底部支撑区"],
+                "region_component_map": {"top": "上封口区", "middle": "容器主体", "bottom": "底部支撑区"},
+            },
+        },
+    )
+
+    envelope = await KnowledgeAgent().run(
+        task,
+        anomalies=[{"type": "surface_anomaly", "score": 0.61, "location": "top-right"}],
+    )
+
+    assert envelope.payload["object_profile"]["display_name"] == "高压玻璃容器"
+    assert envelope.payload["component_findings"][0]["component"] == "上封口区"
+    assert "asset_id=asset-ctx-001" in envelope.payload["object_summary"]
+    assert envelope.payload["object_knowledge_notes"]
+    assert envelope.payload["object_knowledge_hits"]
+    assert envelope.payload["object_knowledge_summary"]
 
 
 @pytest.mark.asyncio
@@ -431,8 +512,12 @@ def test_supervisor_execute_and_merge(monkeypatch: pytest.MonkeyPatch):
                 "analysis_summary": "analysis summary",
                 "object_profile": {"display_name": "玻璃瓶"},
                 "component_scope": ["瓶身", "瓶口封口区"],
+                "component_findings": [{"location": "middle-right", "component": "瓶身", "anomaly_type": "scratch"}],
                 "functional_impact": ["可能影响容器密封稳定性。"],
                 "object_summary": "玻璃瓶 的主要关注部位包括 瓶身、瓶口封口区。",
+                "object_knowledge_notes": ["本次分析重点部件为：瓶身、瓶口封口区。"],
+                "object_knowledge_hits": [{"title": "封口区风险", "note": "瓶口封口区异常通常优先影响密封可靠性与内容物保护能力。"}],
+                "object_knowledge_summary": "结合该对象的默认产品知识，当前更应优先关注瓶身与瓶口封口区。",
             },
             confidence=0.7,
         )
@@ -461,6 +546,7 @@ def test_supervisor_execute_and_merge(monkeypatch: pytest.MonkeyPatch):
         assert merged_state.result.answer == "vision answer"
         assert merged_state.shared_context.knowledge.possible_causes
         assert merged_state.shared_context.knowledge.component_scope
+        assert merged_state.shared_context.knowledge.component_findings
 
     asyncio.run(runner())
 
@@ -538,8 +624,12 @@ def test_supervisor_merge_applies_all_registered_adapters():
                 "analysis_summary": "analysis summary",
                 "object_profile": {"display_name": "玻璃瓶"},
                 "component_scope": ["瓶身", "瓶口封口区"],
+                "component_findings": [{"location": "middle-right", "component": "瓶身", "anomaly_type": "scratch"}],
                 "functional_impact": ["可能影响容器密封稳定性。"],
                 "object_summary": "玻璃瓶 的主要关注部位包括 瓶身、瓶口封口区。",
+                "object_knowledge_notes": ["本次分析重点部件为：瓶身、瓶口封口区。"],
+                "object_knowledge_hits": [{"title": "封口区风险", "note": "瓶口封口区异常通常优先影响密封可靠性与内容物保护能力。"}],
+                "object_knowledge_summary": "结合该对象的默认产品知识，当前更应优先关注瓶身与瓶口封口区。",
             }
         },
         "clarification": {
@@ -568,6 +658,9 @@ def test_supervisor_merge_applies_all_registered_adapters():
     assert updated.shared_context.knowledge.prompt_context == "retrieved context"
     assert updated.shared_context.knowledge.analysis_summary == "analysis summary"
     assert updated.shared_context.knowledge.object_summary
+    assert updated.shared_context.knowledge.component_findings
+    assert updated.shared_context.knowledge.object_knowledge_notes
+    assert updated.shared_context.knowledge.object_knowledge_hits
     assert updated.context["pending_question"] == "Is the defect near the upper edge?"
     assert updated.shared_context.clarification.pending_question == "Is the defect near the upper edge?"
     assert updated.needs_user_input is True
@@ -635,8 +728,12 @@ def test_answer_node_prefers_shared_context(monkeypatch: pytest.MonkeyPatch):
         "repair_actions": ["recheck the damaged region and inspect nearby components"],
         "analysis_summary": "structured analysis summary",
         "component_scope": ["螺母外缘", "内孔螺纹区"],
+        "component_findings": [{"location": "middle-right", "component": "内孔螺纹区", "anomaly_type": "dent"}],
         "functional_impact": ["若异常扩展到螺纹区，可能影响连接紧固稳定性。"],
         "object_summary": "金属螺母的主要关注部位包括外缘与螺纹区。",
+        "object_knowledge_notes": ["本次分析重点部件为：螺母外缘、内孔螺纹区。"],
+        "object_knowledge_hits": [{"title": "螺纹配合风险", "note": "内孔螺纹区异常通常优先影响连接配合与扭矩传递稳定性。"}],
+        "object_knowledge_summary": "结合该对象的默认产品知识，当前更应优先关注外缘与螺纹区。",
     }
 
     updated = asyncio.run(answer_node(state))
@@ -680,8 +777,12 @@ def test_generate_report_state_prefers_shared_context(monkeypatch: pytest.Monkey
         "repair_actions": ["inspect the cracked region and evaluate replacement timing"],
         "analysis_summary": "structured crack analysis summary",
         "component_scope": ["瓶身", "瓶口封口区"],
+        "component_findings": [{"location": "middle-right", "component": "瓶身", "anomaly_type": "crack"}],
         "functional_impact": ["若裂纹扩展至封口区，可能影响容器密封可靠性。"],
         "object_summary": "玻璃瓶的主要关注部位包括瓶身与瓶口封口区。",
+        "object_knowledge_notes": ["本次分析重点部件为：瓶身、瓶口封口区。"],
+        "object_knowledge_hits": [{"title": "瓶身结构风险", "note": "瓶身主体裂纹或冲击损伤更容易在运输、装配或受压场景下继续扩展。"}],
+        "object_knowledge_summary": "结合该对象的默认产品知识，当前更应优先关注瓶身与瓶口封口区。",
     }
     state.conversation_history.append({"role": "user", "content": "Please generate a full report."})
 
@@ -693,6 +794,9 @@ def test_generate_report_state_prefers_shared_context(monkeypatch: pytest.Monkey
     assert updated.result.metadata["defect_descriptions"][0].startswith("在 middle-right")
     assert "[Possible causes]" in updated.result.metadata["defect_analysis"]
     assert updated.result.metadata["object_analysis"]["component_scope"]
+    assert updated.result.metadata["object_analysis"]["component_findings"]
+    assert updated.result.metadata["object_analysis"]["object_knowledge_notes"]
+    assert updated.result.metadata["object_analysis"]["object_knowledge_hits"]
     assert updated.shared_context.report.summary == "Complete report content"
 
 
