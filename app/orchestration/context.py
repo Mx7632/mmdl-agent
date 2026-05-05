@@ -14,6 +14,15 @@ class VisionContext(BaseModel):
 class KnowledgeContext(BaseModel):
     rows: list[dict[str, Any]] = Field(default_factory=list)
     prompt_context: str | None = None
+    similar_cases: list[dict[str, Any]] = Field(default_factory=list)
+    possible_causes: list[str] = Field(default_factory=list)
+    risk_notes: list[str] = Field(default_factory=list)
+    repair_actions: list[str] = Field(default_factory=list)
+    analysis_summary: str | None = None
+    object_profile: dict[str, Any] = Field(default_factory=dict)
+    component_scope: list[str] = Field(default_factory=list)
+    functional_impact: list[str] = Field(default_factory=list)
+    object_summary: str | None = None
 
 
 class ReportContext(BaseModel):

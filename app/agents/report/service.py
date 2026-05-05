@@ -57,6 +57,53 @@ def _build_history_text(state: DetectionState, *, user_id: str, asset_id: str | 
     return "\n\n".join(history_parts) or "(no historical detection records)"
 
 
+def _collect_defect_descriptions(anomalies: list[dict]) -> list[str]:
+    descriptions: list[str] = []
+    for item in anomalies or []:
+        if not isinstance(item, dict):
+            continue
+        description = item.get("description")
+        if description:
+            descriptions.append(str(description))
+    return descriptions
+
+
+def _build_defect_description_block(anomalies: list[dict]) -> str:
+    descriptions = _collect_defect_descriptions(anomalies)
+    if not descriptions:
+        return "(no structured defect descriptions)"
+    return "\n".join(f"- {item}" for item in descriptions)
+
+
+def _build_defect_analysis_block(state: DetectionState) -> str:
+    knowledge_ctx = state.domain_runtime().shared_context.knowledge
+    if not knowledge_ctx:
+        return "(no structured defect analysis)"
+
+    sections: list[str] = []
+    if knowledge_ctx.analysis_summary:
+        sections.append(f"[Analysis summary]\n{knowledge_ctx.analysis_summary}")
+    if knowledge_ctx.object_summary:
+        sections.append(f"[Object summary]\n{knowledge_ctx.object_summary}")
+    if knowledge_ctx.component_scope:
+        sections.append("[Component scope]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.component_scope))
+    if knowledge_ctx.functional_impact:
+        sections.append("[Functional impact]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.functional_impact))
+    if knowledge_ctx.similar_cases:
+        sections.append(
+            "[Similar cases]\n"
+            + "\n".join(f"- {item.get('summary') or item.get('id')}" for item in knowledge_ctx.similar_cases)
+        )
+    if knowledge_ctx.possible_causes:
+        sections.append("[Possible causes]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.possible_causes))
+    if knowledge_ctx.risk_notes:
+        sections.append("[Risk notes]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.risk_notes))
+    if knowledge_ctx.repair_actions:
+        sections.append("[Repair actions]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.repair_actions))
+
+    return "\n\n".join(sections) if sections else "(no structured defect analysis)"
+
+
 async def generate_report_state(state: DetectionState) -> DetectionState:
     result = _ensure_result_from_shared_context(state)
     task_runtime = state.task_runtime()
@@ -90,6 +137,8 @@ async def generate_report_state(state: DetectionState) -> DetectionState:
         )
 
     rag_context = get_prompt_context(state) or "(no RAG retrieval context)"
+    defect_description_text = _build_defect_description_block(result.anomalies or [])
+    defect_analysis_text = _build_defect_analysis_block(state)
 
     llm = ChatOpenAI(
         model=settings.llm_model,
@@ -109,9 +158,13 @@ async def generate_report_state(state: DetectionState) -> DetectionState:
             end_time=task_runtime.task.end_time,
             question=task_runtime.task.question or "",
             anomalies=result.anomalies,
-            history=history_text,
+            history=(
+                f"{history_text}\n\n"
+                f"[Structured defect descriptions]\n{defect_description_text}\n\n"
+                f"[Structured defect analysis]\n{defect_analysis_text}"
+            ),
             dialogue=dialogue_text,
-            rag_context=rag_context,
+            rag_context=f"{rag_context}\n\n[Structured defect analysis]\n{defect_analysis_text}",
         )
         response = await llm.ainvoke(messages)
         summary = getattr(response, "content", str(response)) or ""
@@ -120,6 +173,16 @@ async def generate_report_state(state: DetectionState) -> DetectionState:
             result.summary = summary
             result.metadata["loop_count"] = orchestration_runtime.loop_count
             result.metadata["confidence"] = orchestration_runtime.confidence
+            if result.anomalies:
+                result.metadata["defect_descriptions"] = _collect_defect_descriptions(result.anomalies)
+            result.metadata["defect_analysis"] = defect_analysis_text
+            if domain_runtime.shared_context.knowledge is not None:
+                result.metadata["object_analysis"] = {
+                    "object_summary": domain_runtime.shared_context.knowledge.object_summary,
+                    "component_scope": list(domain_runtime.shared_context.knowledge.component_scope),
+                    "functional_impact": list(domain_runtime.shared_context.knowledge.functional_impact),
+                    "object_profile": dict(domain_runtime.shared_context.knowledge.object_profile),
+                }
             state.logs.append(
                 f"[Report] Completed with loop_count={orchestration_runtime.loop_count}, confidence={orchestration_runtime.confidence:.2f}"
             )

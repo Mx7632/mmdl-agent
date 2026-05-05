@@ -36,6 +36,7 @@ Current question: {question}
 Requirements:
 - Respond in Chinese.
 - Include status judgment, key evidence, and next-step suggestion.
+- When anomalies include location, appearance, severity, or description, use them as primary evidence.
 - Do not mention JSON, field names, APIs, or model internals.
 - If the information is already sufficient, you may suggest generating a full report.
 """
@@ -86,11 +87,39 @@ async def answer_node(state: DetectionState) -> DetectionState:
         task_id=task.task_id,
     )
     knowledge_context = get_prompt_context(state) or "(no extra retrieved knowledge)"
+    knowledge_ctx = state.domain_runtime().shared_context.knowledge
+    structured_analysis = "(no structured defect analysis)"
+    if knowledge_ctx and (
+        knowledge_ctx.possible_causes
+        or knowledge_ctx.risk_notes
+        or knowledge_ctx.repair_actions
+        or knowledge_ctx.analysis_summary
+        or knowledge_ctx.component_scope
+        or knowledge_ctx.functional_impact
+        or knowledge_ctx.object_summary
+    ):
+        analysis_lines = []
+        if knowledge_ctx.analysis_summary:
+            analysis_lines.append(f"[Analysis summary]\n{knowledge_ctx.analysis_summary}")
+        if knowledge_ctx.object_summary:
+            analysis_lines.append(f"[Object summary]\n{knowledge_ctx.object_summary}")
+        if knowledge_ctx.component_scope:
+            analysis_lines.append("[Component scope]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.component_scope))
+        if knowledge_ctx.functional_impact:
+            analysis_lines.append("[Functional impact]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.functional_impact))
+        if knowledge_ctx.possible_causes:
+            analysis_lines.append("[Possible causes]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.possible_causes))
+        if knowledge_ctx.risk_notes:
+            analysis_lines.append("[Risk notes]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.risk_notes))
+        if knowledge_ctx.repair_actions:
+            analysis_lines.append("[Repair actions]\n" + "\n".join(f"- {item}" for item in knowledge_ctx.repair_actions))
+        structured_analysis = "\n\n".join(analysis_lines)
     memory_context_text = (
         f"[Short-term same asset]\n{mem_ctx['short_term']}\n\n"
         f"[Long-term history]\n{mem_ctx['long_term']}\n\n"
         f"[Tool effectiveness]\n{mem_ctx['tool_effect']}\n\n"
-        f"[Knowledge retrieval]\n{knowledge_context}"
+        f"[Knowledge retrieval]\n{knowledge_context}\n\n"
+        f"[Structured defect analysis]\n{structured_analysis}"
     )
 
     result_json = json.dumps(

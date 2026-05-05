@@ -1,9 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import json
 from contextlib import asynccontextmanager
 
+import numpy as np
 import pytest
 
 from app.agents.factory import get_supervisor_agent
@@ -20,7 +21,9 @@ from app.orchestration.envelope import AgentEnvelope
 from app.schemas.detection import DetectionResult, DetectionTask, ToolResponse
 from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool, resolve_visual_backend
 from app.orchestration.context_store import get_pending_context_from_mapping
-from app.tools.patchcore_detection import resolve_patchcore_category
+from app.rag.object_analysis import build_structured_object_analysis
+from app.rag.service import build_structured_analysis
+from app.tools.patchcore_detection import _extract_anomalies_from_heatmap, resolve_patchcore_category
 
 
 def build_state(question: str = "Please analyze the anomaly in this image.") -> DetectionState:
@@ -68,6 +71,57 @@ def test_patchcore_category_resolution_prefers_detector_params():
     )
 
     assert resolve_patchcore_category(task) == "bottle"
+
+
+def test_patchcore_heatmap_anomalies_include_structured_description():
+    heatmap = np.zeros((8, 8), dtype=float)
+    heatmap[2:7, 2:7] = 0.82
+    anomalies = _extract_anomalies_from_heatmap(
+        heatmap=heatmap,
+        threshold=0.5,
+        image_size=(200, 200),
+    )
+
+    assert len(anomalies) == 1
+    anomaly = anomalies[0]
+    assert anomaly["appearance"]["shape"]
+    assert anomaly["appearance"]["size"]
+    assert anomaly["appearance"]["texture"]
+    assert anomaly["appearance"]["color_hint"]
+    assert anomaly["severity_hint"] in {"low", "medium", "high"}
+    assert "异常热区" in anomaly["description"]
+
+
+def test_build_structured_analysis_returns_actionable_sections():
+    rows = [
+        {
+            "id": "case-1",
+            "description": "Bottle crack near sealing edge with repeat occurrence in production line.",
+            "distance": 0.12,
+            "metadata": {"category": "bottle", "anomaly_type": "crack", "severity": "high"},
+        }
+    ]
+    anomalies = [{"type": "surface_anomaly", "score": 0.82, "location": "middle-right"}]
+
+    analysis = build_structured_analysis(rows=rows, anomalies=anomalies, query_text="why did this happen")
+
+    assert analysis["similar_cases"][0]["id"] == "case-1"
+    assert analysis["possible_causes"]
+    assert analysis["risk_notes"]
+    assert analysis["repair_actions"]
+    assert "[可能成因]" in analysis["prompt_context"]
+
+
+def test_build_structured_object_analysis_returns_component_and_impact_sections():
+    analysis = build_structured_object_analysis(
+        category="bottle",
+        anomalies=[{"type": "surface_anomaly", "score": 0.82, "location": "middle-right"}],
+    )
+
+    assert analysis["object_profile"]["display_name"] == "玻璃瓶"
+    assert analysis["component_scope"]
+    assert analysis["functional_impact"]
+    assert "[Object profile]" in analysis["prompt_context"]
 
 
 def test_pending_context_mapping_handles_null_clarification():
@@ -135,7 +189,6 @@ async def test_vision_agent_exposes_patchcore_heatmap_fields():
                 result=DetectionResult(
                     task_id=task.task_id,
                     status="success",
-                    anomalies=[{"type": "surface_anomaly"}],
                     summary="done",
                     metadata={
                         "confidence": 0.88,
@@ -144,6 +197,14 @@ async def test_vision_agent_exposes_patchcore_heatmap_fields():
                         "overlay_path": "data/heatmaps/bottle/task_overlay.png",
                         "mask_path": "data/heatmaps/bottle/task_mask.png",
                     },
+                    anomalies=[
+                        {
+                            "type": "surface_anomaly",
+                            "description": "在 middle-right 区域发现一处异常热区。",
+                            "appearance": {"shape": "elongated-horizontal", "size": "small"},
+                            "severity_hint": "medium",
+                        }
+                    ],
                 ),
             )
 
@@ -162,6 +223,7 @@ async def test_vision_agent_exposes_patchcore_heatmap_fields():
     assert envelope.payload["heatmap_path"].endswith("task_heatmap.png")
     assert envelope.payload["overlay_path"].endswith("task_overlay.png")
     assert envelope.payload["mask_path"].endswith("task_mask.png")
+    assert envelope.payload["anomalies"][0]["description"]
 
 
 @pytest.mark.asyncio
@@ -362,6 +424,15 @@ def test_supervisor_execute_and_merge(monkeypatch: pytest.MonkeyPatch):
             payload={
                 "rows": [{"id": "case-1"}],
                 "prompt_context": "similar case context",
+                "similar_cases": [{"id": "case-1", "summary": "similar case context"}],
+                "possible_causes": ["possible cause"],
+                "risk_notes": ["risk note"],
+                "repair_actions": ["repair action"],
+                "analysis_summary": "analysis summary",
+                "object_profile": {"display_name": "玻璃瓶"},
+                "component_scope": ["瓶身", "瓶口封口区"],
+                "functional_impact": ["可能影响容器密封稳定性。"],
+                "object_summary": "玻璃瓶 的主要关注部位包括 瓶身、瓶口封口区。",
             },
             confidence=0.7,
         )
@@ -388,6 +459,8 @@ def test_supervisor_execute_and_merge(monkeypatch: pytest.MonkeyPatch):
         assert merged_state.context["rag_context"] == "similar case context"
         assert merged_state.result.anomalies[0]["type"] == "scratch"
         assert merged_state.result.answer == "vision answer"
+        assert merged_state.shared_context.knowledge.possible_causes
+        assert merged_state.shared_context.knowledge.component_scope
 
     asyncio.run(runner())
 
@@ -458,6 +531,15 @@ def test_supervisor_merge_applies_all_registered_adapters():
             "payload": {
                 "rows": [{"id": "case-1"}],
                 "prompt_context": "retrieved context",
+                "similar_cases": [{"id": "case-1", "summary": "retrieved context"}],
+                "possible_causes": ["possible cause"],
+                "risk_notes": ["risk note"],
+                "repair_actions": ["repair action"],
+                "analysis_summary": "analysis summary",
+                "object_profile": {"display_name": "玻璃瓶"},
+                "component_scope": ["瓶身", "瓶口封口区"],
+                "functional_impact": ["可能影响容器密封稳定性。"],
+                "object_summary": "玻璃瓶 的主要关注部位包括 瓶身、瓶口封口区。",
             }
         },
         "clarification": {
@@ -484,6 +566,8 @@ def test_supervisor_merge_applies_all_registered_adapters():
     assert updated.shared_context.report is not None
     assert updated.context["rag_context"] == "retrieved context"
     assert updated.shared_context.knowledge.prompt_context == "retrieved context"
+    assert updated.shared_context.knowledge.analysis_summary == "analysis summary"
+    assert updated.shared_context.knowledge.object_summary
     assert updated.context["pending_question"] == "Is the defect near the upper edge?"
     assert updated.shared_context.clarification.pending_question == "Is the defect near the upper edge?"
     assert updated.needs_user_input is True
@@ -544,7 +628,16 @@ def test_answer_node_prefers_shared_context(monkeypatch: pytest.MonkeyPatch):
         "metadata": {"confidence": 0.88},
         "answer": "vision shortcut",
     }
-    state.shared_context["knowledge"] = {"prompt_context": "retrieved knowledge"}
+    state.shared_context["knowledge"] = {
+        "prompt_context": "retrieved knowledge",
+        "possible_causes": ["surface damage may relate to contact friction"],
+        "risk_notes": ["continued use may worsen the defect"],
+        "repair_actions": ["recheck the damaged region and inspect nearby components"],
+        "analysis_summary": "structured analysis summary",
+        "component_scope": ["螺母外缘", "内孔螺纹区"],
+        "functional_impact": ["若异常扩展到螺纹区，可能影响连接紧固稳定性。"],
+        "object_summary": "金属螺母的主要关注部位包括外缘与螺纹区。",
+    }
 
     updated = asyncio.run(answer_node(state))
 
@@ -570,10 +663,26 @@ def test_generate_report_state_prefers_shared_context(monkeypatch: pytest.Monkey
 
     state = build_state()
     state.shared_context["vision"] = {
-        "anomalies": [{"type": "crack", "details": "surface crack"}],
+        "anomalies": [
+            {
+                "type": "crack",
+                "details": "surface crack",
+                "description": "在 middle-right 区域发现一处细长裂纹异常热区。",
+            }
+        ],
         "metadata": {"selected_backend": "anomalygpt"},
     }
-    state.shared_context["knowledge"] = {"prompt_context": "case context"}
+    state.shared_context["knowledge"] = {
+        "prompt_context": "case context",
+        "similar_cases": [{"id": "case-1", "summary": "similar crack case"}],
+        "possible_causes": ["surface crack may relate to local stress concentration"],
+        "risk_notes": ["continued use may expand the crack"],
+        "repair_actions": ["inspect the cracked region and evaluate replacement timing"],
+        "analysis_summary": "structured crack analysis summary",
+        "component_scope": ["瓶身", "瓶口封口区"],
+        "functional_impact": ["若裂纹扩展至封口区，可能影响容器密封可靠性。"],
+        "object_summary": "玻璃瓶的主要关注部位包括瓶身与瓶口封口区。",
+    }
     state.conversation_history.append({"role": "user", "content": "Please generate a full report."})
 
     updated = asyncio.run(generate_report_state(state))
@@ -581,6 +690,9 @@ def test_generate_report_state_prefers_shared_context(monkeypatch: pytest.Monkey
     assert updated.result.summary == "Complete report content"
     assert updated.result.anomalies[0]["type"] == "crack"
     assert updated.result.metadata["selected_backend"] == "anomalygpt"
+    assert updated.result.metadata["defect_descriptions"][0].startswith("在 middle-right")
+    assert "[Possible causes]" in updated.result.metadata["defect_analysis"]
+    assert updated.result.metadata["object_analysis"]["component_scope"]
     assert updated.shared_context.report.summary == "Complete report content"
 
 
@@ -694,7 +806,7 @@ def test_prepare_followup_state_preserves_existing_vision_context_without_new_im
 
     from app.services.state_rehydration import prepare_followup_state
 
-    updated = prepare_followup_state(previous.model_dump(), question="有没有使用rag")
+    updated = prepare_followup_state(previous.model_dump(), question="鏈夋病鏈変娇鐢╮ag")
 
     assert updated.result is not None
     assert updated.result.anomalies[0]["type"] == "scratch"
