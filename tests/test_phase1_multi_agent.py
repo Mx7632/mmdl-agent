@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import shutil
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -37,7 +39,12 @@ from app.rag.fewshot import FewShotPromptBuilder, FewShotSelector, build_fewshot
 from app.rag.object_analysis import build_structured_object_analysis
 from app.rag.object_knowledge import query_object_knowledge
 from app.services.state_rehydration import build_execution_metadata
-from app.tools.patchcore_detection import _extract_anomalies_from_heatmap, resolve_patchcore_category
+from app.tools.patchcore_detection import (
+    _extract_anomalies_from_heatmap,
+    get_patchcore_category_status,
+    resolve_patchcore_category,
+    trained_patchcore_categories,
+)
 
 
 def build_state(question: str = "Please analyze the anomaly in this image.") -> DetectionState:
@@ -465,6 +472,34 @@ def test_patchcore_category_resolution_prefers_detector_params():
     )
 
     assert resolve_patchcore_category(task) == "bottle"
+
+
+def test_trained_patchcore_categories_require_memory_bank_and_metadata(monkeypatch: pytest.MonkeyPatch):
+    temp_root = Path("tests/.tmp_patchcore_categories")
+    shutil.rmtree(temp_root, ignore_errors=True)
+    model_root = temp_root / "models" / "patchcore"
+    trained_dir = model_root / "bottle"
+    partial_dir = model_root / "capsule"
+    trained_dir.mkdir(parents=True)
+    partial_dir.mkdir(parents=True)
+    (trained_dir / "memory_bank.pt").write_bytes(b"demo")
+    (trained_dir / "metadata.json").write_text('{"memory_bank_size": 10}', encoding="utf-8")
+    (partial_dir / "memory_bank.pt").write_bytes(b"demo")
+
+    monkeypatch.setattr("app.tools.patchcore_detection.settings.patchcore_model_root", str(model_root))
+    monkeypatch.setattr("app.tools.patchcore_detection.settings.rag_dataset_root", str(temp_root / "dataset"))
+
+    try:
+        assert trained_patchcore_categories() == ["bottle"]
+        status = get_patchcore_category_status("bottle")
+        missing_status = get_patchcore_category_status("capsule")
+
+        assert status["trained"] is True
+        assert status["metadata"]["memory_bank_size"] == 10
+        assert missing_status["trained"] is False
+        assert missing_status["memory_bank_path"].endswith("capsule/memory_bank.pt")
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
 
 
 def test_patchcore_heatmap_anomalies_include_structured_description():

@@ -316,6 +316,41 @@ def get_patchcore_artifacts(category: str) -> PatchCoreArtifacts:
     )
 
 
+def trained_patchcore_categories(model_root: str | Path | None = None) -> list[str]:
+    root = Path(model_root or settings.patchcore_model_root)
+    if not root.exists():
+        return []
+    categories: list[str] = []
+    for item in root.iterdir():
+        if not item.is_dir():
+            continue
+        if (item / "memory_bank.pt").exists() and (item / "metadata.json").exists():
+            categories.append(item.name)
+    return sorted(categories)
+
+
+def get_patchcore_category_status(category: str) -> dict[str, Any]:
+    normalized = str(category or "").strip().lower()
+    artifacts = get_patchcore_artifacts(normalized)
+    dataset_categories = available_mvtec_categories(settings.rag_dataset_root)
+    metadata: dict[str, Any] = {}
+    if artifacts.metadata_path.exists():
+        try:
+            metadata = json.loads(artifacts.metadata_path.read_text(encoding="utf-8"))
+        except Exception:
+            metadata = {}
+
+    return {
+        "category": normalized,
+        "dataset_available": normalized in dataset_categories,
+        "trained": artifacts.memory_bank_path.exists() and artifacts.metadata_path.exists(),
+        "model_dir": str(artifacts.model_dir).replace("\\", "/"),
+        "memory_bank_path": str(artifacts.memory_bank_path).replace("\\", "/"),
+        "metadata_path": str(artifacts.metadata_path).replace("\\", "/"),
+        "metadata": metadata,
+    }
+
+
 def train_patchcore_category(
     category: str,
     dataset_root: str | Path,
@@ -456,11 +491,22 @@ class LocalPatchCoreImageAnomalyDetectionTool(BaseTool):
             )
 
         artifacts = get_patchcore_artifacts(category)
-        if not artifacts.model_dir.exists():
+        if not artifacts.memory_bank_path.exists() or not artifacts.metadata_path.exists():
             raise ConfigurationError(
-                f"PatchCore artifacts not found for category '{category}'. Run scripts/patchcore_train.py first.",
+                (
+                    f"PatchCore category '{category}' is not trained. "
+                    "Run scripts/patchcore_train.py for this category first or switch to the Qwen vision backend."
+                ),
                 config_key="APP_PATCHCORE_MODEL_ROOT",
-                details={"expected_model_dir": str(artifacts.model_dir)},
+                details={
+                    "category": category,
+                    "trained": False,
+                    "expected_model_dir": str(artifacts.model_dir),
+                    "expected_memory_bank": str(artifacts.memory_bank_path),
+                    "expected_metadata": str(artifacts.metadata_path),
+                    "trained_categories": trained_patchcore_categories(),
+                    "fallback_backend": "qwen",
+                },
             )
 
         detector_params = (task.parameters or {}).get("detector_params") or {}

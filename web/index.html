@@ -1097,53 +1097,53 @@
         <aside class="sidebar">
             <div class="brand">
                 <span class="brand-tag">MMDL Agent</span>
-                <h1>宸ヤ笟寮傚父妫€娴?/h1>
-                <p>淇濈暀鏍稿績閾捐矾锛氫笂浼犲浘鐗囥€佸彂璧锋娴嬨€佺户缁拷闂€佺敓鎴愭姤鍛娿€傚竷灞€鏀逛负瀵硅瘽寮忓伐浣滃彴銆?/p>
+                <h1>工业异常检测</h1>
+                <p>围绕上传图片、发起检测、继续追问、提交澄清和生成报告展开的多 agent 工作台。</p>
             </div>
 
             <div class="sidebar-scroll">
                 <section class="card">
-                    <h2>浠诲姟鐘舵€?/h2>
+                    <h2>任务状态</h2>
                     <div class="meta-list">
                         <div class="meta-item">
-                            <small>鍚庣鐘舵€?/small>
-                            <div id="backend-indicator">妫€鏌ヤ腑</div>
+                            <small>后端状态</small>
+                            <div id="backend-indicator">检查中</div>
                         </div>
                         <div class="meta-item">
-                            <small>浠诲姟 ID</small>
-                            <div id="task-indicator" class="mono">鏈垱寤?/div>
+                            <small>任务 ID</small>
+                            <div id="task-indicator" class="mono">未创建</div>
                         </div>
                         <div class="meta-item">
-                            <small>杩愯鎽樿</small>
-                            <div id="status-panel" class="mono">绛夊緟鍙戣捣妫€娴?/div>
+                            <small>运行摘要</small>
+                            <div id="status-panel" class="mono">等待发起检测</div>
                         </div>
                     </div>
                 </section>
 
                 <section class="card">
-                    <h2>浠诲姟閰嶇疆</h2>
+                    <h2>任务配置</h2>
                     <div class="field">
-                        <label for="asset-id">璁惧 ID</label>
-                        <input id="asset-id" type="text" placeholder="渚嬪 PUMP-001">
+                        <label for="asset-id">设备 ID</label>
+                        <input id="asset-id" type="text" placeholder="例如 PUMP-001">
                     </div>
                     <div class="field">
-                        <label for="image-input">妫€娴嬪浘鐗?/label>
+                        <label for="image-input">检测图片</label>
                         <input id="image-input" type="file" accept="image/*">
-                        <div class="hint">棣栨妫€娴嬪繀椤讳笂浼犲浘鐗囥€傚悗缁拷闂鐢ㄥ綋鍓嶄换鍔′笂涓嬫枃銆?/div>
+                        <div class="hint">首次检测必须上传图片；后续追问会复用当前任务上下文。</div>
                     </div>
 
                     <div class="field">
-                        <label for="visual-backend">妫€娴嬪悗绔?/label>
+                        <label for="visual-backend">检测后端</label>
                         <select id="visual-backend">
-                            <option value="qwen">Qwen 瑙嗚妫€娴?/option>
+                            <option value="qwen">Qwen 视觉检测</option>
                             <option value="specialist">Specialist / AnomalyGPT</option>
-                            <option value="patchcore">PatchCore 鐑姏鍥炬娴?/option>
+                            <option value="patchcore">PatchCore 热力图检测</option>
                         </select>
-                        <div class="backend-note">闇€瑕佺儹鍔涘浘鏃堕€?PatchCore銆傞〉闈細鑷姩鎶婄被鍒拰闃堝€间竴骞朵紶缁欐帴鍙ｃ€?/div>
+                        <div class="backend-note">需要热力图时选择 PatchCore。页面会自动把类别和阈值一并传给接口。</div>
                     </div>
                     <div id="patchcore-config" class="inline-grid">
                         <div class="field">
-                            <label for="patchcore-category">PatchCore 绫诲埆</label>
+                            <label for="patchcore-category">PatchCore 类别</label>
                             <select id="patchcore-category">
                                 <option value="bottle">bottle</option>
                                 <option value="cable">cable</option>
@@ -1163,10 +1163,11 @@
                             </select>
                         </div>
                         <div class="field">
-                            <label for="patchcore-threshold">PatchCore 闃堝€?/label>
+                            <label for="patchcore-threshold">PatchCore 阈值</label>
                             <input id="patchcore-threshold" type="number" min="0" max="1" step="0.05" value="0.5">
                         </div>
                     </div>
+                    <div id="patchcore-status" class="hint"></div>
                     <div id="object-context-config" class="field-group">
                         <div class="field">
                             <label for="object-display-name">对象名称（可选）</label>
@@ -1184,11 +1185,11 @@
                     </div>
 
                     <div class="preview">
-                        <div id="preview-text" class="hint">杩樻病鏈夐€夋嫨鍥剧墖</div>
+                        <div id="preview-text" class="hint">还没有选择图片</div>
                         <div class="preview-stage">
-                            <img id="preview-image" alt="棰勮鍥?>
-                            <img id="analysis-image" class="analysis-image" alt="鍒嗘瀽瑙嗗浘">
-                            <img id="mask-overlay" class="mask-overlay" alt="寮傚父鐑尯">
+                            <img id="preview-image" alt="预览图">
+                            <img id="analysis-image" class="analysis-image" alt="分析视图">
+                            <img id="mask-overlay" class="mask-overlay" alt="异常热区">
                             <div id="bbox-layer" class="bbox-layer"></div>
                         </div>
                         <div class="preview-toolbar">
@@ -1203,14 +1204,14 @@
                                 <input id="overlay-opacity" type="range" min="20" max="100" value="72">
                             </label>
                         </div>
-                        <div id="localization-note" class="localization-note">褰撳墠杩樻病鏈夊紓甯稿畾浣嶇粨鏋溿€?/div>
+                        <div id="localization-note" class="localization-note">当前还没有异常定位结果。</div>
                     </div>
 
                     <div class="button-row" style="margin-top: 14px;">
-                        <button id="detect-button" class="primary" type="button">寮€濮嬫娴?/button>
-                        <button id="patchcore-detect-button" class="ghost" type="button">?? PatchCore</button>
-                        <button id="report-button" class="ghost" type="button" disabled>鐢熸垚鎶ュ憡</button>
-                        <button id="reset-button" class="secondary" type="button">鏂颁换鍔?/button>
+                        <button id="detect-button" class="primary" type="button">开始检测</button>
+                        <button id="patchcore-detect-button" class="ghost" type="button">运行 PatchCore</button>
+                        <button id="report-button" class="ghost" type="button" disabled>生成报告</button>
+                        <button id="reset-button" class="secondary" type="button">新任务</button>
                     </div>
 
                     <div id="detect-message" class="message info"></div>
@@ -1218,8 +1219,8 @@
                 </section>
 
                 <section class="card">
-                    <h2>寮傚父鎽樿</h2>
-                    <div id="answer-panel" class="result-copy">鏆傛棤缁撴灉</div>
+                    <h2>异常摘要</h2>
+                    <div id="answer-panel" class="result-copy">暂无结果</div>
                     <div id="anomaly-chips" class="chips"></div>
                     <div id="analysis-panel" class="analysis-section" hidden>
                         <h3>缺陷分析</h3>
@@ -1229,14 +1230,14 @@
                 </section>
 
                 <section class="card">
-                    <h2>寰呮緞娓呬俊鎭?/h2>
-                    <div id="pending-panel" class="result-copy">褰撳墠娌℃湁寰呮緞娓呴棶棰?/div>
+                    <h2>待澄清信息</h2>
+                    <div id="pending-panel" class="result-copy">当前没有待澄清问题</div>
                     <div id="followup-message" class="message info"></div>
                 </section>
 
                 <section class="card">
-                    <h2>瀹屾暣鎶ュ憡</h2>
-                    <div id="report-panel" class="result-copy">灏氭湭鐢熸垚鎶ュ憡</div>
+                    <h2>完整报告</h2>
+                    <div id="report-panel" class="result-copy">尚未生成报告</div>
                 </section>
             </div>
         </aside>
@@ -1244,12 +1245,12 @@
         <main class="main-panel">
             <header class="topbar">
                 <div>
-                    <h2>瀵硅瘽宸ヤ綔鍙?/h2>
-                    <p>棣栨杈撳叆鐢ㄤ簬鍙戣捣妫€娴嬨€備换鍔″垱寤哄悗锛岃緭鍏ユ缁х画鎵挎媴杩介棶鎴栨緞娓呫€?/p>
+                    <h2>对话式工作台</h2>
+                    <p>首轮输入用于发起检测；任务创建后，输入框继续承担追问或澄清。</p>
                 </div>
                 <div class="status-pills">
-                    <span class="pill">鏍稿績娴佺▼</span>
-                    <span class="pill" id="mode-indicator">妯″紡锛氶杞娴?/span>
+                    <span class="pill">核心流程</span>
+                    <span class="pill" id="mode-indicator">模式：首轮检测</span>
                 </div>
             </header>
 
@@ -1258,20 +1259,20 @@
 
                 <div class="result-grid">
                     <section class="result-card">
-                        <h3>褰撳墠鍥炵瓟</h3>
-                        <div id="answer-panel-inline" class="result-copy">鏆傛棤缁撴灉</div>
+                        <h3>当前回答</h3>
+                        <div id="answer-panel-inline" class="result-copy">暂无结果</div>
                     </section>
                     <section class="result-card">
-                        <h3>鎶ュ憡鎽樿</h3>
-                        <div id="report-panel-inline" class="result-copy">灏氭湭鐢熸垚鎶ュ憡</div>
+                        <h3>报告摘要</h3>
+                        <div id="report-panel-inline" class="result-copy">尚未生成报告</div>
                     </section>
                 </div>
 
                 <section class="timeline-card">
                     <div class="timeline-head">
                         <div>
-                            <h3>Multi-Agent 鎵ц鏃堕棿绾?/h3>
-                            <p>灞曠ず supervisor 璁″垝銆乻tep 鐘舵€併€侀噸璇曘€佹寕璧蜂笌鎭㈠浜嬩欢銆?/p>
+                            <h3>多 Agent 执行时间线</h3>
+                            <p>展示 supervisor 计划、step 状态、重试、挂起与恢复事件。</p>
                         </div>
                         <div id="timeline-summary" class="timeline-summary"></div>
                     </div>
@@ -1287,13 +1288,13 @@
                             <div class="timeline-panel">
                                 <div class="timeline-panel-head">
                                     <div>
-                                        <h4>Step 姒傝</h4>
-                                        <div id="timeline-steps-note" class="timeline-panel-note">浠诲姟鍚姩鍚庯紝杩欓噷浼氭樉绀虹粨鏋勫寲 step 璁″垝銆?/div>
+                                        <h4>Step 概览</h4>
+                                        <div id="timeline-steps-note" class="timeline-panel-note">任务启动后，这里会显示结构化 step 计划。</div>
                                     </div>
                                 </div>
                                 <div id="timeline-steps-body" class="timeline-panel-body">
                                     <div id="timeline-steps" class="timeline-list">
-                                        <div class="timeline-empty">浠诲姟鍚姩鍚庯紝杩欓噷浼氭樉绀虹粨鏋勫寲 step 璁″垝銆?/div>
+                                        <div class="timeline-empty">任务启动后，这里会显示结构化 step 计划。</div>
                                     </div>
                                 </div>
                             </div>
@@ -1302,13 +1303,13 @@
                             <div class="timeline-panel">
                                 <div class="timeline-panel-head">
                                     <div>
-                                        <h4>浜嬩欢娴?/h4>
-                                        <div id="timeline-events-note" class="timeline-panel-note">鎵ц涓細鎸佺画杩藉姞 agent 浜嬩欢銆?/div>
+                                        <h4>事件流</h4>
+                                        <div id="timeline-events-note" class="timeline-panel-note">执行中会持续追加 agent 事件。</div>
                                     </div>
                                 </div>
                                 <div id="timeline-events-body" class="timeline-panel-body">
                                     <div id="timeline-events" class="event-list">
-                                        <div class="timeline-empty">褰撳墠杩樻病鏈夋墽琛屼簨浠躲€?/div>
+                                        <div class="timeline-empty">当前还没有执行事件。</div>
                                     </div>
                                 </div>
                             </div>
@@ -1317,13 +1318,13 @@
                             <div class="timeline-panel">
                                 <div class="timeline-panel-head">
                                     <div>
-                                        <h4>璇︽儏闈㈡澘</h4>
-                                        <div class="timeline-panel-note">鐐瑰嚮 step 鎴栦簨浠讹紝鏌ョ湅渚濊禆銆佸皾璇曟鏁板拰鍘熷涓婁笅鏂囥€?/div>
+                                        <h4>详情面板</h4>
+                                        <div class="timeline-panel-note">点击 step 或事件，查看依赖、尝试次数和原始上下文。</div>
                                     </div>
                                 </div>
                                 <div class="timeline-panel-body">
                                     <div id="timeline-details" class="timeline-details-body">
-                                        <div class="timeline-empty">閫夋嫨宸︿晶 step 鎴栦簨浠跺悗锛岃繖閲屼細鏄剧ず鏇村畬鏁寸殑鎺掗殰缁嗚妭銆?/div>
+                                        <div class="timeline-empty">选择左侧 step 或事件后，这里会显示更完整的排障细节。</div>
                                     </div>
                                 </div>
                             </div>
@@ -1334,13 +1335,14 @@
 
             <footer class="composer">
                 <div class="composer-shell">
-                    <textarea id="question" placeholder="杈撳叆闂銆傞娆＄敤浜庡彂璧锋娴嬶紱浠诲姟鍒涘缓鍚庣户缁拷闂紝鑻ュ綋鍓嶄负寰呮緞娓呯姸鎬佸垯鐢ㄤ簬鎻愪氦婢勬竻銆?></textarea>
+                    <textarea id="question" placeholder="输入问题。首轮用于发起检测；任务创建后继续追问，若当前处于待澄清状态则用于提交澄清。"></textarea>
                     <div class="composer-foot">
                         <div class="composer-hint">
-                            棣栬疆锛氫笂浼犲浘鐗囧苟鐐瑰嚮鈥滃紑濮嬫娴嬧€濄€?                            缁х画锛氬凡鏈変换鍔″悗鍙洿鎺ョ偣鍑烩€滃彂閫佽拷闂€濇垨鈥滄彁浜ゆ緞娓呪€濄€?                        </div>
+                            首轮：上传图片并点击“开始检测”。继续：已有任务后可直接点击“发送追问”或“提交澄清”。
+                        </div>
                         <div class="composer-actions">
-                            <button id="followup-button" class="ghost" type="button" disabled>鍙戦€佽拷闂?/button>
-                            <button id="continue-button" class="primary" type="button" disabled>鎻愪氦婢勬竻</button>
+                            <button id="followup-button" class="ghost" type="button" disabled>发送追问</button>
+                            <button id="continue-button" class="primary" type="button" disabled>提交澄清</button>
                         </div>
                     </div>
                 </div>
@@ -1367,7 +1369,8 @@
             stepAttempts: {},
             timelineFilter: 'all',
             timelinePanels: { steps: true, events: true },
-            selectedTimelineItem: null
+            selectedTimelineItem: null,
+            patchcoreCatalog: null
         };
 
         const els = {
@@ -1383,6 +1386,7 @@
             patchcoreConfig: document.getElementById('patchcore-config'),
             patchcoreCategory: document.getElementById('patchcore-category'),
             patchcoreThreshold: document.getElementById('patchcore-threshold'),
+            patchcoreStatus: document.getElementById('patchcore-status'),
             objectDisplayName: document.getElementById('object-display-name'),
             objectFunctionSummary: document.getElementById('object-function-summary'),
             objectComponents: document.getElementById('object-components'),
@@ -1549,6 +1553,71 @@
             };
         }
 
+        function getPatchcoreCategoryStatus(category = '') {
+            const normalized = (category || els.patchcoreCategory?.value || 'bottle').trim().toLowerCase();
+            const categories = state.patchcoreCatalog?.categories || [];
+            return categories.find(item => item.category === normalized) || null;
+        }
+
+        function isPatchcoreCategoryTrained(category = '') {
+            const status = getPatchcoreCategoryStatus(category);
+            return Boolean(status?.trained);
+        }
+
+        function renderPatchcoreStatus() {
+            if (!els.patchcoreStatus) return;
+            if (getSelectedBackend() !== PATCHCORE_BACKEND) {
+                els.patchcoreStatus.textContent = '';
+                return;
+            }
+            if (!state.patchcoreCatalog) {
+                els.patchcoreStatus.textContent = '正在检查 PatchCore 已训练类别...';
+                return;
+            }
+
+            const category = (els.patchcoreCategory?.value || 'bottle').trim().toLowerCase();
+            const status = getPatchcoreCategoryStatus(category);
+            if (status?.trained) {
+                const bankSize = status.metadata?.memory_bank_size;
+                const threshold = state.patchcoreCatalog.default_threshold ?? els.patchcoreThreshold?.value ?? '';
+                els.patchcoreStatus.textContent = [
+                    `类别 ${category} 已训练，可使用 PatchCore。`,
+                    bankSize ? `memory bank: ${bankSize}` : '',
+                    threshold !== '' ? `默认阈值: ${threshold}` : ''
+                ].filter(Boolean).join(' ');
+                return;
+            }
+
+            const trained = state.patchcoreCatalog.trained_categories || [];
+            els.patchcoreStatus.textContent = trained.length
+                ? `类别 ${category} 尚未训练 PatchCore。请改用 Qwen 视觉检测，或先训练该类别。已训练：${trained.join(', ')}。`
+                : `当前没有发现已训练的 PatchCore 类别。请先运行 scripts/patchcore_train.py，或改用 Qwen 视觉检测。`;
+        }
+
+        async function refreshPatchcoreCatalog() {
+            try {
+                const res = await fetch(`${API_BASE}/v1/patchcore/categories`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                state.patchcoreCatalog = await res.json();
+                const trained = new Set(state.patchcoreCatalog.trained_categories || []);
+                if (els.patchcoreCategory) {
+                    Array.from(els.patchcoreCategory.options).forEach(option => {
+                        const trainedCategory = trained.has(option.value);
+                        option.disabled = trained.size > 0 && !trainedCategory;
+                        option.textContent = trainedCategory ? `${option.value} ✓` : `${option.value}（未训练）`;
+                    });
+                    if (trained.size > 0 && !trained.has(els.patchcoreCategory.value)) {
+                        els.patchcoreCategory.value = Array.from(trained)[0];
+                    }
+                }
+            } catch (error) {
+                state.patchcoreCatalog = null;
+                void error;
+            } finally {
+                renderPatchcoreStatus();
+            }
+        }
+
         function getObjectContextParameters() {
             const displayName = (els.objectDisplayName?.value || '').trim();
             const functionSummary = (els.objectFunctionSummary?.value || '').trim();
@@ -1588,6 +1657,7 @@
             if (els.patchcoreDetectButton) {
                 els.patchcoreDetectButton.classList.toggle('is-active', isPatchcore);
             }
+            renderPatchcoreStatus();
         }
 
         function escapeHtml(value) {
@@ -1800,47 +1870,47 @@
 
         function displayAgentName(agent) {
             const mapping = {
-                supervisor: '??',
-                vision: '???',
-                knowledge: '???',
-                clarification: '???',
-                report: '???'
+                supervisor: '监督',
+                vision: '视觉',
+                knowledge: '知识',
+                clarification: '澄清',
+                report: '报告'
             };
-            return mapping[agent] || agent || '???';
+            return mapping[agent] || agent || '未知';
         }
 
         function displayStatus(status) {
             const mapping = {
-                planned: '??',
-                running: '??',
-                success: '??',
-                failed: '??',
-                pending: '??'
+                planned: '计划中',
+                running: '执行中',
+                success: '成功',
+                failed: '失败',
+                pending: '等待'
             };
-            return mapping[status] || status || '???';
+            return mapping[status] || status || '未知';
         }
 
         function displayNodeName(node) {
             const mapping = {
-                supervisor_plan: '???',
-                supervisor_execute: '???',
-                supervisor_merge: '???',
-                self_reflect: '??',
-                wait_user: '???',
-                answer: '???',
-                report: '???'
+                supervisor_plan: '监督规划',
+                supervisor_execute: '专家执行',
+                supervisor_merge: '结果合并',
+                self_reflect: '自检',
+                wait_user: '等待用户',
+                answer: '生成回答',
+                report: '生成报告'
             };
-            return mapping[node] || node || '??';
+            return mapping[node] || node || '节点';
         }
 
         function localizeGoal(goal) {
-            if (!goal) return '???';
+            if (!goal) return '暂无目标';
             return String(goal)
-                .replace('retry visual anomaly analysis', '???')
-                .replace('detect and localize visual anomalies', '???')
-                .replace('retrieve similar cases and maintenance knowledge', '???')
-                .replace('prepare a structured clarification request for the user', '???')
-                .replace('generate a complete technical report', '??');
+                .replace('retry visual anomaly analysis', '重试视觉异常分析')
+                .replace('detect and localize visual anomalies', '检测并定位视觉异常')
+                .replace('retrieve similar cases and maintenance knowledge', '检索相似案例和维护知识')
+                .replace('prepare a structured clarification request for the user', '准备结构化澄清问题')
+                .replace('generate a complete technical report', '生成完整技术报告');
         }
 
         function normalizeStepState(rawStatus, pending) {
@@ -1856,47 +1926,47 @@
             switch (event?.type) {
                 case 'plan_created':
                     return {
-                        title: '??',
+                        title: '计划已创建',
                         tone: 'planned',
-                        meta: `???${event.step_count || 0}${event.reason ? `
-??${event.reason}` : ''}`
+                        meta: `步骤数：${event.step_count || 0}${event.reason ? `
+原因：${event.reason}` : ''}`
                     };
                 case 'step_started':
                     return {
-                        title: `${displayAgentName(event.agent)} ???${stepId}`,
+                        title: `${displayAgentName(event.agent)} 开始执行${stepId}`,
                         tone: 'running',
-                        meta: `? ${event.attempt || 1} ??${Array.isArray(event.depends_on) && event.depends_on.length ? `
-??${event.depends_on.join(', ')}` : ''}`
+                        meta: `第 ${event.attempt || 1} 次尝试${Array.isArray(event.depends_on) && event.depends_on.length ? `
+依赖：${event.depends_on.join(', ')}` : ''}`
                     };
                 case 'step_completed':
                     return {
-                        title: `${displayAgentName(event.agent)} ??${stepId}`,
+                        title: `${displayAgentName(event.agent)} 完成${stepId}`,
                         tone: event.requires_human ? 'pending' : 'success',
-                        meta: `??${displayStatus(event.status || 'success')}${typeof event.confidence === 'number' ? `
-???${event.confidence}` : ''}`
+                        meta: `状态：${displayStatus(event.status || 'success')}${typeof event.confidence === 'number' ? `
+置信度：${event.confidence}` : ''}`
                     };
                 case 'step_failed':
                     return {
-                        title: `${displayAgentName(event.agent)} ???${stepId}`,
+                        title: `${displayAgentName(event.agent)} 执行失败${stepId}`,
                         tone: 'failed',
-                        meta: event.error || '???'
+                        meta: event.error || '没有错误详情'
                     };
                 case 'task_suspended':
                     return {
-                        title: '???',
+                        title: '任务已挂起',
                         tone: 'pending',
-                        meta: `${event.pending_question || '???'}${Array.isArray(event.unknown_anomaly_types) && event.unknown_anomaly_types.length ? `
-???${event.unknown_anomaly_types.join(', ')}` : ''}`
+                        meta: `${event.pending_question || '等待补充信息'}${Array.isArray(event.unknown_anomaly_types) && event.unknown_anomaly_types.length ? `
+未知异常类型：${event.unknown_anomaly_types.join(', ')}` : ''}`
                     };
                 case 'task_resumed':
                     return {
-                        title: '???',
+                        title: '任务已恢复',
                         tone: 'running',
-                        meta: `??${event.conversation_turns || 0}`
+                        meta: `对话轮次：${event.conversation_turns || 0}`
                     };
                 default:
                     return {
-                        title: event?.type || '???',
+                        title: event?.type || '事件',
                         tone: 'planned',
                         meta: JSON.stringify(event || {}, null, 2)
                     };
@@ -1926,19 +1996,19 @@
                     index,
                     status,
                     attempt,
-                    title: displayAgentName(step.agent) || `?? ${index + 1}`,
+                    title: displayAgentName(step.agent) || `步骤 ${index + 1}`,
                     subtitle: localizeGoal(step.goal),
                     badges: [
                         displayStatus(status),
-                        `? ${attempt} ?`,
-                        step.retryable === false ? '???' : '??'
+                        `尝试 ${attempt} 次`,
+                        step.retryable === false ? '不可重试' : '可重试'
                     ],
                     details: {
                         step_id: step.id || '-',
                         agent: displayAgentName(step.agent),
                         goal: localizeGoal(step.goal),
-                        depends_on: dependsOn.length ? dependsOn.join(', ') : '?',
-                        retryable: step.retryable === false ? '?' : '?'
+                        depends_on: dependsOn.length ? dependsOn.join(', ') : '无',
+                        retryable: step.retryable === false ? '否' : '是'
                     },
                     raw: step
                 };
@@ -1955,7 +2025,7 @@
                     index,
                     status: summary.tone,
                     title: summary.title,
-                    subtitle: summary.meta || '???',
+                    subtitle: summary.meta || '暂无详情',
                     badges: [
                         event?.type || 'event',
                         event?.agent ? displayAgentName(event.agent) : null,
@@ -1992,11 +2062,11 @@
 
         function renderTimelineFilters(summaryItems) {
             const filters = [
-                { key: 'all', label: '??', count: summaryItems.total },
-                { key: 'active', label: '??', count: summaryItems.running + summaryItems.planned },
-                { key: 'failed', label: '??', count: summaryItems.failed },
-                { key: 'waiting', label: '??', count: summaryItems.pending },
-                { key: 'done', label: '??', count: summaryItems.success }
+                { key: 'all', label: '全部', count: summaryItems.total },
+                { key: 'active', label: '进行中', count: summaryItems.running + summaryItems.planned },
+                { key: 'failed', label: '失败', count: summaryItems.failed },
+                { key: 'waiting', label: '等待', count: summaryItems.pending },
+                { key: 'done', label: '完成', count: summaryItems.success }
             ];
 
             els.timelineFilters.innerHTML = filters.map(filter => `
@@ -2091,16 +2161,16 @@
             }
 
             if (!eventCards.length) {
-                els.timelineEvents.innerHTML = '<div class="timeline-empty">???</div>';
+                els.timelineEvents.innerHTML = '<div class="timeline-empty">当前还没有执行事件。</div>';
             } else if (!filteredEvents.length) {
-                els.timelineEvents.innerHTML = '<div class="timeline-empty compact">???</div>';
+                els.timelineEvents.innerHTML = '<div class="timeline-empty compact">当前筛选条件下没有匹配的事件。</div>';
             } else {
                 els.timelineEvents.innerHTML = filteredEvents.map(event => {
                     const isSelected = state.selectedTimelineItem?.kind === 'event' && state.selectedTimelineItem?.key === event.key;
                     return `
                         <article class="event-item ${escapeHtml(event.status)} ${isSelected ? 'is-selected' : ''}" data-kind="event" data-key="${escapeHtml(event.key)}">
                             <div class="event-item-top">
-                                <span class="event-index">?? ${event.index + 1}</span>
+                                <span class="event-index">事件 ${event.index + 1}</span>
                                 <div class="timeline-badges">${event.badges.map(badge => `<span class="timeline-chip">${escapeHtml(badge)}</span>`).join('')}</div>
                             </div>
                             <div class="event-title">
@@ -2169,7 +2239,7 @@
 
             await readSseStream(response, payload => {
                 if (payload.type === 'node_start') {
-                    setStreamingStatus(sourceLabel, `鑺傜偣锛?{displayNodeName(payload.node)}`);
+                    setStreamingStatus(sourceLabel, `节点：${displayNodeName(payload.node)}`);
                     return;
                 }
 
@@ -2193,8 +2263,8 @@
                 if (payload.type === 'stream' && payload.subtype === 'answer') {
                     streamedAnswer += payload.content || '';
                     if (streamedAnswer) {
-                        setMarkdownContent(els.answerPanel, streamedAnswer, '鏆傛棤缁撴灉');
-                        setMarkdownContent(els.answerPanelInline, streamedAnswer, '鏆傛棤缁撴灉');
+                        setMarkdownContent(els.answerPanel, streamedAnswer, '暂无结果');
+                        setMarkdownContent(els.answerPanelInline, streamedAnswer, '暂无结果');
                     }
                     return;
                 }
@@ -2656,14 +2726,14 @@
             ].filter(Boolean).join('\n');
 
             if (result.answer) {
-                setMarkdownContent(els.answerPanel, result.answer, '鏆傛棤缁撴灉');
-                setMarkdownContent(els.answerPanelInline, result.answer, '鏆傛棤缁撴灉');
+                setMarkdownContent(els.answerPanel, result.answer, '暂无结果');
+                setMarkdownContent(els.answerPanelInline, result.answer, '暂无结果');
                 pushHistory('assistant', result.answer);
             }
 
             if (result.summary) {
-                setMarkdownContent(els.reportPanel, result.summary, '灏氭湭鐢熸垚鎶ュ憡');
-                setMarkdownContent(els.reportPanelInline, result.summary, '灏氭湭鐢熸垚鎶ュ憡');
+                setMarkdownContent(els.reportPanel, result.summary, '尚未生成报告');
+                setMarkdownContent(els.reportPanelInline, result.summary, '尚未生成报告');
             }
 
             renderAnomalies(result.anomalies);
@@ -2675,10 +2745,10 @@
                     result.pending_question || '',
                     result.pending_clarification || ''
                 ].filter(Boolean).join('\n\n');
-                setMarkdownContent(els.pendingPanel, pendingText, '???');
-                pushHistory('system', pendingText || '???');
+                setMarkdownContent(els.pendingPanel, pendingText, '当前没有待澄清问题');
+                pushHistory('system', pendingText || '当前没有待澄清问题');
             } else {
-                setMarkdownContent(els.pendingPanel, '', '???');
+                setMarkdownContent(els.pendingPanel, '', '当前没有待澄清问题');
             }
         }
 
@@ -2686,9 +2756,9 @@
             try {
                 const res = await fetch(`${API_BASE}/health`);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                els.backendIndicator.textContent = '??';
+                els.backendIndicator.textContent = '在线';
             } catch (error) {
-                els.backendIndicator.textContent = '??';
+                els.backendIndicator.textContent = '离线';
             }
         }
 
@@ -2719,18 +2789,18 @@
             if (els.objectDisplayName) els.objectDisplayName.value = '';
             if (els.objectFunctionSummary) els.objectFunctionSummary.value = '';
             if (els.objectComponents) els.objectComponents.value = '';
-            els.previewText.textContent = '???';
+            els.previewText.textContent = '还没有选择图片';
             els.previewImage.style.display = 'none';
             els.previewImage.removeAttribute('src');
             els.overlayOpacity.value = String(state.overlayOpacity);
             clearLocalizationOverlay();
 
-            els.statusPanel.textContent = '???';
-            setMarkdownContent(els.answerPanel, '', '???');
-            setMarkdownContent(els.answerPanelInline, '', '???');
-            setMarkdownContent(els.pendingPanel, '', '???');
-            setMarkdownContent(els.reportPanel, '', '???');
-            setMarkdownContent(els.reportPanelInline, '', '???');
+            els.statusPanel.textContent = '等待发起检测';
+            setMarkdownContent(els.answerPanel, '', '暂无结果');
+            setMarkdownContent(els.answerPanelInline, '', '暂无结果');
+            setMarkdownContent(els.pendingPanel, '', '当前没有待澄清问题');
+            setMarkdownContent(els.reportPanel, '', '尚未生成报告');
+            setMarkdownContent(els.reportPanelInline, '', '尚未生成报告');
             els.anomalyChips.innerHTML = '';
             renderAnalysisPanel(null, null);
 
@@ -2756,11 +2826,25 @@
             const image = els.imageInput.files[0];
 
             if (!assetId) {
-                setMessage(els.detectMessage, 'warning', '?? ID?');
+                setMessage(els.detectMessage, 'warning', '请输入设备 ID。');
                 return;
             }
             if (!image) {
-                setMessage(els.detectMessage, 'warning', '???');
+                setMessage(els.detectMessage, 'warning', '请先上传检测图片。');
+                return;
+            }
+            const backend = (backendOverride || getSelectedBackend()).trim().toLowerCase();
+            if (backend === PATCHCORE_BACKEND && state.patchcoreCatalog && !isPatchcoreCategoryTrained()) {
+                const category = (els.patchcoreCategory?.value || 'bottle').trim().toLowerCase();
+                const trained = state.patchcoreCatalog.trained_categories || [];
+                setMessage(
+                    els.detectMessage,
+                    'warning',
+                    trained.length
+                        ? `PatchCore 类别 ${category} 尚未训练。请改用 Qwen，或先训练该类别。已训练：${trained.join(', ')}。`
+                        : '当前没有发现已训练的 PatchCore 类别。请先训练类别模型，或改用 Qwen。'
+                );
+                renderPatchcoreStatus();
                 return;
             }
 
@@ -2773,10 +2857,10 @@
             state.selectedTimelineItem = null;
             renderTaskState();
             renderExecutionTimeline();
-            setMessage(els.detectMessage, 'info', '???...');
+            setMessage(els.detectMessage, 'info', '正在检测...');
             setMessage(els.followupMessage, 'info', '');
             setMessage(els.reportMessage, 'info', '');
-            pushHistory('user', question || '???');
+            pushHistory('user', question || '开始检测');
 
             const form = new FormData();
             form.append('task_id', taskId);
@@ -2900,12 +2984,12 @@ message: ${error.message}`;
 
                 applyResult(data, 'report');
                 if (data.summary) {
-                    pushHistory('assistant', `???
+                    pushHistory('assistant', `报告摘要
 ${data.summary}`);
                 }
-                setMessage(els.reportMessage, 'success', '??');
+                setMessage(els.reportMessage, 'success', '报告已生成。');
             } catch (error) {
-                setMessage(els.reportMessage, 'error', `???${error.message}`);
+                setMessage(els.reportMessage, 'error', `报告生成失败：${error.message}`);
             } finally {
                 renderTaskState();
             }
@@ -2919,14 +3003,14 @@ ${data.summary}`);
             state.visualAssets = {};
 
             if (!file) {
-                els.previewText.textContent = '杩樻病鏈夐€夋嫨鍥剧墖';
+                els.previewText.textContent = '还没有选择图片';
                 els.previewImage.style.display = 'none';
                 els.previewImage.removeAttribute('src');
                 clearLocalizationOverlay();
                 return;
             }
 
-            els.previewText.textContent = `${file.name} 路 ${(file.size / 1024).toFixed(1)} KB`;
+            els.previewText.textContent = `${file.name}，${(file.size / 1024).toFixed(1)} KB`;
             const reader = new FileReader();
             reader.onload = event => {
                 els.previewImage.src = event.target.result;
@@ -2999,6 +3083,7 @@ ${data.summary}`);
         });
 
         els.visualBackend?.addEventListener('change', syncBackendControls);
+        els.patchcoreCategory?.addEventListener('change', renderPatchcoreStatus);
         els.detectButton.addEventListener('click', startDetection);
         els.patchcoreDetectButton?.addEventListener('click', () => startDetection(PATCHCORE_BACKEND));
         els.followupButton.addEventListener('click', sendFollowup);
@@ -3022,6 +3107,7 @@ ${data.summary}`);
         applyStaticUiText();
         resetTask();
         checkHealth();
+        refreshPatchcoreCatalog();
     </script>
 </body>
 </html>

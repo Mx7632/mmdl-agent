@@ -13,6 +13,18 @@ MMDL-Agent 是一个面向工业视觉异常诊断的多 Agent 应用框架。�
   -> Answer / Wait User / Report
 ```
 
+## 运行文档入口
+
+当前推荐以 [Docs/runtime_guide.md](Docs/runtime_guide.md) 作为运行和调试主文档。它覆盖：
+
+- 本地启动与 `.env` 推荐配置
+- `/v1/stream` 主调试链路
+- MVTec RAG 建库和 few-shot 正常/异常样本注入
+- PatchCore 训练、热力图生成和前端调用
+- 多 Agent 时间线、MMAD metadata、few-shot metadata 的排障观察点
+
+系统架构与运行流程说明见 [Docs/system_overview.md](Docs/system_overview.md)。
+
 ## 当前架构
 
 ```text

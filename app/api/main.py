@@ -180,6 +180,29 @@ async def health_check():
     return {"status": "ok", "timestamp": __import__("time").time()}
 
 
+@app.get("/v1/patchcore/categories")
+async def patchcore_categories():
+    from app.tools.patchcore_detection import (
+        available_mvtec_categories,
+        get_patchcore_category_status,
+        trained_patchcore_categories,
+    )
+
+    dataset_categories = available_mvtec_categories(settings.rag_dataset_root)
+    trained_categories = trained_patchcore_categories()
+    all_categories = sorted(set(dataset_categories) | set(trained_categories))
+    return {
+        "status": "success",
+        "dataset_root": settings.rag_dataset_root,
+        "model_root": settings.patchcore_model_root,
+        "default_category": settings.patchcore_default_category,
+        "default_threshold": settings.patchcore_threshold,
+        "dataset_categories": dataset_categories,
+        "trained_categories": trained_categories,
+        "categories": [get_patchcore_category_status(category) for category in all_categories],
+    }
+
+
 # ── RAG 端点（来自 origin/main）───────────────────────────────────────────────
 
 
