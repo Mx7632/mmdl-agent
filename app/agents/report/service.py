@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from app.analysis.mmad_pipeline import build_mmad_analysis_context, dump_mmad_analysis, format_mmad_analysis
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
@@ -81,7 +82,19 @@ def _build_defect_analysis_block(state: DetectionState) -> str:
 
 def _build_analysis_metadata(state: DetectionState) -> dict[str, object]:
     knowledge_ctx = state.domain_runtime().shared_context.knowledge
-    return dump_analysis_contracts(knowledge_ctx) if knowledge_ctx else {}
+    metadata = dump_analysis_contracts(knowledge_ctx) if knowledge_ctx else {}
+    domain_runtime = state.domain_runtime()
+    if domain_runtime.shared_context.mmad_analysis is None and (domain_runtime.shared_context.vision or knowledge_ctx):
+        domain_runtime.shared_context["mmad_analysis"] = build_mmad_analysis_context(
+            task=state.task,
+            vision=domain_runtime.shared_context.vision,
+            knowledge=knowledge_ctx,
+            result=domain_runtime.result,
+        ).model_dump()
+        state.apply_domain_runtime(domain_runtime)
+    if state.shared_context.mmad_analysis:
+        metadata["mmad_analysis"] = dump_mmad_analysis(state.shared_context.mmad_analysis)
+    return metadata
 
 
 def _build_dialogue_text(state: DetectionState) -> str:
@@ -120,6 +133,18 @@ async def generate_report_state(state: DetectionState) -> DetectionState:
     rag_context = get_prompt_context(state) or "(no RAG retrieval context)"
     defect_description_text = _build_defect_description_block(result.anomalies or [])
     defect_analysis_text = _build_defect_analysis_block(state)
+    if domain_runtime.shared_context.mmad_analysis is None and (
+        domain_runtime.shared_context.vision or domain_runtime.shared_context.knowledge
+    ):
+        domain_runtime.shared_context["mmad_analysis"] = build_mmad_analysis_context(
+            task=state.task,
+            vision=domain_runtime.shared_context.vision,
+            knowledge=domain_runtime.shared_context.knowledge,
+            result=result,
+        ).model_dump()
+        state.apply_domain_runtime(domain_runtime)
+        domain_runtime = state.domain_runtime()
+    mmad_analysis_text = format_mmad_analysis(domain_runtime.shared_context.mmad_analysis)
 
     llm = ChatOpenAI(
         model=settings.llm_model,
@@ -142,10 +167,15 @@ async def generate_report_state(state: DetectionState) -> DetectionState:
             history=(
                 f"{history_text}\n\n"
                 f"[Structured defect descriptions]\n{defect_description_text}\n\n"
-                f"[Structured defect analysis]\n{defect_analysis_text}"
+                f"[Structured defect analysis]\n{defect_analysis_text}\n\n"
+                f"[MMAD seven-task analysis]\n{mmad_analysis_text}"
             ),
             dialogue=dialogue_text,
-            rag_context=f"{rag_context}\n\n[Structured defect analysis]\n{defect_analysis_text}",
+            rag_context=(
+                f"{rag_context}\n\n"
+                f"[Structured defect analysis]\n{defect_analysis_text}\n\n"
+                f"[MMAD seven-task analysis]\n{mmad_analysis_text}"
+            ),
         )
         response = await llm.ainvoke(messages)
         summary = getattr(response, "content", str(response)) or ""
@@ -157,6 +187,7 @@ async def generate_report_state(state: DetectionState) -> DetectionState:
             if result.anomalies:
                 result.metadata["defect_descriptions"] = _collect_defect_descriptions(result.anomalies)
             result.metadata["defect_analysis_text"] = defect_analysis_text
+            result.metadata["mmad_analysis_text"] = mmad_analysis_text
             result.metadata.update(_build_analysis_metadata(state))
             state.logs.append(
                 f"[Report] Completed with loop_count={orchestration_runtime.loop_count}, confidence={orchestration_runtime.confidence:.2f}"

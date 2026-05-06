@@ -41,3 +41,8 @@ app/data/memory/tool_context.json
 # PatchCore runtime and training artifacts
 data/heatmaps/
 models/patchcore/
+
+# MMAD imported/generated dataset artifacts
+data/mmad*/
+.tmp/
+.tmp_mmad_importer_test/

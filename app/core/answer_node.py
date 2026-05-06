@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 
+from app.analysis.mmad_pipeline import build_mmad_analysis_context, dump_mmad_analysis, format_mmad_analysis
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
@@ -38,6 +39,7 @@ Requirements:
 - Respond in Chinese.
 - Include status judgment, key evidence, and next-step suggestion.
 - When anomalies include location, appearance, severity, or description, use them as primary evidence.
+- Use the MMAD seven-task analysis as the structured diagnostic backbone when available.
 - Do not mention JSON, field names, APIs, or model internals.
 - If the information is already sufficient, you may suggest generating a full report.
 """
@@ -63,7 +65,19 @@ def _ensure_result_from_shared_context(state: DetectionState) -> DetectionResult
 
 def _build_structured_analysis_metadata(state: DetectionState) -> dict[str, object]:
     knowledge_ctx = state.domain_runtime().shared_context.knowledge
-    return dump_analysis_contracts(knowledge_ctx) if knowledge_ctx else {}
+    metadata = dump_analysis_contracts(knowledge_ctx) if knowledge_ctx else {}
+    domain_runtime = state.domain_runtime()
+    if domain_runtime.shared_context.mmad_analysis is None and (domain_runtime.shared_context.vision or knowledge_ctx):
+        domain_runtime.shared_context["mmad_analysis"] = build_mmad_analysis_context(
+            task=state.task,
+            vision=domain_runtime.shared_context.vision,
+            knowledge=knowledge_ctx,
+            result=domain_runtime.result,
+        ).model_dump()
+        state.apply_domain_runtime(domain_runtime)
+    if state.shared_context.mmad_analysis:
+        metadata["mmad_analysis"] = dump_mmad_analysis(state.shared_context.mmad_analysis)
+    return metadata
 
 
 def _format_conversation_history(history: list[dict]) -> str:
@@ -118,12 +132,24 @@ async def answer_node(state: DetectionState) -> DetectionState:
         if knowledge_ctx
         else "(no structured defect analysis)"
     )
+    domain_runtime = state.domain_runtime()
+    if domain_runtime.shared_context.mmad_analysis is None and (domain_runtime.shared_context.vision or knowledge_ctx):
+        domain_runtime.shared_context["mmad_analysis"] = build_mmad_analysis_context(
+            task=state.task,
+            vision=domain_runtime.shared_context.vision,
+            knowledge=knowledge_ctx,
+            result=domain_runtime.result,
+        ).model_dump()
+        state.apply_domain_runtime(domain_runtime)
+        domain_runtime = state.domain_runtime()
+    mmad_analysis = format_mmad_analysis(domain_runtime.shared_context.mmad_analysis)
     memory_context_text = (
         f"[Short-term same asset]\n{mem_ctx['short_term']}\n\n"
         f"[Long-term history]\n{mem_ctx['long_term']}\n\n"
         f"[Tool effectiveness]\n{mem_ctx['tool_effect']}\n\n"
         f"[Knowledge retrieval]\n{knowledge_context}\n\n"
-        f"[Structured defect analysis]\n{structured_analysis}"
+        f"[Structured defect analysis]\n{structured_analysis}\n\n"
+        f"[MMAD seven-task analysis]\n{mmad_analysis}"
     )
 
     result_json = json.dumps(

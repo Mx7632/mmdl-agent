@@ -11,6 +11,7 @@ from app.agents.factory import get_supervisor_agent
 from app.agents.knowledge.agent import KnowledgeAgent
 from app.agents.vision.agent import VisionAgent
 from app.agents.report.service import generate_report_state
+from app.analysis.mmad_pipeline import build_mmad_analysis_context, dump_mmad_analysis, format_mmad_analysis
 from app.core.answer_node import answer_node
 from app.core.agent import get_pending_task, stream_detection
 from app.core.self_reflect import self_reflect_node
@@ -19,7 +20,7 @@ from app.core.wait_user import wait_user_node
 from app.memory.conversation import compact_state_conversation
 from app.memory.state import DetectionState
 from app.orchestration.envelope import AgentEnvelope
-from app.orchestration.context import KnowledgeContext
+from app.orchestration.context import KnowledgeContext, MMADAnalysisContext
 from app.schemas.detection import DetectionResult, DetectionTask, ToolResponse
 from app.rag.knowledge_pipeline import (
     build_defect_analysis_contract,
@@ -84,6 +85,107 @@ def test_knowledge_context_syncs_nested_and_flat_fields():
     assert legacy.object_analysis.object_summary == "legacy object summary"
 
 
+def test_mmad_analysis_context_covers_seven_tasks():
+    ctx = MMADAnalysisContext.model_validate(
+        {
+            "anomaly_discrimination": {"status": "success", "is_anomaly": True},
+            "defect_classification": {"defect_type": "crack", "candidates": ["crack"]},
+            "defect_localization": {"locations": ["middle-right"], "heatmap_available": True},
+            "defect_description": {"descriptions": ["middle-right crack"]},
+            "defect_analysis": {"possible_causes": ["local stress"]},
+            "object_classification": {"category": "bottle", "object_name": "玻璃瓶"},
+            "object_analysis": {"component_scope": ["瓶身"]},
+        }
+    )
+
+    dumped = dump_mmad_analysis(ctx)
+
+    assert set(dumped) == {
+        "anomaly_discrimination",
+        "defect_classification",
+        "defect_localization",
+        "defect_description",
+        "defect_analysis",
+        "object_classification",
+        "object_analysis",
+    }
+    assert dumped["anomaly_discrimination"]["is_anomaly"] is True
+    assert dumped["object_analysis"]["component_scope"] == ["瓶身"]
+
+
+def test_mmad_pipeline_builds_seven_task_analysis_from_existing_contexts():
+    state = build_state()
+    state.shared_context["vision"] = {
+        "anomalies": [
+            {
+                "type": "surface_anomaly",
+                "score": 0.82,
+                "location": "middle-right",
+                "bbox": [10, 20, 60, 90],
+                "description": "在 middle-right 区域发现一处细长异常热区。",
+                "appearance": {"shape": "elongated-horizontal", "size": "small"},
+                "severity_hint": "medium",
+            }
+        ],
+        "metadata": {
+            "category": "bottle",
+            "confidence": 0.82,
+            "heatmap_path": "data/heatmaps/bottle/task_heatmap.png",
+            "mask_path": "data/heatmaps/bottle/task_mask.png",
+        },
+    }
+    state.shared_context["knowledge"] = {
+        "defect_analysis": {
+            "analysis_summary": "裂纹类风险需要复核。",
+            "possible_causes": ["local stress"],
+        },
+        "object_analysis": {
+            "object_profile": {"display_name": "玻璃瓶"},
+            "component_scope": ["瓶身"],
+            "object_summary": "玻璃瓶需要关注瓶身和封口区。",
+        },
+    }
+
+    analysis = build_mmad_analysis_context(
+        task=state.task,
+        vision=state.shared_context.vision,
+        knowledge=state.shared_context.knowledge,
+        result=state.result,
+    )
+
+    assert analysis.anomaly_discrimination.is_anomaly is True
+    assert analysis.defect_classification.defect_type == "surface_anomaly"
+    assert analysis.defect_localization.locations == ["middle-right"]
+    assert analysis.defect_localization.heatmap_available is True
+    assert analysis.defect_description.descriptions
+    assert analysis.defect_analysis.possible_causes == ["local stress"]
+    assert analysis.object_classification.category == "bottle"
+    assert analysis.object_classification.object_name == "玻璃瓶"
+    assert analysis.object_analysis.component_scope == ["瓶身"]
+    assert "[异常判别]" in format_mmad_analysis(analysis)
+
+
+def test_mmad_pipeline_marks_failed_visual_result_as_unknown_not_normal():
+    state = build_state()
+    state.result = DetectionResult(
+        task_id=state.task.task_id,
+        status="failed",
+        anomalies=[],
+        summary="patchcore execution failed",
+    )
+
+    analysis = build_mmad_analysis_context(
+        task=state.task,
+        vision=None,
+        knowledge=None,
+        result=state.result,
+    )
+
+    assert analysis.anomaly_discrimination.status == "failed"
+    assert analysis.anomaly_discrimination.is_anomaly is None
+    assert "不能据此判断设备正常" in analysis.anomaly_discrimination.evidence[0]
+
+
 def test_build_execution_metadata_includes_analysis_contracts():
     metadata = build_execution_metadata(
         {
@@ -134,6 +236,77 @@ def test_build_execution_metadata_includes_analysis_contracts():
 
     assert legacy_flat_metadata["analysis_contracts"]["defect_analysis"]["possible_causes"] == ["legacy flat cause"]
     assert legacy_flat_metadata["analysis_contracts"]["object_analysis"]["component_scope"] == ["外缘"]
+
+
+def test_build_execution_metadata_includes_mmad_analysis():
+    metadata = build_execution_metadata(
+        {
+            "shared_context": {
+                "mmad_analysis": {
+                    "anomaly_discrimination": {"status": "success", "is_anomaly": True},
+                    "defect_classification": {"defect_type": "surface_anomaly"},
+                    "object_classification": {"category": "bottle"},
+                }
+            }
+        }
+    )
+
+    assert metadata["mmad_analysis"]["anomaly_discrimination"]["is_anomaly"] is True
+    assert metadata["mmad_analysis"]["defect_classification"]["defect_type"] == "surface_anomaly"
+
+    result_only_metadata = build_execution_metadata(
+        {
+            "result": {
+                "metadata": {
+                    "mmad_analysis": {
+                        "anomaly_discrimination": {"status": "failed", "is_anomaly": None},
+                        "object_classification": {"category": "capsule"},
+                    }
+                }
+            }
+        }
+    )
+
+    assert result_only_metadata["mmad_analysis"]["anomaly_discrimination"]["status"] == "failed"
+    assert result_only_metadata["mmad_analysis"]["object_classification"]["category"] == "capsule"
+
+
+def test_supervisor_merge_generates_mmad_analysis_metadata():
+    state = build_state()
+    state.agent_outputs["vision"] = {
+        "payload": {
+            "anomalies": [
+                {
+                    "type": "surface_anomaly",
+                    "score": 0.76,
+                    "location": "top-left",
+                    "description": "top-left hotspot",
+                }
+            ],
+            "metadata": {"category": "bottle", "heatmap_path": "data/heatmaps/demo.png"},
+        }
+    }
+    state.agent_outputs["knowledge"] = {
+        "payload": {
+            "prompt_context": "case context",
+            "defect_analysis": {
+                "analysis_summary": "structured defect summary",
+                "possible_causes": ["local stress"],
+            },
+            "object_analysis": {
+                "object_profile": {"display_name": "玻璃瓶"},
+                "component_scope": ["瓶身"],
+                "object_summary": "bottle object summary",
+            },
+        }
+    }
+
+    updated = asyncio.run(supervisor_merge_node(state))
+
+    assert updated.shared_context.mmad_analysis is not None
+    assert updated.result.metadata["mmad_analysis"]["anomaly_discrimination"]["is_anomaly"] is True
+    assert updated.result.metadata["mmad_analysis"]["defect_classification"]["defect_type"] == "surface_anomaly"
+    assert updated.result.metadata["mmad_analysis"]["object_classification"]["object_name"] == "玻璃瓶"
 
 
 def test_knowledge_pipeline_builds_orchestrated_context():
@@ -903,6 +1076,7 @@ def test_answer_node_prefers_shared_context(monkeypatch: pytest.MonkeyPatch):
         "repair_actions": ["recheck the damaged region and inspect nearby components"],
         "analysis_summary": "structured analysis summary",
         "component_scope": ["螺母外缘", "内孔螺纹区"],
+        "object_profile": {"display_name": "金属螺母"},
         "component_findings": [{"location": "middle-right", "component": "内孔螺纹区", "anomaly_type": "dent"}],
         "functional_impact": ["若异常扩展到螺纹区，可能影响连接紧固稳定性。"],
         "object_summary": "金属螺母的主要关注部位包括外缘与螺纹区。",
@@ -918,6 +1092,8 @@ def test_answer_node_prefers_shared_context(monkeypatch: pytest.MonkeyPatch):
     assert updated.result.metadata["confidence"] == 0.88
     assert updated.result.metadata["defect_analysis"]["possible_causes"]
     assert updated.result.metadata["object_analysis"]["component_findings"][0]["component"] == "内孔螺纹区"
+    assert updated.result.metadata["mmad_analysis"]["anomaly_discrimination"]["is_anomaly"] is True
+    assert updated.result.metadata["mmad_analysis"]["object_classification"]["object_name"] == "金属螺母"
     assert updated.current_step == 2
     assert len(short_term_calls) == 1
     assert short_term_calls[0].asset_id == "asset-001"
@@ -975,6 +1151,8 @@ def test_generate_report_state_prefers_shared_context(monkeypatch: pytest.Monkey
     assert updated.result.metadata["object_analysis"]["component_findings"]
     assert updated.result.metadata["object_analysis"]["object_knowledge_notes"]
     assert updated.result.metadata["object_analysis"]["object_knowledge_hits"]
+    assert updated.result.metadata["mmad_analysis"]["defect_classification"]["defect_type"] == "crack"
+    assert updated.result.metadata["mmad_analysis_text"].startswith("[异常判别]")
     assert updated.shared_context.report.summary == "Complete report content"
 
 
@@ -1222,6 +1400,11 @@ def test_stream_detection_emits_execution_events_and_final_metadata(monkeypatch:
         "step_status": {"vision-1": "success"},
         "step_attempts": {"vision": 1},
         "shared_context": {
+            "mmad_analysis": {
+                "anomaly_discrimination": {"status": "success", "is_anomaly": True, "confidence": 0.8},
+                "defect_classification": {"defect_type": "surface_anomaly"},
+                "object_classification": {"category": "bottle"},
+            },
             "knowledge": {
                 "defect_analysis": {
                     "analysis_summary": "stream defect analysis",
@@ -1293,6 +1476,7 @@ def test_stream_detection_emits_execution_events_and_final_metadata(monkeypatch:
     assert final_payloads[0]["metadata"]["step_status"]["vision-1"] == "success"
     assert final_payloads[0]["metadata"]["execution_events"][-1]["type"] == "step_completed"
     assert final_payloads[0]["metadata"]["analysis_contracts"]["object_analysis"]["component_scope"] == ["瓶身"]
+    assert final_payloads[0]["metadata"]["mmad_analysis"]["anomaly_discrimination"]["is_anomaly"] is True
 
 
 def test_self_reflect_retries_failed_specialist_without_proceeding():

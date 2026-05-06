@@ -30,6 +30,56 @@ class ObjectAnalysisContext(BaseModel):
     object_knowledge_summary: str | None = None
 
 
+class AnomalyDiscriminationContext(BaseModel):
+    status: str = "unknown"
+    is_anomaly: bool | None = None
+    confidence: float = 0.0
+    evidence: list[str] = Field(default_factory=list)
+    reason: str | None = None
+
+
+class DefectClassificationTaskContext(BaseModel):
+    status: str = "unknown"
+    defect_type: str | None = None
+    candidates: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+    evidence: list[str] = Field(default_factory=list)
+
+
+class DefectLocalizationTaskContext(BaseModel):
+    status: str = "unknown"
+    locations: list[str] = Field(default_factory=list)
+    bboxes: list[list[int]] = Field(default_factory=list)
+    heatmap_available: bool = False
+    mask_available: bool = False
+    description: str | None = None
+
+
+class DefectDescriptionTaskContext(BaseModel):
+    status: str = "unknown"
+    descriptions: list[str] = Field(default_factory=list)
+    appearances: list[dict[str, Any]] = Field(default_factory=list)
+    severity_hints: list[str] = Field(default_factory=list)
+
+
+class ObjectClassificationTaskContext(BaseModel):
+    status: str = "unknown"
+    category: str | None = None
+    object_name: str | None = None
+    confidence: float = 0.0
+    evidence: list[str] = Field(default_factory=list)
+
+
+class MMADAnalysisContext(BaseModel):
+    anomaly_discrimination: AnomalyDiscriminationContext = Field(default_factory=AnomalyDiscriminationContext)
+    defect_classification: DefectClassificationTaskContext = Field(default_factory=DefectClassificationTaskContext)
+    defect_localization: DefectLocalizationTaskContext = Field(default_factory=DefectLocalizationTaskContext)
+    defect_description: DefectDescriptionTaskContext = Field(default_factory=DefectDescriptionTaskContext)
+    defect_analysis: DefectAnalysisContext = Field(default_factory=DefectAnalysisContext)
+    object_classification: ObjectClassificationTaskContext = Field(default_factory=ObjectClassificationTaskContext)
+    object_analysis: ObjectAnalysisContext = Field(default_factory=ObjectAnalysisContext)
+
+
 class KnowledgeContext(BaseModel):
     rows: list[dict[str, Any]] = Field(default_factory=list)
     prompt_context: str | None = None
@@ -115,6 +165,7 @@ class SharedContext(BaseModel):
 
     vision: VisionContext | None = None
     knowledge: KnowledgeContext | None = None
+    mmad_analysis: MMADAnalysisContext | None = None
     report: ReportContext | None = None
     clarification: ClarificationContext | None = None
 
@@ -133,6 +184,8 @@ class SharedContext(BaseModel):
             self.vision = VisionContext.model_validate(value)
         elif key == "knowledge" and isinstance(value, dict):
             self.knowledge = KnowledgeContext.model_validate(value)
+        elif key == "mmad_analysis" and isinstance(value, dict):
+            self.mmad_analysis = MMADAnalysisContext.model_validate(value)
         elif key == "report" and isinstance(value, dict):
             self.report = ReportContext.model_validate(value)
         elif key == "clarification" and isinstance(value, dict):

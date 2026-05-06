@@ -2489,6 +2489,16 @@
             return null;
         }
 
+        function getMmadAnalysis(result) {
+            return (
+                result?.metadata?.mmad_analysis
+                || result?.metadata?.result_metadata?.mmad_analysis
+                || result?.shared_context?.mmad_analysis
+                || result?.metadata?.shared_context?.mmad_analysis
+                || null
+            );
+        }
+
         function normalizeStructuredAnalysis(rawAnalysis) {
             if (!rawAnalysis) return null;
             const defectAnalysis = rawAnalysis.defect_analysis || {};
@@ -2510,10 +2520,10 @@
             };
         }
 
-        function renderAnalysisPanel(analysis) {
+        function renderAnalysisPanel(analysis, mmadAnalysis = null) {
             const normalized = normalizeStructuredAnalysis(analysis);
             state.lastAnalysis = normalized || null;
-            if (!normalized) {
+            if (!normalized && !mmadAnalysis) {
                 if (els.analysisPanel) els.analysisPanel.hidden = true;
                 if (els.analysisSummary) els.analysisSummary.textContent = '暂无分析结果';
                 if (els.analysisDetails) els.analysisDetails.innerHTML = '';
@@ -2522,14 +2532,68 @@
 
             if (els.analysisPanel) els.analysisPanel.hidden = false;
             if (els.analysisSummary) {
+                const discrimination = mmadAnalysis?.anomaly_discrimination || {};
+                const mmadSummary = discrimination.status
+                    ? `MMAD 七任务分析：异常判别 ${discrimination.is_anomaly === true ? '异常' : discrimination.is_anomaly === false ? '未见明确异常' : '未知'}，状态 ${discrimination.status}。`
+                    : '';
                 setMarkdownContent(
                     els.analysisSummary,
-                    normalized.analysis_summary || normalized.object_summary || '已生成结构化分析结果。',
+                    normalized?.analysis_summary || normalized?.object_summary || mmadSummary || '已生成结构化分析结果。',
                     '暂无分析结果'
                 );
             }
 
             const blocks = [];
+            const mmadLabels = [
+                ['异常判别', mmadAnalysis?.anomaly_discrimination, item => [
+                    `状态：${item.status || 'unknown'}`,
+                    `是否异常：${item.is_anomaly === true ? '是' : item.is_anomaly === false ? '否' : '未知'}`,
+                    `置信度：${item.confidence ?? 0}`,
+                    ...(item.evidence || [])
+                ]],
+                ['缺陷分类', mmadAnalysis?.defect_classification, item => [
+                    `类型：${item.defect_type || 'unknown'}`,
+                    ...(item.candidates || []).map(candidate => `候选：${candidate}`),
+                    ...(item.evidence || [])
+                ]],
+                ['缺陷定位', mmadAnalysis?.defect_localization, item => [
+                    item.description || '',
+                    ...(item.locations || []).map(location => `位置：${location}`),
+                    item.heatmap_available ? '已生成热力图' : '',
+                    item.mask_available ? '已生成掩码' : ''
+                ]],
+                ['缺陷描述', mmadAnalysis?.defect_description, item => [
+                    ...(item.descriptions || []),
+                    ...(item.severity_hints || []).map(severity => `严重度线索：${severity}`)
+                ]],
+                ['产品分类', mmadAnalysis?.object_classification, item => [
+                    `类别：${item.category || 'unknown'}`,
+                    `对象：${item.object_name || 'unknown'}`,
+                    ...(item.evidence || [])
+                ]]
+            ];
+
+            mmadLabels.forEach(([title, item, mapper]) => {
+                if (!item) return;
+                const items = mapper(item).filter(Boolean);
+                if (!items.length) return;
+                blocks.push(`
+                    <div class="analysis-block">
+                        <div class="analysis-block-title">MMAD · ${escapeHtml(title)}</div>
+                        <ul class="analysis-list">
+                            ${items.map(value => `<li>${escapeHtml(String(value))}</li>`).join('')}
+                        </ul>
+                    </div>
+                `);
+            });
+
+            if (!normalized) {
+                if (els.analysisDetails) {
+                    els.analysisDetails.innerHTML = blocks.join('');
+                }
+                return;
+            }
+
             const componentFindingItems = (normalized.component_findings || []).map(item => {
                 const location = item?.location || 'unknown';
                 const component = item?.component || '关键功能区';
@@ -2603,7 +2667,7 @@
             }
 
             renderAnomalies(result.anomalies);
-            renderAnalysisPanel(getStructuredAnalysis(result));
+            renderAnalysisPanel(getStructuredAnalysis(result), getMmadAnalysis(result));
             renderLocalization(result.anomalies, result);
 
             if (state.pending) {
@@ -2668,7 +2732,7 @@
             setMarkdownContent(els.reportPanel, '', '???');
             setMarkdownContent(els.reportPanelInline, '', '???');
             els.anomalyChips.innerHTML = '';
-            renderAnalysisPanel(null);
+            renderAnalysisPanel(null, null);
 
             setMessage(els.detectMessage, 'info', '');
             setMessage(els.followupMessage, 'info', '');

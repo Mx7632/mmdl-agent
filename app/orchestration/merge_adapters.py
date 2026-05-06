@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.analysis.mmad_pipeline import build_mmad_analysis_context, dump_mmad_analysis
 from app.memory.state import DetectionState
 from app.orchestration.context_store import set_pending_clarification, set_prompt_context
 from app.schemas.detection import DetectionResult
@@ -78,6 +79,17 @@ async def supervisor_merge_node(state: DetectionState) -> DetectionState:
             continue
         payload = output.get("payload", {})
         merge_adapter(state, payload, result)
+
+    domain = state.domain_runtime()
+    if domain.shared_context.vision or domain.shared_context.knowledge or result.status == "failed":
+        domain.shared_context["mmad_analysis"] = build_mmad_analysis_context(
+            task=state.task,
+            vision=domain.shared_context.vision,
+            knowledge=domain.shared_context.knowledge,
+            result=result,
+        ).model_dump()
+        state.apply_domain_runtime(domain)
+        result.metadata["mmad_analysis"] = dump_mmad_analysis(state.shared_context.mmad_analysis)
 
     state.context["agent_trace"] = list(state.agent_trace)
     state.context["step_status"] = dict(state.step_status)

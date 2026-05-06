@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from app.memory.state import DetectionState
-from app.orchestration.context import ClarificationContext, KnowledgeContext
+from app.orchestration.context import ClarificationContext, KnowledgeContext, MMADAnalysisContext
 
 
 def ensure_knowledge_context(state: DetectionState) -> KnowledgeContext:
@@ -17,6 +17,12 @@ def ensure_clarification_context(state: DetectionState) -> ClarificationContext:
     if state.shared_context.clarification is None:
         state.shared_context.clarification = ClarificationContext()
     return state.shared_context.clarification
+
+
+def ensure_mmad_analysis_context(state: DetectionState) -> MMADAnalysisContext:
+    if state.shared_context.mmad_analysis is None:
+        state.shared_context.mmad_analysis = MMADAnalysisContext()
+    return state.shared_context.mmad_analysis
 
 
 def get_prompt_context(state: DetectionState) -> str | None:
