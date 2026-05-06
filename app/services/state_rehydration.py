@@ -64,6 +64,7 @@ def extract_mmad_analysis(state_dict: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_execution_metadata(state_dict: dict[str, Any]) -> dict[str, Any]:
+    result_metadata = extract_result_metadata(state_dict.get("result"))
     return {
         "agent_trace": list(state_dict.get("agent_trace", [])),
         "execution_plan": state_dict.get("execution_plan"),
@@ -72,6 +73,16 @@ def build_execution_metadata(state_dict: dict[str, Any]) -> dict[str, Any]:
         "execution_events": list(state_dict.get("execution_events", [])),
         "analysis_contracts": extract_analysis_contracts(state_dict),
         "mmad_analysis": extract_mmad_analysis(state_dict),
+        "few_shot": {
+            "vision": result_metadata.get("few_shot_examples")
+            or result_metadata.get("vision_few_shot", {}).get("examples")
+            or {},
+            "vision_context": result_metadata.get("few_shot_context")
+            or result_metadata.get("vision_few_shot", {}).get("context")
+            or "",
+            "knowledge": result_metadata.get("knowledge_few_shot", {}).get("examples", {}),
+            "knowledge_context": result_metadata.get("knowledge_few_shot", {}).get("context", ""),
+        },
     }
 
 

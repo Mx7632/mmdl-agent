@@ -75,6 +75,10 @@ Operational startup, RAG build, MMAD import, and PatchCore heatmap instructions
 are documented in
 [`Docs/runtime_guide.md`](/E:/Computer/Projects/20_products/anomaly-detection/mmdl-agent/Docs/runtime_guide.md).
 
+A Chinese end-to-end explanation of the current architecture and runtime flow is
+available in
+[`Docs/system_overview.md`](/E:/Computer/Projects/20_products/anomaly-detection/mmdl-agent/Docs/system_overview.md).
+
 ## Runtime Entry Points
 
 The active task runtime lives in `app/services`:
@@ -129,6 +133,17 @@ The flat knowledge fields (`possible_causes`, `component_scope`, and similar)
 are compatibility mirrors. Active code should consume the nested contracts
 first. `app/rag/knowledge_pipeline.py` coordinates the defect and object
 analysis pipelines before `KnowledgeAgent` emits a unified `KnowledgeContext`.
+Before that context is emitted, `KnowledgeAgent` also uses `FewShotSelector`
+and `FewShotPromptBuilder` to add balanced normal/anomaly references from RAG:
+
+```text
+KnowledgeAgent
+  -> RAG similar-case retrieval
+  -> FewShotSelector
+  -> FewShotPromptBuilder
+  -> knowledge_pipeline
+```
+
 Execution metadata also exposes these contracts under `analysis_contracts` so
 SSE snapshots, final results, and frontend analysis panels share the same
 shape.

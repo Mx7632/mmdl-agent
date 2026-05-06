@@ -277,6 +277,41 @@ class RagService:
             )
         return rows
 
+    def query_fewshot_rows(
+        self,
+        query_text: str,
+        category: Optional[str],
+        top_k: Optional[int],
+    ) -> list[dict[str, Any]]:
+        k = top_k or settings.rag_top_k
+        anomaly_rows = self.retriever.retrieve_similar(
+            query_description=query_text,
+            top_k=k,
+            category=category,
+            only_anomaly=True,
+        )
+        normal_rows = self.retriever.retrieve_similar(
+            query_description=query_text,
+            top_k=max(1, min(k, 2)),
+            category=category,
+            only_anomaly=False,
+        )
+        if category and not anomaly_rows:
+            anomaly_rows = self.retriever.retrieve_similar(
+                query_description=query_text,
+                top_k=k,
+                category=None,
+                only_anomaly=True,
+            )
+        if category and not normal_rows:
+            normal_rows = self.retriever.retrieve_similar(
+                query_description=query_text,
+                top_k=max(1, min(k, 2)),
+                category=None,
+                only_anomaly=False,
+            )
+        return anomaly_rows + normal_rows
+
     def query_rows_by_image(self, image_path: str, category: Optional[str], top_k: Optional[int]) -> list[dict[str, Any]]:
         k = top_k or settings.rag_top_k
         rows = self.retriever.retrieve_similar_by_image(

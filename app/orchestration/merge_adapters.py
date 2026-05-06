@@ -29,11 +29,15 @@ def merge_vision_output(state: DetectionState, payload: dict, result: DetectionR
 
 
 def merge_knowledge_output(state: DetectionState, payload: dict, result: DetectionResult) -> None:
-    del result
     domain = state.domain_runtime()
     domain.shared_context["knowledge"] = payload
     state.apply_domain_runtime(domain)
     set_prompt_context(state, payload.get("prompt_context", state.context.get("rag_context")))
+    if payload.get("few_shot_examples") or payload.get("few_shot_context"):
+        result.metadata["knowledge_few_shot"] = {
+            "examples": payload.get("few_shot_examples") or {},
+            "context": payload.get("few_shot_context") or "",
+        }
 
 
 def merge_clarification_output(state: DetectionState, payload: dict, result: DetectionResult) -> None:

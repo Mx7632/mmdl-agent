@@ -134,10 +134,22 @@ What the builder does:
 2. `AnomalyTextGenerator` creates a description for each row.
 3. `VectorStore` embeds and stores rows into Chroma.
 4. `KnowledgeAgent` retrieves similar cases at runtime.
-5. `knowledge_pipeline` turns retrieved rows into:
+5. `FewShotSelector` selects balanced normal/anomaly examples.
+6. `FewShotPromptBuilder` builds a compact few-shot context block.
+7. `knowledge_pipeline` turns retrieved rows and few-shot context into:
    - `defect_analysis`
    - `object_analysis`
-6. `mmad_pipeline` embeds those outputs into the seven-task MMAD view.
+8. `mmad_pipeline` embeds those outputs into the seven-task MMAD view.
+
+The active KnowledgeAgent path is:
+
+```text
+KnowledgeAgent
+  -> RAG similar-case retrieval
+  -> FewShotSelector normal/anomaly selection
+  -> FewShotPromptBuilder few-shot context
+  -> knowledge_pipeline defect/object analysis
+```
 
 ## How MMAD Data Fits In
 

@@ -83,6 +83,8 @@ class MMADAnalysisContext(BaseModel):
 class KnowledgeContext(BaseModel):
     rows: list[dict[str, Any]] = Field(default_factory=list)
     prompt_context: str | None = None
+    few_shot_examples: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    few_shot_context: str | None = None
     defect_analysis: DefectAnalysisContext = Field(default_factory=DefectAnalysisContext)
     object_analysis: ObjectAnalysisContext = Field(default_factory=ObjectAnalysisContext)
     # Compatibility mirrors. New code should prefer defect_analysis/object_analysis.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.orchestration import AgentEnvelope
+from app.rag.fewshot import build_fewshot_context
 from app.rag.knowledge_pipeline import (
     build_defect_analysis_contract,
     build_knowledge_context,
@@ -27,6 +28,16 @@ class KnowledgeAgent:
             category=category,
             top_k=3,
         )
+        if hasattr(service, "query_fewshot_rows"):
+            fewshot_rows = service.query_fewshot_rows(
+                query_text=query_text,
+                category=category,
+                top_k=4,
+            )
+        else:
+            fewshot_rows = rows
+        few_shot_examples, few_shot_context = build_fewshot_context(fewshot_rows)
+
         defect_context, defect_prompt_context = build_defect_analysis_contract(
             rows=rows,
             anomalies=anomalies,
@@ -45,6 +56,8 @@ class KnowledgeAgent:
             defect_prompt_context=defect_prompt_context,
             object_analysis=object_context_payload,
             object_prompt_context=object_prompt_context,
+            few_shot_context=few_shot_context,
+            few_shot_examples=few_shot_examples,
         )
         summary = summarize_knowledge_context(knowledge_context)
 

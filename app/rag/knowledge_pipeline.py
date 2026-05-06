@@ -97,8 +97,12 @@ def build_knowledge_context(
     defect_prompt_context: str,
     object_analysis: ObjectAnalysisContext,
     object_prompt_context: str,
+    few_shot_context: str | None = None,
+    few_shot_examples: dict[str, list[dict[str, Any]]] | None = None,
 ) -> KnowledgeContext:
     prompt_context = defect_prompt_context
+    if few_shot_context:
+        prompt_context = f"{prompt_context}\n\n{few_shot_context}".strip()
     if object_prompt_context:
         prompt_context = f"{prompt_context}\n\n{object_prompt_context}".strip()
 
@@ -107,6 +111,8 @@ def build_knowledge_context(
         prompt_context=prompt_context,
         defect_analysis=defect_analysis,
         object_analysis=object_analysis,
+        few_shot_examples=few_shot_examples or {},
+        few_shot_context=few_shot_context,
     )
 
 
@@ -114,6 +120,8 @@ def dump_knowledge_payload(context: KnowledgeContext) -> dict[str, Any]:
     return {
         "rows": list(context.rows),
         "prompt_context": context.prompt_context,
+        "few_shot_examples": context.few_shot_examples,
+        "few_shot_context": context.few_shot_context,
         "defect_analysis": context.defect_analysis.model_dump(),
         "object_analysis": context.object_analysis.model_dump(),
     }
@@ -137,6 +145,8 @@ def format_analysis_contracts(context: KnowledgeContext, *, empty_text: str = "(
         sections.append(f"[Object summary]\n{obj.object_summary}")
     if obj.object_knowledge_summary:
         sections.append(f"[Object knowledge summary]\n{obj.object_knowledge_summary}")
+    if context.few_shot_context:
+        sections.append(context.few_shot_context)
     if obj.object_knowledge_hits:
         sections.append(
             "[Object knowledge hits]\n"

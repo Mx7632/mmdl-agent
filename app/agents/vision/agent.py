@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from app.orchestration import AgentEnvelope
 from app.schemas.detection import DetectionTask
 from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool
@@ -11,11 +13,28 @@ class VisionAgent:
     def __init__(self, tool: ImageAnomalyDetectionTool | None = None) -> None:
         self.tool = tool or ImageAnomalyDetectionTool()
 
-    async def run(self, task: DetectionTask) -> AgentEnvelope:
-        response = await self.tool.run(task)
+    async def run(
+        self,
+        task: DetectionTask,
+        *,
+        few_shot_examples: dict[str, list[dict[str, Any]]] | None = None,
+        few_shot_context: str | None = None,
+    ) -> AgentEnvelope:
+        task_for_tool = task
+        if few_shot_examples or few_shot_context:
+            parameters = dict(task.parameters or {})
+            parameters["few_shot_examples"] = few_shot_examples or {}
+            parameters["few_shot_context"] = few_shot_context or ""
+            task_for_tool = task.model_copy(update={"parameters": parameters}, deep=True)
+
+        response = await self.tool.run(task_for_tool)
         result = response.result
         anomalies = result.anomalies if result else []
         metadata = result.metadata if result else {}
+        if few_shot_examples or few_shot_context:
+            metadata = dict(metadata or {})
+            metadata["few_shot_examples"] = few_shot_examples or {}
+            metadata["few_shot_context"] = few_shot_context or ""
         summary = result.summary if result else None
         status = "success" if response.success else "failed"
 

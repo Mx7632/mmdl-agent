@@ -173,7 +173,7 @@ def _build_visual_prompt(task: DetectionTask, detector_params: dict[str, Any], i
         ],
         "observations": "string optional",
     }
-    return {
+    prompt = {
         "task_id": task.task_id,
         "asset_id": task.asset_id,
         "time_range": {"start": task.start_time, "end": task.end_time},
@@ -189,6 +189,14 @@ def _build_visual_prompt(task: DetectionTask, detector_params: dict[str, Any], i
         ],
         "output_schema": output_schema,
     }
+    few_shot_context = (task.parameters or {}).get("few_shot_context")
+    few_shot_examples = (task.parameters or {}).get("few_shot_examples")
+    if few_shot_context:
+        prompt["few_shot_context"] = few_shot_context
+        prompt["requirements"].append("Use few-shot normal/anomaly references only as calibration evidence.")
+    if few_shot_examples:
+        prompt["few_shot_examples"] = few_shot_examples
+    return prompt
 
 
 class QwenImageAnomalyDetectionTool(BaseTool):
@@ -270,6 +278,8 @@ class QwenImageAnomalyDetectionTool(BaseTool):
                 "image_size": image_size,
                 "localization_available": any(item.get("has_localization") for item in anomalies),
                 "analysis_mode": "localization" if require_localization else "detection",
+                "few_shot_examples": (task.parameters or {}).get("few_shot_examples") or {},
+                "few_shot_context": (task.parameters or {}).get("few_shot_context") or "",
             },
         )
         return ToolResponse(tool_name=self.name, success=True, result=result)

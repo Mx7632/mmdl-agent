@@ -33,6 +33,7 @@ from app.rag.knowledge_pipeline import (
 from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool, resolve_visual_backend
 from app.orchestration.context_store import get_pending_context_from_mapping
 from app.rag.defect_analysis import build_structured_analysis
+from app.rag.fewshot import FewShotPromptBuilder, FewShotSelector, build_fewshot_context
 from app.rag.object_analysis import build_structured_object_analysis
 from app.rag.object_knowledge import query_object_knowledge
 from app.services.state_rehydration import build_execution_metadata
@@ -271,6 +272,28 @@ def test_build_execution_metadata_includes_mmad_analysis():
     assert result_only_metadata["mmad_analysis"]["object_classification"]["category"] == "capsule"
 
 
+def test_build_execution_metadata_includes_fewshot_records():
+    metadata = build_execution_metadata(
+        {
+            "result": {
+                "metadata": {
+                    "few_shot_examples": {"normal": [{"id": "normal-1"}], "anomaly": [{"id": "bad-1"}]},
+                    "few_shot_context": "[Few-shot normal examples]",
+                    "knowledge_few_shot": {
+                        "examples": {"normal": [{"id": "normal-k"}], "anomaly": [{"id": "bad-k"}]},
+                        "context": "[Few-shot anomaly examples]",
+                    },
+                }
+            }
+        }
+    )
+
+    assert metadata["few_shot"]["vision"]["normal"][0]["id"] == "normal-1"
+    assert metadata["few_shot"]["vision_context"] == "[Few-shot normal examples]"
+    assert metadata["few_shot"]["knowledge"]["anomaly"][0]["id"] == "bad-k"
+    assert metadata["few_shot"]["knowledge_context"] == "[Few-shot anomaly examples]"
+
+
 def test_supervisor_merge_generates_mmad_analysis_metadata():
     state = build_state()
     state.agent_outputs["vision"] = {
@@ -289,6 +312,8 @@ def test_supervisor_merge_generates_mmad_analysis_metadata():
     state.agent_outputs["knowledge"] = {
         "payload": {
             "prompt_context": "case context",
+            "few_shot_examples": {"normal": [{"id": "normal-1"}], "anomaly": [{"id": "case-1"}]},
+            "few_shot_context": "[Few-shot normal examples]\n- normal-1",
             "defect_analysis": {
                 "analysis_summary": "structured defect summary",
                 "possible_causes": ["local stress"],
@@ -307,6 +332,7 @@ def test_supervisor_merge_generates_mmad_analysis_metadata():
     assert updated.result.metadata["mmad_analysis"]["anomaly_discrimination"]["is_anomaly"] is True
     assert updated.result.metadata["mmad_analysis"]["defect_classification"]["defect_type"] == "surface_anomaly"
     assert updated.result.metadata["mmad_analysis"]["object_classification"]["object_name"] == "玻璃瓶"
+    assert updated.result.metadata["knowledge_few_shot"]["examples"]["normal"][0]["id"] == "normal-1"
 
 
 def test_knowledge_pipeline_builds_orchestrated_context():
@@ -352,16 +378,58 @@ def test_knowledge_pipeline_builds_orchestrated_context():
         defect_prompt_context=defect_prompt_context,
         object_analysis=object_context_payload,
         object_prompt_context=object_prompt_context,
+        few_shot_context="[Few-shot anomaly examples]\n- category=bottle; type=crack",
+        few_shot_examples={"normal": [], "anomaly": rows},
     )
 
     assert knowledge_context.defect_analysis.analysis_summary
     assert knowledge_context.object_analysis.object_profile["display_name"] == "高压玻璃容器"
     assert "[可能成因]" in (knowledge_context.prompt_context or "")
+    assert "[Few-shot anomaly examples]" in (knowledge_context.prompt_context or "")
     assert "[Object profile]" in (knowledge_context.prompt_context or "")
     assert summarize_knowledge_context(knowledge_context)
     payload = dump_knowledge_payload(knowledge_context)
-    assert set(payload) == {"rows", "prompt_context", "defect_analysis", "object_analysis"}
+    assert set(payload) == {
+        "rows",
+        "prompt_context",
+        "few_shot_examples",
+        "few_shot_context",
+        "defect_analysis",
+        "object_analysis",
+    }
     assert payload["defect_analysis"]["possible_causes"]
+    assert payload["few_shot_examples"]["anomaly"][0]["id"] == "case-1"
+
+
+def test_fewshot_selector_balances_normal_and_anomaly_cases():
+    rows = [
+        {"id": "a1", "description": "crack", "metadata": {"is_anomaly": True, "category": "bottle", "anomaly_type": "crack"}},
+        {"id": "a2", "description": "chip", "metadata": {"is_anomaly": True, "category": "bottle", "anomaly_type": "chip"}},
+        {"id": "a3", "description": "extra", "metadata": {"is_anomaly": True, "category": "bottle", "anomaly_type": "scratch"}},
+        {"id": "n1", "description": "normal rim", "metadata": {"is_anomaly": False, "category": "bottle", "anomaly_type": "good"}},
+    ]
+
+    selected = FewShotSelector(max_normal=1, max_anomaly=2).select(rows)
+    context = FewShotPromptBuilder().build(selected)
+
+    assert [item["id"] for item in selected["anomaly"]] == ["a1", "a2"]
+    assert [item["id"] for item in selected["normal"]] == ["n1"]
+    assert "[Few-shot normal examples]" in context
+    assert "[Few-shot anomaly examples]" in context
+    assert "normal rim" in context
+
+
+def test_build_fewshot_context_returns_selected_rows_and_prompt_text():
+    rows = [
+        {"id": "normal", "description": "good bottle", "metadata": {"is_anomaly": False, "category": "bottle"}},
+        {"id": "bad", "description": "broken bottle", "metadata": {"is_anomaly": True, "category": "bottle", "anomaly_type": "broken"}},
+    ]
+
+    selected, context = build_fewshot_context(rows)
+
+    assert selected["normal"][0]["id"] == "normal"
+    assert selected["anomaly"][0]["id"] == "bad"
+    assert "broken bottle" in context
 
 
 def test_supervisor_fallback_returns_structured_vision_plan(monkeypatch: pytest.MonkeyPatch):
@@ -599,6 +667,22 @@ async def test_knowledge_agent_applies_object_context_override(monkeypatch: pyte
                 }
             ]
 
+        def query_fewshot_rows(self, query_text: str, category: str | None, top_k: int | None):
+            return [
+                {
+                    "id": "normal-1",
+                    "description": "normal high-pressure bottle rim",
+                    "distance": 0.2,
+                    "metadata": {"category": "bottle", "is_anomaly": False, "anomaly_type": "good"},
+                },
+                {
+                    "id": "case-1",
+                    "description": "similar bottle crack case",
+                    "distance": 0.11,
+                    "metadata": {"category": "bottle", "is_anomaly": True, "anomaly_type": "crack"},
+                },
+            ]
+
     monkeypatch.setattr("app.agents.knowledge.agent.get_rag_service", lambda: FakeService())
 
     task = DetectionTask(
@@ -623,7 +707,17 @@ async def test_knowledge_agent_applies_object_context_override(monkeypatch: pyte
         anomalies=[{"type": "surface_anomaly", "score": 0.61, "location": "top-right"}],
     )
 
-    assert set(envelope.payload) == {"rows", "prompt_context", "defect_analysis", "object_analysis"}
+    assert set(envelope.payload) == {
+        "rows",
+        "prompt_context",
+        "few_shot_examples",
+        "few_shot_context",
+        "defect_analysis",
+        "object_analysis",
+    }
+    assert envelope.payload["few_shot_examples"]["normal"][0]["id"] == "normal-1"
+    assert envelope.payload["few_shot_examples"]["anomaly"][0]["id"] == "case-1"
+    assert "[Few-shot normal examples]" in envelope.payload["prompt_context"]
     assert envelope.payload["object_analysis"]["object_profile"]["display_name"] == "高压玻璃容器"
     assert envelope.payload["object_analysis"]["component_findings"][0]["component"] == "上封口区"
     assert "asset_id=asset-ctx-001" in envelope.payload["object_analysis"]["object_summary"]
@@ -665,6 +759,50 @@ async def test_vision_agent_failure_does_not_fallback_to_normal_summary():
     assert envelope.status == "failed"
     assert "No obvious visual anomaly" not in (envelope.summary or "")
     assert "failed" in (envelope.summary or "")
+
+
+@pytest.mark.asyncio
+async def test_vision_agent_injects_fewshot_context_into_tool_and_metadata():
+    captured_parameters: dict[str, object] = {}
+
+    class FakeVisionTool:
+        async def run(self, task):
+            captured_parameters.update(task.parameters or {})
+            return ToolResponse(
+                tool_name="fake_vision",
+                success=True,
+                result=DetectionResult(
+                    task_id=task.task_id,
+                    status="success",
+                    anomalies=[{"type": "scratch", "score": 0.7}],
+                    summary="vision done",
+                    metadata={"confidence": 0.7, "category": "bottle"},
+                ),
+            )
+
+    task = DetectionTask(
+        task_id="vision-fewshot",
+        asset_id="asset-001",
+        start_time="2026-05-06T00:00:00Z",
+        end_time="2026-05-06T00:01:00Z",
+        parameters={"image_base64": "aW1hZ2U="},
+    )
+    few_shot_examples = {
+        "normal": [{"id": "normal-1", "metadata": {"is_anomaly": False}}],
+        "anomaly": [{"id": "case-1", "metadata": {"is_anomaly": True}}],
+    }
+    few_shot_context = "[Few-shot normal examples]\n- normal-1"
+
+    envelope = await VisionAgent(tool=FakeVisionTool()).run(
+        task,
+        few_shot_examples=few_shot_examples,
+        few_shot_context=few_shot_context,
+    )
+
+    assert captured_parameters["few_shot_examples"] == few_shot_examples
+    assert captured_parameters["few_shot_context"] == few_shot_context
+    assert envelope.payload["metadata"]["few_shot_examples"] == few_shot_examples
+    assert envelope.payload["metadata"]["few_shot_context"] == few_shot_context
 
 
 def test_detection_state_runtime_views_group_fields():
@@ -806,7 +944,7 @@ def test_supervisor_prefers_llm_structured_plan(monkeypatch: pytest.MonkeyPatch)
 def test_supervisor_execute_and_merge(monkeypatch: pytest.MonkeyPatch):
     state = build_state("Please explain the reason and repair suggestion for the anomaly.")
 
-    async def fake_vision_run(self, task):
+    async def fake_vision_run(self, task, **kwargs):
         return AgentEnvelope(
             agent_name="vision",
             summary="vision done",
@@ -1318,7 +1456,7 @@ def test_supervisor_execute_records_tool_context(monkeypatch: pytest.MonkeyPatch
     }
     tool_context_calls: list[object] = []
 
-    async def fake_vision_run(self, task):
+    async def fake_vision_run(self, task, **kwargs):
         return AgentEnvelope(
             agent_name="vision",
             summary="vision done",
@@ -1351,7 +1489,7 @@ def test_supervisor_execute_failed_envelope_does_not_merge_as_success(monkeypatc
         ]
     }
 
-    async def fake_vision_run(self, task):
+    async def fake_vision_run(self, task, **kwargs):
         return AgentEnvelope(
             agent_name="vision",
             status="failed",
