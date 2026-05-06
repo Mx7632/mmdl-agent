@@ -163,6 +163,82 @@ def _derive_location_text(bbox: list[int] | None, image_size: tuple[int, int]) -
     return f"{vertical}-{horizontal}"
 
 
+def _derive_size_label(area_ratio: float) -> str:
+    if area_ratio < 0.01:
+        return "small"
+    if area_ratio < 0.05:
+        return "medium"
+    return "large"
+
+
+def _derive_shape_label(width_ratio: float, height_ratio: float) -> str:
+    if width_ratio >= 2.2:
+        return "elongated-horizontal"
+    if height_ratio >= 2.2:
+        return "elongated-vertical"
+    if 0.8 <= width_ratio / max(height_ratio, 1e-6) <= 1.25:
+        return "compact"
+    return "irregular"
+
+
+def _derive_texture_hint(score: float, bbox: list[int]) -> str:
+    box_width = max(1, bbox[2] - bbox[0])
+    box_height = max(1, bbox[3] - bbox[1])
+    aspect_ratio = max(box_width / box_height, box_height / box_width)
+    if aspect_ratio >= 3.0:
+        return "sharp linear response"
+    if score >= 0.75:
+        return "dense high-contrast region"
+    if score >= 0.45:
+        return "localized contrast variation"
+    return "faint diffuse response"
+
+
+def _derive_color_hint(score: float) -> str:
+    if score >= 0.75:
+        return "strong warm hotspot"
+    if score >= 0.45:
+        return "moderate warm hotspot"
+    return "mild warm hotspot"
+
+
+def _derive_severity_hint(score: float) -> str:
+    if score >= 0.75:
+        return "high"
+    if score >= 0.45:
+        return "medium"
+    return "low"
+
+
+def _build_patchcore_description(
+    *,
+    location: str | None,
+    size_label: str,
+    shape_label: str,
+    texture_hint: str,
+    severity_hint: str,
+) -> str:
+    zh_size = {"small": "小型", "medium": "中等大小", "large": "较大"}
+    zh_shape = {
+        "elongated-horizontal": "横向细长",
+        "elongated-vertical": "纵向细长",
+        "compact": "紧凑块状",
+        "irregular": "不规则",
+    }
+    zh_severity = {"low": "较弱", "medium": "中等", "high": "较强"}
+    texture_map = {
+        "sharp linear response": "线性边缘较明显",
+        "dense high-contrast region": "局部对比度高",
+        "localized contrast variation": "局部存在对比变化",
+        "faint diffuse response": "响应较弱且略分散",
+    }
+    prefix = f"在{location}区域" if location else "在图像中"
+    return (
+        f"{prefix}发现一处{zh_size.get(size_label, '局部')}{zh_shape.get(shape_label, '异常')}异常热区，"
+        f"整体响应{zh_severity.get(severity_hint, '中等')}，{texture_map.get(texture_hint, texture_hint)}。"
+    )
+
+
 def _extract_anomalies_from_heatmap(
     heatmap: np.ndarray,
     threshold: float,
@@ -182,14 +258,37 @@ def _extract_anomalies_from_heatmap(
         component = heatmap[y : y + h, x : x + w]
         score = float(component.max()) if component.size else 0.0
         bbox = [int(x), int(y), int(x + w), int(y + h)]
+        area_ratio = float(area) / float(max(1, width * height))
+        box_width = max(1, w)
+        box_height = max(1, h)
+        location = _derive_location_text(bbox, image_size)
+        size_label = _derive_size_label(area_ratio)
+        shape_label = _derive_shape_label(box_width / max(width, 1), box_height / max(height, 1))
+        texture_hint = _derive_texture_hint(score, bbox)
+        color_hint = _derive_color_hint(score)
+        severity_hint = _derive_severity_hint(score)
         anomalies.append(
             {
                 "type": "surface_anomaly",
                 "score": round(score, 4),
                 "details": "PatchCore anomaly region",
                 "bbox": bbox,
-                "location": _derive_location_text(bbox, image_size),
+                "location": location,
                 "has_localization": True,
+                "appearance": {
+                    "shape": shape_label,
+                    "size": size_label,
+                    "texture": texture_hint,
+                    "color_hint": color_hint,
+                },
+                "severity_hint": severity_hint,
+                "description": _build_patchcore_description(
+                    location=location,
+                    size_label=size_label,
+                    shape_label=shape_label,
+                    texture_hint=texture_hint,
+                    severity_hint=severity_hint,
+                ),
             }
         )
 

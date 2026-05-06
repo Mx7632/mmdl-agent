@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -163,7 +163,8 @@
         }
 
         .field input,
-        .field textarea {
+        .field textarea,
+        .field select {
             width: 100%;
             border: 1px solid var(--line);
             border-radius: var(--radius-md);
@@ -176,6 +177,19 @@
 
         .field textarea {
             min-height: 94px;
+        }
+
+        .inline-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .backend-note {
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.5;
         }
 
         .hint {
@@ -809,9 +823,79 @@
 
         .result-copy {
             min-height: 56px;
-            white-space: pre-wrap;
             line-height: 1.7;
             color: var(--text);
+        }
+
+        .markdown-body {
+            white-space: normal;
+            word-break: break-word;
+        }
+
+        .markdown-body > :first-child {
+            margin-top: 0;
+        }
+
+        .markdown-body > :last-child {
+            margin-bottom: 0;
+        }
+
+        .markdown-body p,
+        .markdown-body ul,
+        .markdown-body ol,
+        .markdown-body pre,
+        .markdown-body blockquote,
+        .markdown-body h1,
+        .markdown-body h2,
+        .markdown-body h3,
+        .markdown-body h4 {
+            margin: 0 0 12px;
+        }
+
+        .markdown-body ul,
+        .markdown-body ol {
+            padding-left: 22px;
+        }
+
+        .markdown-body li + li {
+            margin-top: 6px;
+        }
+
+        .markdown-body blockquote {
+            padding: 8px 12px;
+            border-left: 3px solid var(--accent);
+            border-radius: 0 10px 10px 0;
+            background: rgba(37, 99, 235, 0.08);
+            color: var(--muted);
+        }
+
+        .markdown-body pre {
+            overflow: auto;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+
+        .markdown-body code {
+            font-family: Consolas, "SFMono-Regular", monospace;
+            font-size: 0.92em;
+        }
+
+        .markdown-body :not(pre) > code {
+            padding: 2px 6px;
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.08);
+            color: #0f172a;
+        }
+
+        .markdown-body a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .markdown-body a:hover {
+            text-decoration: underline;
         }
 
         .chips {
@@ -828,6 +912,93 @@
             color: #214f9f;
             font-size: 12px;
             font-weight: 700;
+        }
+
+        .anomaly-card {
+            margin-top: 10px;
+            padding: 12px 14px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: #fbfdff;
+        }
+
+        .anomaly-card + .anomaly-card {
+            margin-top: 10px;
+        }
+
+        .anomaly-card-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .anomaly-card-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--ink);
+        }
+
+        .anomaly-card-score {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .anomaly-card-desc {
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--ink-soft);
+        }
+
+        .anomaly-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .anomaly-meta-item {
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: #edf2f7;
+            color: #334155;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .analysis-section {
+            margin-top: 12px;
+            padding: 12px 14px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: #f8fbff;
+        }
+
+        .analysis-section h3 {
+            margin: 0 0 10px;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--ink);
+        }
+
+        .analysis-block + .analysis-block {
+            margin-top: 10px;
+        }
+
+        .analysis-block-title {
+            margin: 0 0 6px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--ink-soft);
+        }
+
+        .analysis-list {
+            margin: 0;
+            padding-left: 18px;
+            color: var(--ink-soft);
+            font-size: 13px;
+            line-height: 1.6;
         }
 
         .composer {
@@ -926,47 +1097,98 @@
         <aside class="sidebar">
             <div class="brand">
                 <span class="brand-tag">MMDL Agent</span>
-                <h1>工业异常检测</h1>
-                <p>保留核心链路：上传图片、发起检测、继续追问、生成报告。布局改为对话式工作台。</p>
+                <h1>宸ヤ笟寮傚父妫€娴?/h1>
+                <p>淇濈暀鏍稿績閾捐矾锛氫笂浼犲浘鐗囥€佸彂璧锋娴嬨€佺户缁拷闂€佺敓鎴愭姤鍛娿€傚竷灞€鏀逛负瀵硅瘽寮忓伐浣滃彴銆?/p>
             </div>
 
             <div class="sidebar-scroll">
                 <section class="card">
-                    <h2>任务状态</h2>
+                    <h2>浠诲姟鐘舵€?/h2>
                     <div class="meta-list">
                         <div class="meta-item">
-                            <small>后端状态</small>
-                            <div id="backend-indicator">检查中</div>
+                            <small>鍚庣鐘舵€?/small>
+                            <div id="backend-indicator">妫€鏌ヤ腑</div>
                         </div>
                         <div class="meta-item">
-                            <small>任务 ID</small>
-                            <div id="task-indicator" class="mono">未创建</div>
+                            <small>浠诲姟 ID</small>
+                            <div id="task-indicator" class="mono">鏈垱寤?/div>
                         </div>
                         <div class="meta-item">
-                            <small>运行摘要</small>
-                            <div id="status-panel" class="mono">等待发起检测</div>
+                            <small>杩愯鎽樿</small>
+                            <div id="status-panel" class="mono">绛夊緟鍙戣捣妫€娴?/div>
                         </div>
                     </div>
                 </section>
 
                 <section class="card">
-                    <h2>任务配置</h2>
+                    <h2>浠诲姟閰嶇疆</h2>
                     <div class="field">
-                        <label for="asset-id">设备 ID</label>
-                        <input id="asset-id" type="text" placeholder="例如 PUMP-001">
+                        <label for="asset-id">璁惧 ID</label>
+                        <input id="asset-id" type="text" placeholder="渚嬪 PUMP-001">
                     </div>
                     <div class="field">
-                        <label for="image-input">检测图片</label>
+                        <label for="image-input">妫€娴嬪浘鐗?/label>
                         <input id="image-input" type="file" accept="image/*">
-                        <div class="hint">首次检测必须上传图片。后续追问复用当前任务上下文。</div>
+                        <div class="hint">棣栨妫€娴嬪繀椤讳笂浼犲浘鐗囥€傚悗缁拷闂鐢ㄥ綋鍓嶄换鍔′笂涓嬫枃銆?/div>
+                    </div>
+
+                    <div class="field">
+                        <label for="visual-backend">妫€娴嬪悗绔?/label>
+                        <select id="visual-backend">
+                            <option value="qwen">Qwen 瑙嗚妫€娴?/option>
+                            <option value="specialist">Specialist / AnomalyGPT</option>
+                            <option value="patchcore">PatchCore 鐑姏鍥炬娴?/option>
+                        </select>
+                        <div class="backend-note">闇€瑕佺儹鍔涘浘鏃堕€?PatchCore銆傞〉闈細鑷姩鎶婄被鍒拰闃堝€间竴骞朵紶缁欐帴鍙ｃ€?/div>
+                    </div>
+                    <div id="patchcore-config" class="inline-grid">
+                        <div class="field">
+                            <label for="patchcore-category">PatchCore 绫诲埆</label>
+                            <select id="patchcore-category">
+                                <option value="bottle">bottle</option>
+                                <option value="cable">cable</option>
+                                <option value="capsule">capsule</option>
+                                <option value="carpet">carpet</option>
+                                <option value="grid">grid</option>
+                                <option value="hazelnut">hazelnut</option>
+                                <option value="leather">leather</option>
+                                <option value="metal_nut">metal_nut</option>
+                                <option value="pill">pill</option>
+                                <option value="screw">screw</option>
+                                <option value="tile">tile</option>
+                                <option value="toothbrush">toothbrush</option>
+                                <option value="transistor">transistor</option>
+                                <option value="wood">wood</option>
+                                <option value="zipper">zipper</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="patchcore-threshold">PatchCore 闃堝€?/label>
+                            <input id="patchcore-threshold" type="number" min="0" max="1" step="0.05" value="0.5">
+                        </div>
+                    </div>
+                    <div id="object-context-config" class="field-group">
+                        <div class="field">
+                            <label for="object-display-name">对象名称（可选）</label>
+                            <input id="object-display-name" type="text" placeholder="例如：高压玻璃容器">
+                        </div>
+                        <div class="field">
+                            <label for="object-function-summary">功能说明（可选）</label>
+                            <textarea id="object-function-summary" rows="2" placeholder="例如：承担高压密封与液体承载功能。"></textarea>
+                        </div>
+                        <div class="field">
+                            <label for="object-components">关键部件（可选）</label>
+                            <input id="object-components" type="text" placeholder="例如：上封口区, 容器主体, 底部支撑区">
+                            <div class="hint">用逗号分隔。填写后会参与对象分析和报告生成。</div>
+                        </div>
                     </div>
 
                     <div class="preview">
-                        <div id="preview-text" class="hint">还没有选择图片</div>
+                        <div id="preview-text" class="hint">杩樻病鏈夐€夋嫨鍥剧墖</div>
                         <div class="preview-stage">
-                            <img id="preview-image" alt="预览图">
-                            <img id="analysis-image" class="analysis-image" alt="分析视图">
-                            <img id="mask-overlay" class="mask-overlay" alt="异常热区">
+                            <img id="preview-image" alt="棰勮鍥?>
+                            <img id="analysis-image" class="analysis-image" alt="鍒嗘瀽瑙嗗浘">
+                            <img id="mask-overlay" class="mask-overlay" alt="寮傚父鐑尯">
                             <div id="bbox-layer" class="bbox-layer"></div>
                         </div>
                         <div class="preview-toolbar">
@@ -981,13 +1203,14 @@
                                 <input id="overlay-opacity" type="range" min="20" max="100" value="72">
                             </label>
                         </div>
-                        <div id="localization-note" class="localization-note">当前还没有异常定位结果。</div>
+                        <div id="localization-note" class="localization-note">褰撳墠杩樻病鏈夊紓甯稿畾浣嶇粨鏋溿€?/div>
                     </div>
 
                     <div class="button-row" style="margin-top: 14px;">
-                        <button id="detect-button" class="primary" type="button">开始检测</button>
-                        <button id="report-button" class="ghost" type="button" disabled>生成报告</button>
-                        <button id="reset-button" class="secondary" type="button">新任务</button>
+                        <button id="detect-button" class="primary" type="button">寮€濮嬫娴?/button>
+                        <button id="patchcore-detect-button" class="ghost" type="button">?? PatchCore</button>
+                        <button id="report-button" class="ghost" type="button" disabled>鐢熸垚鎶ュ憡</button>
+                        <button id="reset-button" class="secondary" type="button">鏂颁换鍔?/button>
                     </div>
 
                     <div id="detect-message" class="message info"></div>
@@ -995,20 +1218,25 @@
                 </section>
 
                 <section class="card">
-                    <h2>异常摘要</h2>
-                    <div id="answer-panel" class="result-copy">暂无结果</div>
+                    <h2>寮傚父鎽樿</h2>
+                    <div id="answer-panel" class="result-copy">鏆傛棤缁撴灉</div>
                     <div id="anomaly-chips" class="chips"></div>
+                    <div id="analysis-panel" class="analysis-section" hidden>
+                        <h3>缺陷分析</h3>
+                        <div id="analysis-summary" class="result-copy">暂无分析结果</div>
+                        <div id="analysis-details"></div>
+                    </div>
                 </section>
 
                 <section class="card">
-                    <h2>待澄清信息</h2>
-                    <div id="pending-panel" class="result-copy">当前没有待澄清问题</div>
+                    <h2>寰呮緞娓呬俊鎭?/h2>
+                    <div id="pending-panel" class="result-copy">褰撳墠娌℃湁寰呮緞娓呴棶棰?/div>
                     <div id="followup-message" class="message info"></div>
                 </section>
 
                 <section class="card">
-                    <h2>完整报告</h2>
-                    <div id="report-panel" class="result-copy">尚未生成报告</div>
+                    <h2>瀹屾暣鎶ュ憡</h2>
+                    <div id="report-panel" class="result-copy">灏氭湭鐢熸垚鎶ュ憡</div>
                 </section>
             </div>
         </aside>
@@ -1016,12 +1244,12 @@
         <main class="main-panel">
             <header class="topbar">
                 <div>
-                    <h2>对话工作台</h2>
-                    <p>首次输入用于发起检测。任务创建后，输入框继续承担追问或澄清。</p>
+                    <h2>瀵硅瘽宸ヤ綔鍙?/h2>
+                    <p>棣栨杈撳叆鐢ㄤ簬鍙戣捣妫€娴嬨€備换鍔″垱寤哄悗锛岃緭鍏ユ缁х画鎵挎媴杩介棶鎴栨緞娓呫€?/p>
                 </div>
                 <div class="status-pills">
-                    <span class="pill">核心流程</span>
-                    <span class="pill" id="mode-indicator">模式：首轮检测</span>
+                    <span class="pill">鏍稿績娴佺▼</span>
+                    <span class="pill" id="mode-indicator">妯″紡锛氶杞娴?/span>
                 </div>
             </header>
 
@@ -1030,20 +1258,20 @@
 
                 <div class="result-grid">
                     <section class="result-card">
-                        <h3>当前回答</h3>
-                        <div id="answer-panel-inline" class="result-copy">暂无结果</div>
+                        <h3>褰撳墠鍥炵瓟</h3>
+                        <div id="answer-panel-inline" class="result-copy">鏆傛棤缁撴灉</div>
                     </section>
                     <section class="result-card">
-                        <h3>报告摘要</h3>
-                        <div id="report-panel-inline" class="result-copy">尚未生成报告</div>
+                        <h3>鎶ュ憡鎽樿</h3>
+                        <div id="report-panel-inline" class="result-copy">灏氭湭鐢熸垚鎶ュ憡</div>
                     </section>
                 </div>
 
                 <section class="timeline-card">
                     <div class="timeline-head">
                         <div>
-                            <h3>Multi-Agent 执行时间线</h3>
-                            <p>展示 supervisor 计划、step 状态、重试、挂起与恢复事件。</p>
+                            <h3>Multi-Agent 鎵ц鏃堕棿绾?/h3>
+                            <p>灞曠ず supervisor 璁″垝銆乻tep 鐘舵€併€侀噸璇曘€佹寕璧蜂笌鎭㈠浜嬩欢銆?/p>
                         </div>
                         <div id="timeline-summary" class="timeline-summary"></div>
                     </div>
@@ -1059,13 +1287,13 @@
                             <div class="timeline-panel">
                                 <div class="timeline-panel-head">
                                     <div>
-                                        <h4>Step 概览</h4>
-                                        <div id="timeline-steps-note" class="timeline-panel-note">任务启动后，这里会显示结构化 step 计划。</div>
+                                        <h4>Step 姒傝</h4>
+                                        <div id="timeline-steps-note" class="timeline-panel-note">浠诲姟鍚姩鍚庯紝杩欓噷浼氭樉绀虹粨鏋勫寲 step 璁″垝銆?/div>
                                     </div>
                                 </div>
                                 <div id="timeline-steps-body" class="timeline-panel-body">
                                     <div id="timeline-steps" class="timeline-list">
-                                        <div class="timeline-empty">任务启动后，这里会显示结构化 step 计划。</div>
+                                        <div class="timeline-empty">浠诲姟鍚姩鍚庯紝杩欓噷浼氭樉绀虹粨鏋勫寲 step 璁″垝銆?/div>
                                     </div>
                                 </div>
                             </div>
@@ -1074,13 +1302,13 @@
                             <div class="timeline-panel">
                                 <div class="timeline-panel-head">
                                     <div>
-                                        <h4>事件流</h4>
-                                        <div id="timeline-events-note" class="timeline-panel-note">执行中会持续追加 agent 事件。</div>
+                                        <h4>浜嬩欢娴?/h4>
+                                        <div id="timeline-events-note" class="timeline-panel-note">鎵ц涓細鎸佺画杩藉姞 agent 浜嬩欢銆?/div>
                                     </div>
                                 </div>
                                 <div id="timeline-events-body" class="timeline-panel-body">
                                     <div id="timeline-events" class="event-list">
-                                        <div class="timeline-empty">当前还没有执行事件。</div>
+                                        <div class="timeline-empty">褰撳墠杩樻病鏈夋墽琛屼簨浠躲€?/div>
                                     </div>
                                 </div>
                             </div>
@@ -1089,13 +1317,13 @@
                             <div class="timeline-panel">
                                 <div class="timeline-panel-head">
                                     <div>
-                                        <h4>详情面板</h4>
-                                        <div class="timeline-panel-note">点击 step 或事件，查看依赖、尝试次数和原始上下文。</div>
+                                        <h4>璇︽儏闈㈡澘</h4>
+                                        <div class="timeline-panel-note">鐐瑰嚮 step 鎴栦簨浠讹紝鏌ョ湅渚濊禆銆佸皾璇曟鏁板拰鍘熷涓婁笅鏂囥€?/div>
                                     </div>
                                 </div>
                                 <div class="timeline-panel-body">
                                     <div id="timeline-details" class="timeline-details-body">
-                                        <div class="timeline-empty">选择左侧 step 或事件后，这里会显示更完整的排障细节。</div>
+                                        <div class="timeline-empty">閫夋嫨宸︿晶 step 鎴栦簨浠跺悗锛岃繖閲屼細鏄剧ず鏇村畬鏁寸殑鎺掗殰缁嗚妭銆?/div>
                                     </div>
                                 </div>
                             </div>
@@ -1106,15 +1334,13 @@
 
             <footer class="composer">
                 <div class="composer-shell">
-                    <textarea id="question" placeholder="输入问题。首次用于发起检测；任务创建后继续追问，若当前为待澄清状态则用于提交澄清。"></textarea>
+                    <textarea id="question" placeholder="杈撳叆闂銆傞娆＄敤浜庡彂璧锋娴嬶紱浠诲姟鍒涘缓鍚庣户缁拷闂紝鑻ュ綋鍓嶄负寰呮緞娓呯姸鎬佸垯鐢ㄤ簬鎻愪氦婢勬竻銆?></textarea>
                     <div class="composer-foot">
                         <div class="composer-hint">
-                            首轮：上传图片并点击“开始检测”。
-                            继续：已有任务后可直接点击“发送追问”或“提交澄清”。
-                        </div>
+                            棣栬疆锛氫笂浼犲浘鐗囧苟鐐瑰嚮鈥滃紑濮嬫娴嬧€濄€?                            缁х画锛氬凡鏈変换鍔″悗鍙洿鎺ョ偣鍑烩€滃彂閫佽拷闂€濇垨鈥滄彁浜ゆ緞娓呪€濄€?                        </div>
                         <div class="composer-actions">
-                            <button id="followup-button" class="ghost" type="button" disabled>发送追问</button>
-                            <button id="continue-button" class="primary" type="button" disabled>提交澄清</button>
+                            <button id="followup-button" class="ghost" type="button" disabled>鍙戦€佽拷闂?/button>
+                            <button id="continue-button" class="primary" type="button" disabled>鎻愪氦婢勬竻</button>
                         </div>
                     </div>
                 </div>
@@ -1124,12 +1350,14 @@
 
     <script>
         const API_BASE = '';
+        const PATCHCORE_BACKEND = 'patchcore';
         const state = {
             taskId: '',
             pending: false,
             imageFile: null,
             history: [],
             lastResult: null,
+            lastAnalysis: null,
             visualAssets: {},
             visualMode: 'original',
             overlayOpacity: 72,
@@ -1151,10 +1379,18 @@
             maskOverlay: document.getElementById('mask-overlay'),
             bboxLayer: document.getElementById('bbox-layer'),
             localizationNote: document.getElementById('localization-note'),
+            visualBackend: document.getElementById('visual-backend'),
+            patchcoreConfig: document.getElementById('patchcore-config'),
+            patchcoreCategory: document.getElementById('patchcore-category'),
+            patchcoreThreshold: document.getElementById('patchcore-threshold'),
+            objectDisplayName: document.getElementById('object-display-name'),
+            objectFunctionSummary: document.getElementById('object-function-summary'),
+            objectComponents: document.getElementById('object-components'),
             previewModes: document.getElementById('preview-modes'),
             overlayOpacity: document.getElementById('overlay-opacity'),
             question: document.getElementById('question'),
             detectButton: document.getElementById('detect-button'),
+            patchcoreDetectButton: document.getElementById('patchcore-detect-button'),
             followupButton: document.getElementById('followup-button'),
             continueButton: document.getElementById('continue-button'),
             reportButton: document.getElementById('report-button'),
@@ -1171,6 +1407,9 @@
             reportPanel: document.getElementById('report-panel'),
             reportPanelInline: document.getElementById('report-panel-inline'),
             anomalyChips: document.getElementById('anomaly-chips'),
+            analysisPanel: document.getElementById('analysis-panel'),
+            analysisSummary: document.getElementById('analysis-summary'),
+            analysisDetails: document.getElementById('analysis-details'),
             historyPanel: document.getElementById('history-panel'),
             modeIndicator: document.getElementById('mode-indicator'),
             timelineSummary: document.getElementById('timeline-summary'),
@@ -1194,6 +1433,163 @@
             return new Date().toISOString();
         }
 
+        function applyStaticUiText() {
+            const brandTitle = document.querySelector('.brand h1');
+            const brandCopy = document.querySelector('.brand p');
+            const topbarTitle = document.querySelector('.topbar h2');
+            const topbarCopy = document.querySelector('.topbar p');
+            if (brandTitle) brandTitle.textContent = '工业异常检测';
+            if (brandCopy) brandCopy.textContent = '围绕上传图片、发起检测、继续追问、提交澄清和生成报告展开的多 agent 工作台。';
+            if (topbarTitle) topbarTitle.textContent = '对话式工作台';
+            if (topbarCopy) topbarCopy.textContent = '首轮输入用于发起检测；任务创建后，输入框继续承担追问或澄清。';
+
+            const cardTitles = document.querySelectorAll('.sidebar .card h2');
+            const cardTitleText = ['任务状态', '任务配置', '异常摘要', '待澄清信息', '完整报告'];
+            cardTitles.forEach((node, index) => {
+                if (cardTitleText[index]) node.textContent = cardTitleText[index];
+            });
+
+            const topbarPills = document.querySelectorAll('.status-pills .pill');
+            if (topbarPills[0]) topbarPills[0].textContent = '核心流程';
+
+            const metaLabels = document.querySelectorAll('.meta-item small');
+            const metaText = ['后端状态', '任务 ID', '运行摘要'];
+            metaLabels.forEach((node, index) => {
+                if (metaText[index]) node.textContent = metaText[index];
+            });
+
+            const fieldLabelMap = {
+                'asset-id': '设备 ID',
+                'image-input': '检测图片',
+                'visual-backend': '检测后端',
+                'patchcore-category': 'PatchCore 类别',
+                'patchcore-threshold': 'PatchCore 阈值',
+                'object-display-name': '对象名称',
+                'object-function-summary': '功能说明',
+                'object-components': '关键部件',
+                question: '输入问题'
+            };
+            Object.entries(fieldLabelMap).forEach(([id, text]) => {
+                const label = document.querySelector(`label[for="${id}"]`);
+                if (label) label.textContent = text;
+            });
+
+            if (els.assetId) els.assetId.placeholder = '例如 PUMP-001';
+            if (els.question) els.question.placeholder = '输入问题。首轮用于发起检测；任务创建后继续追问，若当前处于待澄清状态则用于提交澄清。';
+            if (els.objectDisplayName) els.objectDisplayName.placeholder = '例如 高压玻璃容器';
+            if (els.objectFunctionSummary) els.objectFunctionSummary.placeholder = '例如 承担密封与液体承载功能';
+            if (els.objectComponents) els.objectComponents.placeholder = '例如 瓶身, 瓶口封口区';
+            if (els.previewText && !state.imageFile) els.previewText.textContent = '还没有选择图片';
+            if (els.previewImage) els.previewImage.alt = '预览图';
+            if (els.analysisImage) els.analysisImage.alt = '分析视图';
+            if (els.maskOverlay) els.maskOverlay.alt = '异常热区';
+            if (els.detectButton) els.detectButton.textContent = '开始检测';
+            if (els.patchcoreDetectButton) els.patchcoreDetectButton.textContent = '运行 PatchCore';
+            if (els.reportButton) els.reportButton.textContent = '生成报告';
+            if (els.resetButton) els.resetButton.textContent = '新任务';
+            if (els.followupButton) els.followupButton.textContent = '发送追问';
+            if (els.continueButton) els.continueButton.textContent = '提交澄清';
+
+            const hintBlocks = document.querySelectorAll('.hint');
+            if (hintBlocks[0]) hintBlocks[0].textContent = '首次检测必须上传图片；后续追问会复用当前任务上下文。';
+
+            const backendNote = document.querySelector('.backend-note');
+            if (backendNote) backendNote.textContent = '需要热力图时选择 PatchCore。页面会自动把类别和阈值一并传给接口。';
+
+            const modeButtons = els.previewModes?.querySelectorAll('[data-visual-mode]') || [];
+            const modeButtonText = { original: '原图', bbox: '边界框', heatmap: '热力图', overlay: '叠加图' };
+            modeButtons.forEach(button => {
+                const mode = button.dataset.visualMode || '';
+                if (modeButtonText[mode]) button.textContent = modeButtonText[mode];
+            });
+
+            const opacityLabel = document.querySelector('.preview-opacity');
+            if (opacityLabel) {
+                opacityLabel.childNodes[0].textContent = '叠加透明度';
+            }
+
+            if (els.localizationNote && !state.lastResult) {
+                els.localizationNote.textContent = '当前还没有异常定位结果。';
+            }
+
+            const resultHeadings = document.querySelectorAll('.result-card h3');
+            if (resultHeadings[0]) resultHeadings[0].textContent = '当前回答';
+            if (resultHeadings[1]) resultHeadings[1].textContent = '报告摘要';
+
+            const timelineHeadTitle = document.querySelector('.timeline-head h3');
+            const timelineHeadCopy = document.querySelector('.timeline-head p');
+            if (timelineHeadTitle) timelineHeadTitle.textContent = '多 Agent 执行时间线';
+            if (timelineHeadCopy) timelineHeadCopy.textContent = '展示 supervisor 计划、step 状态、重试、挂起与恢复事件。';
+
+            const panelTitles = document.querySelectorAll('.timeline-panel-head h4');
+            const panelNotes = document.querySelectorAll('.timeline-panel-note');
+            if (panelTitles[0]) panelTitles[0].textContent = 'Step 概览';
+            if (panelTitles[1]) panelTitles[1].textContent = '事件流';
+            if (panelTitles[2]) panelTitles[2].textContent = '详情面板';
+            if (panelNotes[0]) panelNotes[0].textContent = '任务启动后，这里会显示结构化 step 计划。';
+            if (panelNotes[1]) panelNotes[1].textContent = '执行中会持续追加 agent 事件。';
+            if (panelNotes[2]) panelNotes[2].textContent = '点击 step 或事件，查看依赖、尝试次数和原始上下文。';
+
+            const timelineEmpty = document.querySelector('#timeline-details .timeline-empty');
+            if (timelineEmpty) timelineEmpty.textContent = '选择左侧 step 或事件后，这里会显示更完整的排障细节。';
+
+            const composerHint = document.querySelector('.composer-hint');
+            if (composerHint) composerHint.textContent = '首轮：上传图片并点击“开始检测”。继续：已有任务后可直接点击“发送追问”或“提交澄清”。';
+        }
+
+        function getSelectedBackend() {
+            return els.visualBackend?.value || 'qwen';
+        }
+
+        function getPatchcoreParameters() {
+            const threshold = Number(els.patchcoreThreshold?.value || 0.5);
+            return {
+                category: (els.patchcoreCategory?.value || 'bottle').trim().toLowerCase(),
+                threshold: Number.isFinite(threshold) ? threshold : 0.5
+            };
+        }
+
+        function getObjectContextParameters() {
+            const displayName = (els.objectDisplayName?.value || '').trim();
+            const functionSummary = (els.objectFunctionSummary?.value || '').trim();
+            const components = (els.objectComponents?.value || '')
+                .split(',')
+                .map(item => item.trim())
+                .filter(Boolean);
+
+            const objectContext = {};
+            if (displayName) objectContext.display_name = displayName;
+            if (functionSummary) objectContext.function_summary = functionSummary;
+            if (components.length) objectContext.components = components;
+            return objectContext;
+        }
+
+        function buildDetectionParameters(backendOverride = '') {
+            const backend = (backendOverride || getSelectedBackend()).trim().toLowerCase();
+            const parameters = {
+                tool_type: backend,
+                require_localization: true
+            };
+            const objectContext = getObjectContextParameters();
+            if (Object.keys(objectContext).length > 0) {
+                parameters.object_context = objectContext;
+            }
+            if (backend === PATCHCORE_BACKEND) {
+                parameters.detector_params = getPatchcoreParameters();
+            }
+            return parameters;
+        }
+
+        function syncBackendControls() {
+            const isPatchcore = getSelectedBackend() === PATCHCORE_BACKEND;
+            if (els.patchcoreConfig) {
+                els.patchcoreConfig.style.display = isPatchcore ? 'grid' : 'none';
+            }
+            if (els.patchcoreDetectButton) {
+                els.patchcoreDetectButton.classList.toggle('is-active', isPatchcore);
+            }
+        }
+
         function escapeHtml(value) {
             return String(value ?? '')
                 .replaceAll('&', '&amp;')
@@ -1201,6 +1597,157 @@
                 .replaceAll('>', '&gt;')
                 .replaceAll('"', '&quot;')
                 .replaceAll("'", '&#39;');
+        }
+
+        function escapeHtmlAttr(value) {
+            return escapeHtml(value).replaceAll('`', '&#96;');
+        }
+
+        function sanitizeMarkdownUrl(url) {
+            const raw = String(url || '').trim();
+            if (!raw) return '';
+            if (/^(https?:|mailto:)/i.test(raw)) return raw;
+            if (raw.startsWith('/') || raw.startsWith('./') || raw.startsWith('../') || raw.startsWith('#')) return raw;
+            return '';
+        }
+
+        function renderInlineMarkdown(text) {
+            let html = escapeHtml(text ?? '');
+            html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+            html = html.replace(/\[([^\]\n]+)\]\(([^)\n]+)\)/g, (_, label, href) => {
+                const safeHref = sanitizeMarkdownUrl(href);
+                if (!safeHref) {
+                    return `${label} (${escapeHtml(href)})`;
+                }
+                return `<a href="${escapeHtmlAttr(safeHref)}" target="_blank" rel="noreferrer noopener">${label}</a>`;
+            });
+            return html;
+        }
+
+        function renderMarkdown(text) {
+            const normalized = String(text ?? '').replace(/\r\n?/g, '\n').trim();
+            if (!normalized) return '';
+
+            const lines = normalized.split('\n');
+            const blocks = [];
+            let paragraph = [];
+            let listItems = [];
+            let listType = null;
+            let quoteLines = [];
+            let codeLines = [];
+            let inCodeBlock = false;
+
+            const flushParagraph = () => {
+                if (!paragraph.length) return;
+                blocks.push(`<p>${renderInlineMarkdown(paragraph.join(' '))}</p>`);
+                paragraph = [];
+            };
+
+            const flushList = () => {
+                if (!listItems.length) return;
+                blocks.push(`<${listType}>${listItems.map(item => `<li>${renderInlineMarkdown(item)}</li>`).join('')}</${listType}>`);
+                listItems = [];
+                listType = null;
+            };
+
+            const flushQuote = () => {
+                if (!quoteLines.length) return;
+                blocks.push(`<blockquote><p>${renderInlineMarkdown(quoteLines.join('<br>'))}</p></blockquote>`);
+                quoteLines = [];
+            };
+
+            const flushCode = () => {
+                if (!codeLines.length) return;
+                blocks.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+                codeLines = [];
+            };
+
+            for (const rawLine of lines) {
+                const line = rawLine.replace(/\t/g, '    ');
+                const trimmed = line.trim();
+
+                if (trimmed.startsWith('```')) {
+                    flushParagraph();
+                    flushList();
+                    flushQuote();
+                    if (inCodeBlock) {
+                        flushCode();
+                        inCodeBlock = false;
+                    } else {
+                        inCodeBlock = true;
+                    }
+                    continue;
+                }
+
+                if (inCodeBlock) {
+                    codeLines.push(line);
+                    continue;
+                }
+
+                if (!trimmed) {
+                    flushParagraph();
+                    flushList();
+                    flushQuote();
+                    continue;
+                }
+
+                const headingMatch = trimmed.match(/^(#{1,4})\s+(.*)$/);
+                if (headingMatch) {
+                    flushParagraph();
+                    flushList();
+                    flushQuote();
+                    const level = headingMatch[1].length;
+                    blocks.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`);
+                    continue;
+                }
+
+                const quoteMatch = trimmed.match(/^>\s?(.*)$/);
+                if (quoteMatch) {
+                    flushParagraph();
+                    flushList();
+                    quoteLines.push(quoteMatch[1]);
+                    continue;
+                }
+
+                const orderedMatch = trimmed.match(/^\d+\.\s+(.*)$/);
+                if (orderedMatch) {
+                    flushParagraph();
+                    flushQuote();
+                    if (listType && listType !== 'ol') flushList();
+                    listType = 'ol';
+                    listItems.push(orderedMatch[1]);
+                    continue;
+                }
+
+                const unorderedMatch = trimmed.match(/^[-*]\s+(.*)$/);
+                if (unorderedMatch) {
+                    flushParagraph();
+                    flushQuote();
+                    if (listType && listType !== 'ul') flushList();
+                    listType = 'ul';
+                    listItems.push(unorderedMatch[1]);
+                    continue;
+                }
+
+                if (listItems.length) flushList();
+                if (quoteLines.length) flushQuote();
+                paragraph.push(trimmed);
+            }
+
+            if (inCodeBlock) flushCode();
+            flushParagraph();
+            flushList();
+            flushQuote();
+            return blocks.join('');
+        }
+
+        function setMarkdownContent(element, text, fallback = '') {
+            const value = String(text ?? '').trim();
+            const display = value || fallback;
+            element.classList.add('markdown-body');
+            element.innerHTML = renderMarkdown(display);
         }
 
         function setMessage(element, type, text) {
@@ -1253,47 +1800,47 @@
 
         function displayAgentName(agent) {
             const mapping = {
-                supervisor: '主控',
-                vision: '视觉分析',
-                knowledge: '知识检索',
-                clarification: '澄清助手',
-                report: '报告生成'
+                supervisor: '??',
+                vision: '???',
+                knowledge: '???',
+                clarification: '???',
+                report: '???'
             };
-            return mapping[agent] || agent || '未知节点';
+            return mapping[agent] || agent || '???';
         }
 
         function displayStatus(status) {
             const mapping = {
-                planned: '待执行',
-                running: '执行中',
-                success: '已完成',
-                failed: '失败',
-                pending: '等待中'
+                planned: '??',
+                running: '??',
+                success: '??',
+                failed: '??',
+                pending: '??'
             };
-            return mapping[status] || status || '未知状态';
+            return mapping[status] || status || '???';
         }
 
         function displayNodeName(node) {
             const mapping = {
-                supervisor_plan: '主控制定计划',
-                supervisor_execute: '主控执行步骤',
-                supervisor_merge: '主控合并结果',
-                self_reflect: '自反思评估',
-                wait_user: '等待用户澄清',
-                answer: '生成回答',
-                report: '生成报告'
+                supervisor_plan: '???',
+                supervisor_execute: '???',
+                supervisor_merge: '???',
+                self_reflect: '??',
+                wait_user: '???',
+                answer: '???',
+                report: '???'
             };
-            return mapping[node] || node || '节点';
+            return mapping[node] || node || '??';
         }
 
         function localizeGoal(goal) {
-            if (!goal) return '未提供执行目标';
+            if (!goal) return '???';
             return String(goal)
-                .replace('retry visual anomaly analysis', '重新执行视觉异常分析')
-                .replace('detect and localize visual anomalies', '检测并定位图像中的异常区域')
-                .replace('retrieve similar cases and maintenance knowledge', '检索相似案例、知识库与维修建议')
-                .replace('prepare a structured clarification request for the user', '生成结构化澄清问题，等待用户补充信息')
-                .replace('generate a complete technical report', '生成完整技术报告');
+                .replace('retry visual anomaly analysis', '???')
+                .replace('detect and localize visual anomalies', '???')
+                .replace('retrieve similar cases and maintenance knowledge', '???')
+                .replace('prepare a structured clarification request for the user', '???')
+                .replace('generate a complete technical report', '??');
         }
 
         function normalizeStepState(rawStatus, pending) {
@@ -1305,47 +1852,51 @@
         }
 
         function summarizeEvent(event) {
-            const stepId = event?.step_id ? ` · ${event.step_id}` : '';
+            const stepId = event?.step_id ? ` / ${event.step_id}` : '';
             switch (event?.type) {
                 case 'plan_created':
                     return {
-                        title: '计划已生成',
+                        title: '??',
                         tone: 'planned',
-                        meta: `步骤数：${event.step_count || 0}${event.reason ? `\n原因：${event.reason}` : ''}`
+                        meta: `???${event.step_count || 0}${event.reason ? `
+??${event.reason}` : ''}`
                     };
                 case 'step_started':
                     return {
-                        title: `${displayAgentName(event.agent)} 开始执行${stepId}`,
+                        title: `${displayAgentName(event.agent)} ???${stepId}`,
                         tone: 'running',
-                        meta: `第 ${event.attempt || 1} 次尝试${Array.isArray(event.depends_on) && event.depends_on.length ? `\n依赖：${event.depends_on.join(', ')}` : ''}`
+                        meta: `? ${event.attempt || 1} ??${Array.isArray(event.depends_on) && event.depends_on.length ? `
+??${event.depends_on.join(', ')}` : ''}`
                     };
                 case 'step_completed':
                     return {
-                        title: `${displayAgentName(event.agent)} 已完成${stepId}`,
+                        title: `${displayAgentName(event.agent)} ??${stepId}`,
                         tone: event.requires_human ? 'pending' : 'success',
-                        meta: `状态：${displayStatus(event.status || 'success')}${typeof event.confidence === 'number' ? `\n置信度：${event.confidence}` : ''}`
+                        meta: `??${displayStatus(event.status || 'success')}${typeof event.confidence === 'number' ? `
+???${event.confidence}` : ''}`
                     };
                 case 'step_failed':
                     return {
-                        title: `${displayAgentName(event.agent)} 执行失败${stepId}`,
+                        title: `${displayAgentName(event.agent)} ???${stepId}`,
                         tone: 'failed',
-                        meta: event.error || '未知错误'
+                        meta: event.error || '???'
                     };
                 case 'task_suspended':
                     return {
-                        title: '任务已挂起，等待澄清',
+                        title: '???',
                         tone: 'pending',
-                        meta: `${event.pending_question || '当前没有待显示的问题'}${Array.isArray(event.unknown_anomaly_types) && event.unknown_anomaly_types.length ? `\n未识别类型：${event.unknown_anomaly_types.join(', ')}` : ''}`
+                        meta: `${event.pending_question || '???'}${Array.isArray(event.unknown_anomaly_types) && event.unknown_anomaly_types.length ? `
+???${event.unknown_anomaly_types.join(', ')}` : ''}`
                     };
                 case 'task_resumed':
                     return {
-                        title: '任务已恢复执行',
+                        title: '???',
                         tone: 'running',
-                        meta: `对话轮次：${event.conversation_turns || 0}`
+                        meta: `??${event.conversation_turns || 0}`
                     };
                 default:
                     return {
-                        title: event?.type || '未知事件',
+                        title: event?.type || '???',
                         tone: 'planned',
                         meta: JSON.stringify(event || {}, null, 2)
                     };
@@ -1368,25 +1919,26 @@
             return steps.map((step, index) => {
                 const status = normalizeStepState(stepStatus[step.id], state.pending && index === steps.length - 1);
                 const dependsOn = Array.isArray(step.depends_on) && step.depends_on.length ? step.depends_on : [];
+                const attempt = stepAttempts[step.agent] || 0;
                 return {
                     kind: 'step',
                     key: step.id || `step-${index + 1}`,
                     index,
                     status,
-                    attempt: stepAttempts[step.agent] || 0,
-                    title: displayAgentName(step.agent) || `步骤 ${index + 1}`,
+                    attempt,
+                    title: displayAgentName(step.agent) || `?? ${index + 1}`,
                     subtitle: localizeGoal(step.goal),
                     badges: [
                         displayStatus(status),
-                        `第 ${stepAttempts[step.agent] || 0} 次`,
-                        step.retryable === false ? '不可重试' : '可重试'
+                        `? ${attempt} ?`,
+                        step.retryable === false ? '???' : '??'
                     ],
                     details: {
                         step_id: step.id || '-',
                         agent: displayAgentName(step.agent),
                         goal: localizeGoal(step.goal),
-                        depends_on: dependsOn.length ? dependsOn.join(', ') : '无',
-                        retryable: step.retryable === false ? '否' : '是'
+                        depends_on: dependsOn.length ? dependsOn.join(', ') : '?',
+                        retryable: step.retryable === false ? '?' : '?'
                     },
                     raw: step
                 };
@@ -1403,7 +1955,7 @@
                     index,
                     status: summary.tone,
                     title: summary.title,
-                    subtitle: summary.meta || '暂无事件细节',
+                    subtitle: summary.meta || '???',
                     badges: [
                         event?.type || 'event',
                         event?.agent ? displayAgentName(event.agent) : null,
@@ -1440,11 +1992,11 @@
 
         function renderTimelineFilters(summaryItems) {
             const filters = [
-                { key: 'all', label: '全部', count: summaryItems.total },
-                { key: 'active', label: '运行中', count: summaryItems.running + summaryItems.planned },
-                { key: 'failed', label: '失败', count: summaryItems.failed },
-                { key: 'waiting', label: '等待', count: summaryItems.pending },
-                { key: 'done', label: '完成', count: summaryItems.success }
+                { key: 'all', label: '??', count: summaryItems.total },
+                { key: 'active', label: '??', count: summaryItems.running + summaryItems.planned },
+                { key: 'failed', label: '??', count: summaryItems.failed },
+                { key: 'waiting', label: '??', count: summaryItems.pending },
+                { key: 'done', label: '??', count: summaryItems.success }
             ];
 
             els.timelineFilters.innerHTML = filters.map(filter => `
@@ -1539,16 +2091,16 @@
             }
 
             if (!eventCards.length) {
-                els.timelineEvents.innerHTML = '<div class="timeline-empty">当前还没有执行事件。</div>';
+                els.timelineEvents.innerHTML = '<div class="timeline-empty">???</div>';
             } else if (!filteredEvents.length) {
-                els.timelineEvents.innerHTML = '<div class="timeline-empty compact">当前筛选条件下没有匹配的事件。</div>';
+                els.timelineEvents.innerHTML = '<div class="timeline-empty compact">???</div>';
             } else {
                 els.timelineEvents.innerHTML = filteredEvents.map(event => {
                     const isSelected = state.selectedTimelineItem?.kind === 'event' && state.selectedTimelineItem?.key === event.key;
                     return `
                         <article class="event-item ${escapeHtml(event.status)} ${isSelected ? 'is-selected' : ''}" data-kind="event" data-key="${escapeHtml(event.key)}">
                             <div class="event-item-top">
-                                <span class="event-index">事件 ${event.index + 1}</span>
+                                <span class="event-index">?? ${event.index + 1}</span>
                                 <div class="timeline-badges">${event.badges.map(badge => `<span class="timeline-chip">${escapeHtml(badge)}</span>`).join('')}</div>
                             </div>
                             <div class="event-title">
@@ -1617,7 +2169,7 @@
 
             await readSseStream(response, payload => {
                 if (payload.type === 'node_start') {
-                    setStreamingStatus(sourceLabel, `节点：${displayNodeName(payload.node)}`);
+                    setStreamingStatus(sourceLabel, `鑺傜偣锛?{displayNodeName(payload.node)}`);
                     return;
                 }
 
@@ -1641,8 +2193,8 @@
                 if (payload.type === 'stream' && payload.subtype === 'answer') {
                     streamedAnswer += payload.content || '';
                     if (streamedAnswer) {
-                        els.answerPanel.textContent = streamedAnswer;
-                        els.answerPanelInline.textContent = streamedAnswer;
+                        setMarkdownContent(els.answerPanel, streamedAnswer, '鏆傛棤缁撴灉');
+                        setMarkdownContent(els.answerPanelInline, streamedAnswer, '鏆傛棤缁撴灉');
                     }
                     return;
                 }
@@ -1751,7 +2303,7 @@
                 const width = Math.max(2, ((x2 - x1) / naturalWidth) * renderedWidth);
                 const height = Math.max(2, ((y2 - y1) / naturalHeight) * renderedHeight);
                 const label = item?.type || item?.label || `异常 ${index + 1}`;
-                const location = item?.location ? ` · ${item.location}` : '';
+                const location = item?.location ? ` / ${item.location}` : '';
 
                 return `
                     <div
@@ -1770,7 +2322,7 @@
             } else if (state.visualAssets.maskUrl || state.visualAssets.heatmapUrl || state.visualAssets.overlayUrl) {
                 els.localizationNote.textContent = '已显示异常热区，但当前没有可绘制的边界框。';
             } else {
-                els.localizationNote.textContent = '已检出异常，但当前结果没有返回可绘制的位置框。';
+                els.localizationNote.textContent = '已检测到异常，但当前结果没有返回可绘制的位置框。';
             }
 
             if (state.visualMode === 'bbox' && !state.visualAssets.hasBbox) {
@@ -1799,22 +2351,26 @@
                         <div class="avatar">AI</div>
                         <div class="bubble-wrap">
                             <div class="bubble-meta">系统</div>
-                            <div class="bubble">等待上传图片并发起首轮检测。</div>
+                            <div class="bubble markdown-body"><p>等待上传图片并发起首轮检测。</p></div>
                         </div>
                     </div>
                 `;
                 return;
             }
 
-            els.historyPanel.innerHTML = state.history.map(item => `
-                <div class="bubble-row ${escapeHtml(item.role)} ${escapeHtml(item.tone || '')}">
-                    <div class="avatar">${item.role === 'user' ? '你' : item.role === 'assistant' ? 'AI' : '系'}</div>
-                    <div class="bubble-wrap">
-                        <div class="bubble-meta">${item.role === 'user' ? '你' : item.role === 'assistant' ? '助手' : '系统'} · ${escapeHtml(item.time)}</div>
-                        <div class="bubble">${escapeHtml(item.text)}</div>
+            els.historyPanel.innerHTML = state.history.map(item => {
+                const avatar = item.role === 'user' ? '你' : item.role === 'assistant' ? 'AI' : '系统';
+                const roleLabel = item.role === 'user' ? '你' : item.role === 'assistant' ? '助手' : '系统';
+                return `
+                    <div class="bubble-row ${escapeHtml(item.role)} ${escapeHtml(item.tone || '')}">
+                        <div class="avatar">${avatar}</div>
+                        <div class="bubble-wrap">
+                            <div class="bubble-meta">${roleLabel} / ${escapeHtml(item.time)}</div>
+                            <div class="bubble markdown-body">${renderMarkdown(item.text)}</div>
+                        </div>
                     </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
 
             els.historyPanel.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
@@ -1824,7 +2380,7 @@
             els.followupButton.disabled = !state.taskId || state.pending;
             els.continueButton.disabled = !state.taskId || !state.pending;
             els.reportButton.disabled = !state.taskId;
-            els.modeIndicator.textContent = state.pending ? '模式：等待澄清' : (state.taskId ? '模式：对话追问' : '模式：首轮检测');
+            els.modeIndicator.textContent = state.pending ? '等待澄清中' : (state.taskId ? '任务进行中' : '尚未开始');
         }
 
         function renderAnomalies(anomalies) {
@@ -1833,11 +2389,251 @@
                 return;
             }
 
-            els.anomalyChips.innerHTML = anomalies.map((item, index) => {
+            const mapShapeLabel = value => ({
+                'elongated-horizontal': '横向细长',
+                'elongated-vertical': '纵向细长',
+                compact: '紧凑块状',
+                irregular: '不规则'
+            }[value] || value || '');
+
+            const mapSizeLabel = value => ({
+                small: '小型',
+                medium: '中等',
+                large: '较大'
+            }[value] || value || '');
+
+            const mapSeverityLabel = value => ({
+                low: '较弱',
+                medium: '中等',
+                high: '较强'
+            }[value] || value || '');
+
+            const mapTextureLabel = value => ({
+                'sharp linear response': '线性边缘明显',
+                'dense high-contrast region': '局部对比度高',
+                'localized contrast variation': '局部对比变化',
+                'faint diffuse response': '响应较弱且分散'
+            }[value] || value || '');
+
+            const chips = anomalies.map((item, index) => {
                 const label = item?.type || item?.label || `异常 ${index + 1}`;
-                const location = item?.location ? ` · ${item.location}` : '';
+                const location = item?.location ? ` @ ${item.location}` : '';
                 return `<span class="chip">${escapeHtml(label + location)}</span>`;
             }).join('');
+
+            const cards = anomalies.map((item, index) => {
+                const label = item?.type || item?.label || `异常 ${index + 1}`;
+                const location = item?.location ? `位置 ${item.location}` : '';
+                const appearance = item?.appearance || {};
+                const meta = [
+                    location,
+                    appearance.size ? `尺寸 ${mapSizeLabel(appearance.size)}` : '',
+                    appearance.shape ? `形态 ${mapShapeLabel(appearance.shape)}` : '',
+                    appearance.texture ? `纹理 ${mapTextureLabel(appearance.texture)}` : '',
+                    item?.severity_hint ? `强度 ${mapSeverityLabel(item.severity_hint)}` : '',
+                    Array.isArray(item?.bbox) ? `BBox ${item.bbox.join(', ')}` : ''
+                ].filter(Boolean).map(text => `<span class="anomaly-meta-item">${escapeHtml(text)}</span>`).join('');
+                const description = item?.description || item?.details || '已检测到局部异常热区。';
+                const score = typeof item?.score === 'number' ? item.score.toFixed(3) : '';
+                return `
+                    <div class="anomaly-card">
+                        <div class="anomaly-card-head">
+                            <div class="anomaly-card-title">${escapeHtml(label)}</div>
+                            <div class="anomaly-card-score">${score ? `score ${escapeHtml(score)}` : ''}</div>
+                        </div>
+                        <div class="anomaly-card-desc">${escapeHtml(description)}</div>
+                        ${meta ? `<div class="anomaly-meta">${meta}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+
+            els.anomalyChips.innerHTML = chips + cards;
+        }
+
+        function getStructuredAnalysis(result) {
+            const analysisContracts = result?.metadata?.analysis_contracts || null;
+            if (analysisContracts && (analysisContracts.defect_analysis || analysisContracts.object_analysis)) {
+                return analysisContracts;
+            }
+
+            const knowledge = result?.shared_context?.knowledge || result?.metadata?.shared_context?.knowledge || null;
+            if (knowledge && (knowledge.defect_analysis || knowledge.object_analysis || knowledge.analysis_summary || knowledge.possible_causes || knowledge.risk_notes || knowledge.repair_actions || knowledge.similar_cases || knowledge.object_summary || knowledge.component_scope || knowledge.component_findings || knowledge.functional_impact || knowledge.object_knowledge_notes || knowledge.object_knowledge_hits || knowledge.object_knowledge_summary)) {
+                return knowledge;
+            }
+
+            const resultMetadata = result?.metadata?.result_metadata || {};
+            if (resultMetadata && (resultMetadata.defect_analysis || resultMetadata.object_analysis || resultMetadata.analysis_summary || resultMetadata.possible_causes || resultMetadata.risk_notes || resultMetadata.repair_actions || resultMetadata.similar_cases || resultMetadata.object_summary || resultMetadata.component_scope || resultMetadata.component_findings || resultMetadata.functional_impact || resultMetadata.object_knowledge_notes || resultMetadata.object_knowledge_hits || resultMetadata.object_knowledge_summary)) {
+                return resultMetadata;
+            }
+
+            const defectAnalysis = result?.metadata?.defect_analysis || null;
+            const objectAnalysis = result?.metadata?.object_analysis || null;
+            if (defectAnalysis || objectAnalysis) {
+                return {
+                    defect_analysis: defectAnalysis || {},
+                    object_analysis: objectAnalysis || {},
+                    analysis_summary: defectAnalysis?.analysis_summary,
+                    possible_causes: defectAnalysis?.possible_causes || [],
+                    risk_notes: defectAnalysis?.risk_notes || [],
+                    repair_actions: defectAnalysis?.repair_actions || [],
+                    similar_cases: defectAnalysis?.similar_cases || [],
+                    object_summary: objectAnalysis?.object_summary,
+                    component_scope: objectAnalysis?.component_scope || [],
+                    component_findings: objectAnalysis?.component_findings || [],
+                    functional_impact: objectAnalysis?.functional_impact || [],
+                    object_knowledge_notes: objectAnalysis?.object_knowledge_notes || [],
+                    object_knowledge_hits: objectAnalysis?.object_knowledge_hits || [],
+                    object_knowledge_summary: objectAnalysis?.object_knowledge_summary
+                };
+            }
+            return null;
+        }
+
+        function getMmadAnalysis(result) {
+            return (
+                result?.metadata?.mmad_analysis
+                || result?.metadata?.result_metadata?.mmad_analysis
+                || result?.shared_context?.mmad_analysis
+                || result?.metadata?.shared_context?.mmad_analysis
+                || null
+            );
+        }
+
+        function normalizeStructuredAnalysis(rawAnalysis) {
+            if (!rawAnalysis) return null;
+            const defectAnalysis = rawAnalysis.defect_analysis || {};
+            const objectAnalysis = rawAnalysis.object_analysis || {};
+            return {
+                ...rawAnalysis,
+                analysis_summary: defectAnalysis.analysis_summary || rawAnalysis.analysis_summary,
+                similar_cases: defectAnalysis.similar_cases || rawAnalysis.similar_cases || [],
+                possible_causes: defectAnalysis.possible_causes || rawAnalysis.possible_causes || [],
+                risk_notes: defectAnalysis.risk_notes || rawAnalysis.risk_notes || [],
+                repair_actions: defectAnalysis.repair_actions || rawAnalysis.repair_actions || [],
+                object_summary: objectAnalysis.object_summary || rawAnalysis.object_summary,
+                component_scope: objectAnalysis.component_scope || rawAnalysis.component_scope || [],
+                component_findings: objectAnalysis.component_findings || rawAnalysis.component_findings || [],
+                functional_impact: objectAnalysis.functional_impact || rawAnalysis.functional_impact || [],
+                object_knowledge_notes: objectAnalysis.object_knowledge_notes || rawAnalysis.object_knowledge_notes || [],
+                object_knowledge_hits: objectAnalysis.object_knowledge_hits || rawAnalysis.object_knowledge_hits || [],
+                object_knowledge_summary: objectAnalysis.object_knowledge_summary || rawAnalysis.object_knowledge_summary
+            };
+        }
+
+        function renderAnalysisPanel(analysis, mmadAnalysis = null) {
+            const normalized = normalizeStructuredAnalysis(analysis);
+            state.lastAnalysis = normalized || null;
+            if (!normalized && !mmadAnalysis) {
+                if (els.analysisPanel) els.analysisPanel.hidden = true;
+                if (els.analysisSummary) els.analysisSummary.textContent = '暂无分析结果';
+                if (els.analysisDetails) els.analysisDetails.innerHTML = '';
+                return;
+            }
+
+            if (els.analysisPanel) els.analysisPanel.hidden = false;
+            if (els.analysisSummary) {
+                const discrimination = mmadAnalysis?.anomaly_discrimination || {};
+                const mmadSummary = discrimination.status
+                    ? `MMAD 七任务分析：异常判别 ${discrimination.is_anomaly === true ? '异常' : discrimination.is_anomaly === false ? '未见明确异常' : '未知'}，状态 ${discrimination.status}。`
+                    : '';
+                setMarkdownContent(
+                    els.analysisSummary,
+                    normalized?.analysis_summary || normalized?.object_summary || mmadSummary || '已生成结构化分析结果。',
+                    '暂无分析结果'
+                );
+            }
+
+            const blocks = [];
+            const mmadLabels = [
+                ['异常判别', mmadAnalysis?.anomaly_discrimination, item => [
+                    `状态：${item.status || 'unknown'}`,
+                    `是否异常：${item.is_anomaly === true ? '是' : item.is_anomaly === false ? '否' : '未知'}`,
+                    `置信度：${item.confidence ?? 0}`,
+                    ...(item.evidence || [])
+                ]],
+                ['缺陷分类', mmadAnalysis?.defect_classification, item => [
+                    `类型：${item.defect_type || 'unknown'}`,
+                    ...(item.candidates || []).map(candidate => `候选：${candidate}`),
+                    ...(item.evidence || [])
+                ]],
+                ['缺陷定位', mmadAnalysis?.defect_localization, item => [
+                    item.description || '',
+                    ...(item.locations || []).map(location => `位置：${location}`),
+                    item.heatmap_available ? '已生成热力图' : '',
+                    item.mask_available ? '已生成掩码' : ''
+                ]],
+                ['缺陷描述', mmadAnalysis?.defect_description, item => [
+                    ...(item.descriptions || []),
+                    ...(item.severity_hints || []).map(severity => `严重度线索：${severity}`)
+                ]],
+                ['产品分类', mmadAnalysis?.object_classification, item => [
+                    `类别：${item.category || 'unknown'}`,
+                    `对象：${item.object_name || 'unknown'}`,
+                    ...(item.evidence || [])
+                ]]
+            ];
+
+            mmadLabels.forEach(([title, item, mapper]) => {
+                if (!item) return;
+                const items = mapper(item).filter(Boolean);
+                if (!items.length) return;
+                blocks.push(`
+                    <div class="analysis-block">
+                        <div class="analysis-block-title">MMAD · ${escapeHtml(title)}</div>
+                        <ul class="analysis-list">
+                            ${items.map(value => `<li>${escapeHtml(String(value))}</li>`).join('')}
+                        </ul>
+                    </div>
+                `);
+            });
+
+            if (!normalized) {
+                if (els.analysisDetails) {
+                    els.analysisDetails.innerHTML = blocks.join('');
+                }
+                return;
+            }
+
+            const componentFindingItems = (normalized.component_findings || []).map(item => {
+                const location = item?.location || 'unknown';
+                const component = item?.component || '关键功能区';
+                const anomalyType = item?.anomaly_type || 'surface_anomaly';
+                return `${location} -> ${component}（${anomalyType}）`;
+            });
+            const objectKnowledgeHitItems = (normalized.object_knowledge_hits || []).map(item => {
+                const title = item?.title || '对象知识';
+                const note = item?.note || '';
+                return `${title}: ${note}`;
+            }).filter(Boolean);
+            const sections = [
+                ['对象概述', normalized.object_summary ? [normalized.object_summary] : []],
+                ['产品知识摘要', normalized.object_knowledge_summary ? [normalized.object_knowledge_summary] : []],
+                ['关注部件', normalized.component_scope || []],
+                ['部件映射', componentFindingItems],
+                ['功能影响', normalized.functional_impact || []],
+                ['命中知识点', objectKnowledgeHitItems],
+                ['产品知识', normalized.object_knowledge_notes || []],
+                ['相似案例', (normalized.similar_cases || []).map(item => item?.summary || item?.id).filter(Boolean)],
+                ['可能成因', normalized.possible_causes || []],
+                ['风险提示', normalized.risk_notes || []],
+                ['建议动作', normalized.repair_actions || []]
+            ];
+
+            sections.forEach(([title, items]) => {
+                if (!Array.isArray(items) || items.length === 0) return;
+                blocks.push(`
+                    <div class="analysis-block">
+                        <div class="analysis-block-title">${escapeHtml(title)}</div>
+                        <ul class="analysis-list">
+                            ${items.map(item => `<li>${escapeHtml(String(item))}</li>`).join('')}
+                        </ul>
+                    </div>
+                `);
+            });
+
+            if (els.analysisDetails) {
+                els.analysisDetails.innerHTML = blocks.join('');
+            }
         }
 
         function applyResult(result, sourceLabel) {
@@ -1860,17 +2656,18 @@
             ].filter(Boolean).join('\n');
 
             if (result.answer) {
-                els.answerPanel.textContent = result.answer;
-                els.answerPanelInline.textContent = result.answer;
+                setMarkdownContent(els.answerPanel, result.answer, '鏆傛棤缁撴灉');
+                setMarkdownContent(els.answerPanelInline, result.answer, '鏆傛棤缁撴灉');
                 pushHistory('assistant', result.answer);
             }
 
             if (result.summary) {
-                els.reportPanel.textContent = result.summary;
-                els.reportPanelInline.textContent = result.summary;
+                setMarkdownContent(els.reportPanel, result.summary, '灏氭湭鐢熸垚鎶ュ憡');
+                setMarkdownContent(els.reportPanelInline, result.summary, '灏氭湭鐢熸垚鎶ュ憡');
             }
 
             renderAnomalies(result.anomalies);
+            renderAnalysisPanel(getStructuredAnalysis(result), getMmadAnalysis(result));
             renderLocalization(result.anomalies, result);
 
             if (state.pending) {
@@ -1878,10 +2675,10 @@
                     result.pending_question || '',
                     result.pending_clarification || ''
                 ].filter(Boolean).join('\n\n');
-                els.pendingPanel.textContent = pendingText || '任务处于待澄清状态';
-                pushHistory('system', pendingText || '任务处于待澄清状态');
+                setMarkdownContent(els.pendingPanel, pendingText, '???');
+                pushHistory('system', pendingText || '???');
             } else {
-                els.pendingPanel.textContent = '当前没有待澄清问题';
+                setMarkdownContent(els.pendingPanel, '', '???');
             }
         }
 
@@ -1889,9 +2686,9 @@
             try {
                 const res = await fetch(`${API_BASE}/health`);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                els.backendIndicator.textContent = '已连接';
+                els.backendIndicator.textContent = '??';
             } catch (error) {
-                els.backendIndicator.textContent = '不可用';
+                els.backendIndicator.textContent = '??';
             }
         }
 
@@ -1901,6 +2698,7 @@
             state.imageFile = null;
             state.history = [];
             state.lastResult = null;
+            state.lastAnalysis = null;
             state.visualAssets = {};
             state.visualMode = 'original';
             state.overlayOpacity = 72;
@@ -1915,19 +2713,26 @@
             els.assetId.value = '';
             els.question.value = '';
             els.imageInput.value = '';
-            els.previewText.textContent = '还没有选择图片';
+            if (els.visualBackend) els.visualBackend.value = 'qwen';
+            if (els.patchcoreCategory) els.patchcoreCategory.value = 'bottle';
+            if (els.patchcoreThreshold) els.patchcoreThreshold.value = '0.5';
+            if (els.objectDisplayName) els.objectDisplayName.value = '';
+            if (els.objectFunctionSummary) els.objectFunctionSummary.value = '';
+            if (els.objectComponents) els.objectComponents.value = '';
+            els.previewText.textContent = '???';
             els.previewImage.style.display = 'none';
             els.previewImage.removeAttribute('src');
             els.overlayOpacity.value = String(state.overlayOpacity);
             clearLocalizationOverlay();
 
-            els.statusPanel.textContent = '等待发起检测';
-            els.answerPanel.textContent = '暂无结果';
-            els.answerPanelInline.textContent = '暂无结果';
-            els.pendingPanel.textContent = '当前没有待澄清问题';
-            els.reportPanel.textContent = '尚未生成报告';
-            els.reportPanelInline.textContent = '尚未生成报告';
+            els.statusPanel.textContent = '???';
+            setMarkdownContent(els.answerPanel, '', '???');
+            setMarkdownContent(els.answerPanelInline, '', '???');
+            setMarkdownContent(els.pendingPanel, '', '???');
+            setMarkdownContent(els.reportPanel, '', '???');
+            setMarkdownContent(els.reportPanelInline, '', '???');
             els.anomalyChips.innerHTML = '';
+            renderAnalysisPanel(null, null);
 
             setMessage(els.detectMessage, 'info', '');
             setMessage(els.followupMessage, 'info', '');
@@ -1936,20 +2741,26 @@
             renderHistory();
             renderTaskState();
             renderExecutionTimeline();
+            syncBackendControls();
+            applyStaticUiText();
             renderPreviewModes();
         }
 
-        async function startDetection() {
+        async function startDetection(backendOverride = '') {
+            if (backendOverride && els.visualBackend) {
+                els.visualBackend.value = backendOverride;
+                syncBackendControls();
+            }
             const assetId = els.assetId.value.trim();
             const question = els.question.value.trim();
             const image = els.imageInput.files[0];
 
             if (!assetId) {
-                setMessage(els.detectMessage, 'warning', '请先填写设备 ID。');
+                setMessage(els.detectMessage, 'warning', '?? ID?');
                 return;
             }
             if (!image) {
-                setMessage(els.detectMessage, 'warning', '请先选择要检测的图片。');
+                setMessage(els.detectMessage, 'warning', '???');
                 return;
             }
 
@@ -1962,10 +2773,10 @@
             state.selectedTimelineItem = null;
             renderTaskState();
             renderExecutionTimeline();
-            setMessage(els.detectMessage, 'info', '正在上传图片并启动首轮检测...');
+            setMessage(els.detectMessage, 'info', '???...');
             setMessage(els.followupMessage, 'info', '');
             setMessage(els.reportMessage, 'info', '');
-            pushHistory('user', question || '请先分析这张图片中的异常。');
+            pushHistory('user', question || '???');
 
             const form = new FormData();
             form.append('task_id', taskId);
@@ -1973,6 +2784,7 @@
             form.append('start_time', nowIso());
             form.append('end_time', nowIso());
             form.append('question', question);
+            form.append('parameters', JSON.stringify(buildDetectionParameters(backendOverride)));
             form.append('image', image);
 
             els.detectButton.disabled = true;
@@ -1989,7 +2801,8 @@
                 els.question.value = '';
             } catch (error) {
                 setMessage(els.detectMessage, 'error', `检测失败：${error.message}`);
-                els.statusPanel.textContent = `status: failed\nreason: ${error.message}`;
+                els.statusPanel.textContent = `status: error
+message: ${error.message}`;
             } finally {
                 els.detectButton.disabled = false;
                 renderTaskState();
@@ -2087,11 +2900,12 @@
 
                 applyResult(data, 'report');
                 if (data.summary) {
-                    pushHistory('assistant', `报告已生成：\n${data.summary}`);
+                    pushHistory('assistant', `???
+${data.summary}`);
                 }
-                setMessage(els.reportMessage, 'success', '完整报告已生成。');
+                setMessage(els.reportMessage, 'success', '??');
             } catch (error) {
-                setMessage(els.reportMessage, 'error', `报告生成失败：${error.message}`);
+                setMessage(els.reportMessage, 'error', `???${error.message}`);
             } finally {
                 renderTaskState();
             }
@@ -2105,14 +2919,14 @@
             state.visualAssets = {};
 
             if (!file) {
-                els.previewText.textContent = '还没有选择图片';
+                els.previewText.textContent = '杩樻病鏈夐€夋嫨鍥剧墖';
                 els.previewImage.style.display = 'none';
                 els.previewImage.removeAttribute('src');
                 clearLocalizationOverlay();
                 return;
             }
 
-            els.previewText.textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} KB`;
+            els.previewText.textContent = `${file.name} 路 ${(file.size / 1024).toFixed(1)} KB`;
             const reader = new FileReader();
             reader.onload = event => {
                 els.previewImage.src = event.target.result;
@@ -2184,7 +2998,9 @@
             renderExecutionTimeline();
         });
 
+        els.visualBackend?.addEventListener('change', syncBackendControls);
         els.detectButton.addEventListener('click', startDetection);
+        els.patchcoreDetectButton?.addEventListener('click', () => startDetection(PATCHCORE_BACKEND));
         els.followupButton.addEventListener('click', sendFollowup);
         els.continueButton.addEventListener('click', continueTask);
         els.reportButton.addEventListener('click', generateReport);
@@ -2203,8 +3019,10 @@
             }
         });
 
+        applyStaticUiText();
         resetTask();
         checkHealth();
     </script>
 </body>
 </html>
+

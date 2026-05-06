@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.analysis.mmad_pipeline import build_mmad_analysis_context, dump_mmad_analysis
 from app.memory.state import DetectionState
 from app.orchestration.context_store import set_pending_clarification, set_prompt_context
 from app.schemas.detection import DetectionResult
@@ -8,7 +9,8 @@ from app.schemas.detection import DetectionResult
 def ensure_result(state: DetectionState) -> DetectionResult:
     domain = state.domain_runtime()
     if domain.result is None:
-        domain.result = DetectionResult(task_id=state.task.task_id, status="success")
+        default_status = "success" if domain.agent_outputs else ("failed" if state.last_failed_step else "success")
+        domain.result = DetectionResult(task_id=state.task.task_id, status=default_status)
         state.apply_domain_runtime(domain)
     return state.result
 
@@ -18,6 +20,7 @@ def merge_vision_output(state: DetectionState, payload: dict, result: DetectionR
     domain.tool_outputs.append({"tool": "vision_agent", "anomalies": payload.get("anomalies", [])})
     domain.shared_context["vision"] = payload
     state.apply_domain_runtime(domain)
+    result.status = "success"
     result.anomalies = list(payload.get("anomalies", []))
     if payload.get("answer"):
         result.answer = payload["answer"]
@@ -26,11 +29,15 @@ def merge_vision_output(state: DetectionState, payload: dict, result: DetectionR
 
 
 def merge_knowledge_output(state: DetectionState, payload: dict, result: DetectionResult) -> None:
-    del result
     domain = state.domain_runtime()
     domain.shared_context["knowledge"] = payload
     state.apply_domain_runtime(domain)
     set_prompt_context(state, payload.get("prompt_context", state.context.get("rag_context")))
+    if payload.get("few_shot_examples") or payload.get("few_shot_context"):
+        result.metadata["knowledge_few_shot"] = {
+            "examples": payload.get("few_shot_examples") or {},
+            "context": payload.get("few_shot_context") or "",
+        }
 
 
 def merge_clarification_output(state: DetectionState, payload: dict, result: DetectionResult) -> None:
@@ -76,6 +83,17 @@ async def supervisor_merge_node(state: DetectionState) -> DetectionState:
             continue
         payload = output.get("payload", {})
         merge_adapter(state, payload, result)
+
+    domain = state.domain_runtime()
+    if domain.shared_context.vision or domain.shared_context.knowledge or result.status == "failed":
+        domain.shared_context["mmad_analysis"] = build_mmad_analysis_context(
+            task=state.task,
+            vision=domain.shared_context.vision,
+            knowledge=domain.shared_context.knowledge,
+            result=result,
+        ).model_dump()
+        state.apply_domain_runtime(domain)
+        result.metadata["mmad_analysis"] = dump_mmad_analysis(state.shared_context.mmad_analysis)
 
     state.context["agent_trace"] = list(state.agent_trace)
     state.context["step_status"] = dict(state.step_status)

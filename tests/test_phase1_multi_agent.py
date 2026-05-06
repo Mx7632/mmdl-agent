@@ -1,14 +1,17 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import json
 from contextlib import asynccontextmanager
 
+import numpy as np
 import pytest
 
 from app.agents.factory import get_supervisor_agent
+from app.agents.knowledge.agent import KnowledgeAgent
 from app.agents.vision.agent import VisionAgent
 from app.agents.report.service import generate_report_state
+from app.analysis.mmad_pipeline import build_mmad_analysis_context, dump_mmad_analysis, format_mmad_analysis
 from app.core.answer_node import answer_node
 from app.core.agent import get_pending_task, stream_detection
 from app.core.self_reflect import self_reflect_node
@@ -17,10 +20,24 @@ from app.core.wait_user import wait_user_node
 from app.memory.conversation import compact_state_conversation
 from app.memory.state import DetectionState
 from app.orchestration.envelope import AgentEnvelope
+from app.orchestration.context import KnowledgeContext, MMADAnalysisContext
 from app.schemas.detection import DetectionResult, DetectionTask, ToolResponse
+from app.rag.knowledge_pipeline import (
+    build_defect_analysis_contract,
+    build_knowledge_context,
+    build_object_analysis_contract,
+    dump_knowledge_payload,
+    resolve_knowledge_request,
+    summarize_knowledge_context,
+)
 from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool, resolve_visual_backend
 from app.orchestration.context_store import get_pending_context_from_mapping
-from app.tools.patchcore_detection import resolve_patchcore_category
+from app.rag.defect_analysis import build_structured_analysis
+from app.rag.fewshot import FewShotPromptBuilder, FewShotSelector, build_fewshot_context
+from app.rag.object_analysis import build_structured_object_analysis
+from app.rag.object_knowledge import query_object_knowledge
+from app.services.state_rehydration import build_execution_metadata
+from app.tools.patchcore_detection import _extract_anomalies_from_heatmap, resolve_patchcore_category
 
 
 def build_state(question: str = "Please analyze the anomaly in this image.") -> DetectionState:
@@ -33,6 +50,386 @@ def build_state(question: str = "Please analyze the anomaly in this image.") -> 
         parameters={"image_base64": "aW1hZ2U="},
     )
     return DetectionState(task=task, result=DetectionResult(task_id=task.task_id, status="success"))
+
+
+def test_knowledge_context_syncs_nested_and_flat_fields():
+    ctx = KnowledgeContext.model_validate(
+        {
+            "defect_analysis": {
+                "possible_causes": ["surface fatigue"],
+                "analysis_summary": "defect summary",
+            },
+            "object_analysis": {
+                "component_scope": ["瓶身"],
+                "object_summary": "object summary",
+            },
+        }
+    )
+
+    assert ctx.possible_causes == ["surface fatigue"]
+    assert ctx.analysis_summary == "defect summary"
+    assert ctx.component_scope == ["瓶身"]
+    assert ctx.object_summary == "object summary"
+
+    legacy = KnowledgeContext.model_validate(
+        {
+            "possible_causes": ["legacy cause"],
+            "analysis_summary": "legacy summary",
+            "component_scope": ["螺纹区"],
+            "object_summary": "legacy object summary",
+        }
+    )
+
+    assert legacy.defect_analysis.possible_causes == ["legacy cause"]
+    assert legacy.defect_analysis.analysis_summary == "legacy summary"
+    assert legacy.object_analysis.component_scope == ["螺纹区"]
+    assert legacy.object_analysis.object_summary == "legacy object summary"
+
+
+def test_mmad_analysis_context_covers_seven_tasks():
+    ctx = MMADAnalysisContext.model_validate(
+        {
+            "anomaly_discrimination": {"status": "success", "is_anomaly": True},
+            "defect_classification": {"defect_type": "crack", "candidates": ["crack"]},
+            "defect_localization": {"locations": ["middle-right"], "heatmap_available": True},
+            "defect_description": {"descriptions": ["middle-right crack"]},
+            "defect_analysis": {"possible_causes": ["local stress"]},
+            "object_classification": {"category": "bottle", "object_name": "玻璃瓶"},
+            "object_analysis": {"component_scope": ["瓶身"]},
+        }
+    )
+
+    dumped = dump_mmad_analysis(ctx)
+
+    assert set(dumped) == {
+        "anomaly_discrimination",
+        "defect_classification",
+        "defect_localization",
+        "defect_description",
+        "defect_analysis",
+        "object_classification",
+        "object_analysis",
+    }
+    assert dumped["anomaly_discrimination"]["is_anomaly"] is True
+    assert dumped["object_analysis"]["component_scope"] == ["瓶身"]
+
+
+def test_mmad_pipeline_builds_seven_task_analysis_from_existing_contexts():
+    state = build_state()
+    state.shared_context["vision"] = {
+        "anomalies": [
+            {
+                "type": "surface_anomaly",
+                "score": 0.82,
+                "location": "middle-right",
+                "bbox": [10, 20, 60, 90],
+                "description": "在 middle-right 区域发现一处细长异常热区。",
+                "appearance": {"shape": "elongated-horizontal", "size": "small"},
+                "severity_hint": "medium",
+            }
+        ],
+        "metadata": {
+            "category": "bottle",
+            "confidence": 0.82,
+            "heatmap_path": "data/heatmaps/bottle/task_heatmap.png",
+            "mask_path": "data/heatmaps/bottle/task_mask.png",
+        },
+    }
+    state.shared_context["knowledge"] = {
+        "defect_analysis": {
+            "analysis_summary": "裂纹类风险需要复核。",
+            "possible_causes": ["local stress"],
+        },
+        "object_analysis": {
+            "object_profile": {"display_name": "玻璃瓶"},
+            "component_scope": ["瓶身"],
+            "object_summary": "玻璃瓶需要关注瓶身和封口区。",
+        },
+    }
+
+    analysis = build_mmad_analysis_context(
+        task=state.task,
+        vision=state.shared_context.vision,
+        knowledge=state.shared_context.knowledge,
+        result=state.result,
+    )
+
+    assert analysis.anomaly_discrimination.is_anomaly is True
+    assert analysis.defect_classification.defect_type == "surface_anomaly"
+    assert analysis.defect_localization.locations == ["middle-right"]
+    assert analysis.defect_localization.heatmap_available is True
+    assert analysis.defect_description.descriptions
+    assert analysis.defect_analysis.possible_causes == ["local stress"]
+    assert analysis.object_classification.category == "bottle"
+    assert analysis.object_classification.object_name == "玻璃瓶"
+    assert analysis.object_analysis.component_scope == ["瓶身"]
+    assert "[异常判别]" in format_mmad_analysis(analysis)
+
+
+def test_mmad_pipeline_marks_failed_visual_result_as_unknown_not_normal():
+    state = build_state()
+    state.result = DetectionResult(
+        task_id=state.task.task_id,
+        status="failed",
+        anomalies=[],
+        summary="patchcore execution failed",
+    )
+
+    analysis = build_mmad_analysis_context(
+        task=state.task,
+        vision=None,
+        knowledge=None,
+        result=state.result,
+    )
+
+    assert analysis.anomaly_discrimination.status == "failed"
+    assert analysis.anomaly_discrimination.is_anomaly is None
+    assert "不能据此判断设备正常" in analysis.anomaly_discrimination.evidence[0]
+
+
+def test_build_execution_metadata_includes_analysis_contracts():
+    metadata = build_execution_metadata(
+        {
+            "shared_context": {
+                "knowledge": {
+                    "defect_analysis": {
+                        "analysis_summary": "defect summary",
+                        "possible_causes": ["surface fatigue"],
+                    },
+                    "object_analysis": {
+                        "object_summary": "object summary",
+                        "component_scope": ["瓶身"],
+                    },
+                }
+            }
+        }
+    )
+
+    assert metadata["analysis_contracts"]["defect_analysis"]["analysis_summary"] == "defect summary"
+    assert metadata["analysis_contracts"]["object_analysis"]["component_scope"] == ["瓶身"]
+
+    result_only_metadata = build_execution_metadata(
+        {
+            "result": {
+                "metadata": {
+                    "defect_analysis": {"analysis_summary": "result defect summary"},
+                    "object_analysis": {"component_scope": ["螺纹区"]},
+                }
+            }
+        }
+    )
+
+    assert result_only_metadata["analysis_contracts"]["defect_analysis"]["analysis_summary"] == "result defect summary"
+    assert result_only_metadata["analysis_contracts"]["object_analysis"]["component_scope"] == ["螺纹区"]
+
+    legacy_flat_metadata = build_execution_metadata(
+        {
+            "shared_context": {
+                "knowledge": {
+                    "analysis_summary": "legacy flat summary",
+                    "possible_causes": ["legacy flat cause"],
+                    "object_summary": "legacy flat object",
+                    "component_scope": ["外缘"],
+                }
+            }
+        }
+    )
+
+    assert legacy_flat_metadata["analysis_contracts"]["defect_analysis"]["possible_causes"] == ["legacy flat cause"]
+    assert legacy_flat_metadata["analysis_contracts"]["object_analysis"]["component_scope"] == ["外缘"]
+
+
+def test_build_execution_metadata_includes_mmad_analysis():
+    metadata = build_execution_metadata(
+        {
+            "shared_context": {
+                "mmad_analysis": {
+                    "anomaly_discrimination": {"status": "success", "is_anomaly": True},
+                    "defect_classification": {"defect_type": "surface_anomaly"},
+                    "object_classification": {"category": "bottle"},
+                }
+            }
+        }
+    )
+
+    assert metadata["mmad_analysis"]["anomaly_discrimination"]["is_anomaly"] is True
+    assert metadata["mmad_analysis"]["defect_classification"]["defect_type"] == "surface_anomaly"
+
+    result_only_metadata = build_execution_metadata(
+        {
+            "result": {
+                "metadata": {
+                    "mmad_analysis": {
+                        "anomaly_discrimination": {"status": "failed", "is_anomaly": None},
+                        "object_classification": {"category": "capsule"},
+                    }
+                }
+            }
+        }
+    )
+
+    assert result_only_metadata["mmad_analysis"]["anomaly_discrimination"]["status"] == "failed"
+    assert result_only_metadata["mmad_analysis"]["object_classification"]["category"] == "capsule"
+
+
+def test_build_execution_metadata_includes_fewshot_records():
+    metadata = build_execution_metadata(
+        {
+            "result": {
+                "metadata": {
+                    "few_shot_examples": {"normal": [{"id": "normal-1"}], "anomaly": [{"id": "bad-1"}]},
+                    "few_shot_context": "[Few-shot normal examples]",
+                    "knowledge_few_shot": {
+                        "examples": {"normal": [{"id": "normal-k"}], "anomaly": [{"id": "bad-k"}]},
+                        "context": "[Few-shot anomaly examples]",
+                    },
+                }
+            }
+        }
+    )
+
+    assert metadata["few_shot"]["vision"]["normal"][0]["id"] == "normal-1"
+    assert metadata["few_shot"]["vision_context"] == "[Few-shot normal examples]"
+    assert metadata["few_shot"]["knowledge"]["anomaly"][0]["id"] == "bad-k"
+    assert metadata["few_shot"]["knowledge_context"] == "[Few-shot anomaly examples]"
+
+
+def test_supervisor_merge_generates_mmad_analysis_metadata():
+    state = build_state()
+    state.agent_outputs["vision"] = {
+        "payload": {
+            "anomalies": [
+                {
+                    "type": "surface_anomaly",
+                    "score": 0.76,
+                    "location": "top-left",
+                    "description": "top-left hotspot",
+                }
+            ],
+            "metadata": {"category": "bottle", "heatmap_path": "data/heatmaps/demo.png"},
+        }
+    }
+    state.agent_outputs["knowledge"] = {
+        "payload": {
+            "prompt_context": "case context",
+            "few_shot_examples": {"normal": [{"id": "normal-1"}], "anomaly": [{"id": "case-1"}]},
+            "few_shot_context": "[Few-shot normal examples]\n- normal-1",
+            "defect_analysis": {
+                "analysis_summary": "structured defect summary",
+                "possible_causes": ["local stress"],
+            },
+            "object_analysis": {
+                "object_profile": {"display_name": "玻璃瓶"},
+                "component_scope": ["瓶身"],
+                "object_summary": "bottle object summary",
+            },
+        }
+    }
+
+    updated = asyncio.run(supervisor_merge_node(state))
+
+    assert updated.shared_context.mmad_analysis is not None
+    assert updated.result.metadata["mmad_analysis"]["anomaly_discrimination"]["is_anomaly"] is True
+    assert updated.result.metadata["mmad_analysis"]["defect_classification"]["defect_type"] == "surface_anomaly"
+    assert updated.result.metadata["mmad_analysis"]["object_classification"]["object_name"] == "玻璃瓶"
+    assert updated.result.metadata["knowledge_few_shot"]["examples"]["normal"][0]["id"] == "normal-1"
+
+
+def test_knowledge_pipeline_builds_orchestrated_context():
+    task = DetectionTask(
+        task_id="knowledge-pipeline-001",
+        asset_id="asset-001",
+        start_time="2026-05-05T00:00:00Z",
+        end_time="2026-05-05T00:01:00Z",
+        question="Please explain the likely cause and impact.",
+        parameters={
+            "detector_params": {"category": "bottle"},
+            "object_context": {"display_name": "高压玻璃容器"},
+        },
+    )
+    request = resolve_knowledge_request(
+        task,
+        anomalies=[{"type": "surface_anomaly", "score": 0.78, "location": "middle-right"}],
+    )
+    rows = [
+        {
+            "id": "case-1",
+            "description": "Bottle crack near sealing edge with repeat occurrence in production line.",
+            "distance": 0.12,
+            "metadata": {"category": "bottle", "anomaly_type": "crack", "severity": "high"},
+        }
+    ]
+
+    defect_context, defect_prompt_context = build_defect_analysis_contract(
+        rows=rows,
+        anomalies=[{"type": "surface_anomaly", "score": 0.78, "location": "middle-right"}],
+        query_text=request["query_text"],
+    )
+    object_context_payload, object_prompt_context = build_object_analysis_contract(
+        category=request["category"],
+        anomalies=[{"type": "surface_anomaly", "score": 0.78, "location": "middle-right"}],
+        asset_id=task.asset_id,
+        object_context=request["object_context"],
+        query_text=request["query_text"],
+    )
+    knowledge_context = build_knowledge_context(
+        rows=rows,
+        defect_analysis=defect_context,
+        defect_prompt_context=defect_prompt_context,
+        object_analysis=object_context_payload,
+        object_prompt_context=object_prompt_context,
+        few_shot_context="[Few-shot anomaly examples]\n- category=bottle; type=crack",
+        few_shot_examples={"normal": [], "anomaly": rows},
+    )
+
+    assert knowledge_context.defect_analysis.analysis_summary
+    assert knowledge_context.object_analysis.object_profile["display_name"] == "高压玻璃容器"
+    assert "[可能成因]" in (knowledge_context.prompt_context or "")
+    assert "[Few-shot anomaly examples]" in (knowledge_context.prompt_context or "")
+    assert "[Object profile]" in (knowledge_context.prompt_context or "")
+    assert summarize_knowledge_context(knowledge_context)
+    payload = dump_knowledge_payload(knowledge_context)
+    assert set(payload) == {
+        "rows",
+        "prompt_context",
+        "few_shot_examples",
+        "few_shot_context",
+        "defect_analysis",
+        "object_analysis",
+    }
+    assert payload["defect_analysis"]["possible_causes"]
+    assert payload["few_shot_examples"]["anomaly"][0]["id"] == "case-1"
+
+
+def test_fewshot_selector_balances_normal_and_anomaly_cases():
+    rows = [
+        {"id": "a1", "description": "crack", "metadata": {"is_anomaly": True, "category": "bottle", "anomaly_type": "crack"}},
+        {"id": "a2", "description": "chip", "metadata": {"is_anomaly": True, "category": "bottle", "anomaly_type": "chip"}},
+        {"id": "a3", "description": "extra", "metadata": {"is_anomaly": True, "category": "bottle", "anomaly_type": "scratch"}},
+        {"id": "n1", "description": "normal rim", "metadata": {"is_anomaly": False, "category": "bottle", "anomaly_type": "good"}},
+    ]
+
+    selected = FewShotSelector(max_normal=1, max_anomaly=2).select(rows)
+    context = FewShotPromptBuilder().build(selected)
+
+    assert [item["id"] for item in selected["anomaly"]] == ["a1", "a2"]
+    assert [item["id"] for item in selected["normal"]] == ["n1"]
+    assert "[Few-shot normal examples]" in context
+    assert "[Few-shot anomaly examples]" in context
+    assert "normal rim" in context
+
+
+def test_build_fewshot_context_returns_selected_rows_and_prompt_text():
+    rows = [
+        {"id": "normal", "description": "good bottle", "metadata": {"is_anomaly": False, "category": "bottle"}},
+        {"id": "bad", "description": "broken bottle", "metadata": {"is_anomaly": True, "category": "bottle", "anomaly_type": "broken"}},
+    ]
+
+    selected, context = build_fewshot_context(rows)
+
+    assert selected["normal"][0]["id"] == "normal"
+    assert selected["anomaly"][0]["id"] == "bad"
+    assert "broken bottle" in context
 
 
 def test_supervisor_fallback_returns_structured_vision_plan(monkeypatch: pytest.MonkeyPatch):
@@ -68,6 +465,91 @@ def test_patchcore_category_resolution_prefers_detector_params():
     )
 
     assert resolve_patchcore_category(task) == "bottle"
+
+
+def test_patchcore_heatmap_anomalies_include_structured_description():
+    heatmap = np.zeros((8, 8), dtype=float)
+    heatmap[2:7, 2:7] = 0.82
+    anomalies = _extract_anomalies_from_heatmap(
+        heatmap=heatmap,
+        threshold=0.5,
+        image_size=(200, 200),
+    )
+
+    assert len(anomalies) == 1
+    anomaly = anomalies[0]
+    assert anomaly["appearance"]["shape"]
+    assert anomaly["appearance"]["size"]
+    assert anomaly["appearance"]["texture"]
+    assert anomaly["appearance"]["color_hint"]
+    assert anomaly["severity_hint"] in {"low", "medium", "high"}
+    assert "异常热区" in anomaly["description"]
+
+
+def test_build_structured_analysis_returns_actionable_sections():
+    rows = [
+        {
+            "id": "case-1",
+            "description": "Bottle crack near sealing edge with repeat occurrence in production line.",
+            "distance": 0.12,
+            "metadata": {"category": "bottle", "anomaly_type": "crack", "severity": "high"},
+        }
+    ]
+    anomalies = [{"type": "surface_anomaly", "score": 0.82, "location": "middle-right"}]
+
+    analysis = build_structured_analysis(rows=rows, anomalies=anomalies, query_text="why did this happen")
+
+    assert analysis["similar_cases"][0]["id"] == "case-1"
+    assert analysis["possible_causes"]
+    assert analysis["risk_notes"]
+    assert analysis["repair_actions"]
+    assert "[可能成因]" in analysis["prompt_context"]
+
+
+def test_build_structured_object_analysis_returns_component_and_impact_sections():
+    analysis = build_structured_object_analysis(
+        category="bottle",
+        anomalies=[{"type": "surface_anomaly", "score": 0.82, "location": "middle-right"}],
+        asset_id="asset-001",
+    )
+
+    assert analysis["object_profile"]["display_name"] == "玻璃瓶"
+    assert analysis["component_scope"]
+    assert analysis["component_findings"]
+    assert analysis["functional_impact"]
+    assert analysis["object_knowledge_notes"]
+    assert analysis["object_knowledge_summary"]
+    assert "[Object profile]" in analysis["prompt_context"]
+
+
+def test_query_object_knowledge_returns_ranked_hits():
+    hits = query_object_knowledge(
+        category="bottle",
+        anomalies=[{"type": "surface_anomaly", "location": "top-right", "description": "seal crack"}],
+        query_text="please check sealing risk",
+    )
+
+    assert hits
+    assert hits[0]["title"]
+    assert hits[0]["note"]
+
+
+def test_build_structured_object_analysis_supports_object_context_override():
+    analysis = build_structured_object_analysis(
+        category="bottle",
+        anomalies=[{"type": "surface_anomaly", "score": 0.52, "location": "top-left"}],
+        asset_id="asset-009",
+        object_context={
+            "display_name": "高压玻璃容器",
+            "function_summary": "承担高压密封与液体承载功能。",
+            "components": ["上封口区", "容器主体", "底部支撑区"],
+            "region_component_map": {"top": "上封口区", "middle": "容器主体", "bottom": "底部支撑区"},
+        },
+    )
+
+    assert analysis["object_profile"]["display_name"] == "高压玻璃容器"
+    assert analysis["component_findings"][0]["component"] == "上封口区"
+    assert "asset_id=asset-009" in analysis["object_summary"]
 
 
 def test_pending_context_mapping_handles_null_clarification():
@@ -135,7 +617,6 @@ async def test_vision_agent_exposes_patchcore_heatmap_fields():
                 result=DetectionResult(
                     task_id=task.task_id,
                     status="success",
-                    anomalies=[{"type": "surface_anomaly"}],
                     summary="done",
                     metadata={
                         "confidence": 0.88,
@@ -144,6 +625,14 @@ async def test_vision_agent_exposes_patchcore_heatmap_fields():
                         "overlay_path": "data/heatmaps/bottle/task_overlay.png",
                         "mask_path": "data/heatmaps/bottle/task_mask.png",
                     },
+                    anomalies=[
+                        {
+                            "type": "surface_anomaly",
+                            "description": "在 middle-right 区域发现一处异常热区。",
+                            "appearance": {"shape": "elongated-horizontal", "size": "small"},
+                            "severity_hint": "medium",
+                        }
+                    ],
                 ),
             )
 
@@ -162,6 +651,158 @@ async def test_vision_agent_exposes_patchcore_heatmap_fields():
     assert envelope.payload["heatmap_path"].endswith("task_heatmap.png")
     assert envelope.payload["overlay_path"].endswith("task_overlay.png")
     assert envelope.payload["mask_path"].endswith("task_mask.png")
+    assert envelope.payload["anomalies"][0]["description"]
+
+
+@pytest.mark.asyncio
+async def test_knowledge_agent_applies_object_context_override(monkeypatch: pytest.MonkeyPatch):
+    class FakeService:
+        def query_rows(self, query_text: str, category: str | None, top_k: int | None):
+            return [
+                {
+                    "id": "case-1",
+                    "description": "similar bottle case",
+                    "distance": 0.11,
+                    "metadata": {"category": "bottle", "anomaly_type": "crack"},
+                }
+            ]
+
+        def query_fewshot_rows(self, query_text: str, category: str | None, top_k: int | None):
+            return [
+                {
+                    "id": "normal-1",
+                    "description": "normal high-pressure bottle rim",
+                    "distance": 0.2,
+                    "metadata": {"category": "bottle", "is_anomaly": False, "anomaly_type": "good"},
+                },
+                {
+                    "id": "case-1",
+                    "description": "similar bottle crack case",
+                    "distance": 0.11,
+                    "metadata": {"category": "bottle", "is_anomaly": True, "anomaly_type": "crack"},
+                },
+            ]
+
+    monkeypatch.setattr("app.agents.knowledge.agent.get_rag_service", lambda: FakeService())
+
+    task = DetectionTask(
+        task_id="knowledge-object-context",
+        asset_id="asset-ctx-001",
+        start_time="2026-05-05T00:00:00Z",
+        end_time="2026-05-05T00:01:00Z",
+        question="Please analyze the object impact.",
+        parameters={
+            "detector_params": {"category": "bottle"},
+            "object_context": {
+                "display_name": "高压玻璃容器",
+                "function_summary": "承担高压密封与液体承载功能。",
+                "components": ["上封口区", "容器主体", "底部支撑区"],
+                "region_component_map": {"top": "上封口区", "middle": "容器主体", "bottom": "底部支撑区"},
+            },
+        },
+    )
+
+    envelope = await KnowledgeAgent().run(
+        task,
+        anomalies=[{"type": "surface_anomaly", "score": 0.61, "location": "top-right"}],
+    )
+
+    assert set(envelope.payload) == {
+        "rows",
+        "prompt_context",
+        "few_shot_examples",
+        "few_shot_context",
+        "defect_analysis",
+        "object_analysis",
+    }
+    assert envelope.payload["few_shot_examples"]["normal"][0]["id"] == "normal-1"
+    assert envelope.payload["few_shot_examples"]["anomaly"][0]["id"] == "case-1"
+    assert "[Few-shot normal examples]" in envelope.payload["prompt_context"]
+    assert envelope.payload["object_analysis"]["object_profile"]["display_name"] == "高压玻璃容器"
+    assert envelope.payload["object_analysis"]["component_findings"][0]["component"] == "上封口区"
+    assert "asset_id=asset-ctx-001" in envelope.payload["object_analysis"]["object_summary"]
+    assert envelope.payload["object_analysis"]["object_knowledge_notes"]
+    assert envelope.payload["object_analysis"]["object_knowledge_hits"]
+    assert envelope.payload["object_analysis"]["object_knowledge_summary"]
+    assert envelope.payload["defect_analysis"]["possible_causes"]
+    assert envelope.payload["object_analysis"]["component_findings"][0]["component"] == "上封口区"
+
+
+@pytest.mark.asyncio
+async def test_vision_agent_failure_does_not_fallback_to_normal_summary():
+    class FakeVisionTool:
+        async def run(self, task):
+            return ToolResponse(
+                tool_name="patchcore_image_anomaly_detection",
+                success=False,
+                result=DetectionResult(
+                    task_id=task.task_id,
+                    status="failed",
+                    anomalies=[],
+                    summary=None,
+                    metadata={},
+                ),
+                error="patchcore backend failed",
+            )
+
+    task = DetectionTask(
+        task_id="vision-failed",
+        asset_id="asset-001",
+        start_time="2026-04-27T00:00:00Z",
+        end_time="2026-04-27T00:01:00Z",
+        parameters={"image_base64": "aW1hZ2U="},
+    )
+    agent = VisionAgent(tool=FakeVisionTool())
+
+    envelope = await agent.run(task)
+
+    assert envelope.status == "failed"
+    assert "No obvious visual anomaly" not in (envelope.summary or "")
+    assert "failed" in (envelope.summary or "")
+
+
+@pytest.mark.asyncio
+async def test_vision_agent_injects_fewshot_context_into_tool_and_metadata():
+    captured_parameters: dict[str, object] = {}
+
+    class FakeVisionTool:
+        async def run(self, task):
+            captured_parameters.update(task.parameters or {})
+            return ToolResponse(
+                tool_name="fake_vision",
+                success=True,
+                result=DetectionResult(
+                    task_id=task.task_id,
+                    status="success",
+                    anomalies=[{"type": "scratch", "score": 0.7}],
+                    summary="vision done",
+                    metadata={"confidence": 0.7, "category": "bottle"},
+                ),
+            )
+
+    task = DetectionTask(
+        task_id="vision-fewshot",
+        asset_id="asset-001",
+        start_time="2026-05-06T00:00:00Z",
+        end_time="2026-05-06T00:01:00Z",
+        parameters={"image_base64": "aW1hZ2U="},
+    )
+    few_shot_examples = {
+        "normal": [{"id": "normal-1", "metadata": {"is_anomaly": False}}],
+        "anomaly": [{"id": "case-1", "metadata": {"is_anomaly": True}}],
+    }
+    few_shot_context = "[Few-shot normal examples]\n- normal-1"
+
+    envelope = await VisionAgent(tool=FakeVisionTool()).run(
+        task,
+        few_shot_examples=few_shot_examples,
+        few_shot_context=few_shot_context,
+    )
+
+    assert captured_parameters["few_shot_examples"] == few_shot_examples
+    assert captured_parameters["few_shot_context"] == few_shot_context
+    assert envelope.payload["metadata"]["few_shot_examples"] == few_shot_examples
+    assert envelope.payload["metadata"]["few_shot_context"] == few_shot_context
 
 
 def test_detection_state_runtime_views_group_fields():
@@ -303,7 +944,7 @@ def test_supervisor_prefers_llm_structured_plan(monkeypatch: pytest.MonkeyPatch)
 def test_supervisor_execute_and_merge(monkeypatch: pytest.MonkeyPatch):
     state = build_state("Please explain the reason and repair suggestion for the anomaly.")
 
-    async def fake_vision_run(self, task):
+    async def fake_vision_run(self, task, **kwargs):
         return AgentEnvelope(
             agent_name="vision",
             summary="vision done",
@@ -329,6 +970,36 @@ def test_supervisor_execute_and_merge(monkeypatch: pytest.MonkeyPatch):
             payload={
                 "rows": [{"id": "case-1"}],
                 "prompt_context": "similar case context",
+                "defect_analysis": {
+                    "similar_cases": [{"id": "case-1", "summary": "similar case context"}],
+                    "possible_causes": ["possible cause"],
+                    "risk_notes": ["risk note"],
+                    "repair_actions": ["repair action"],
+                    "analysis_summary": "analysis summary",
+                },
+                "object_analysis": {
+                    "object_profile": {"display_name": "玻璃瓶"},
+                    "component_scope": ["瓶身", "瓶口封口区"],
+                    "component_findings": [{"location": "middle-right", "component": "瓶身", "anomaly_type": "scratch"}],
+                    "functional_impact": ["可能影响容器密封稳定性。"],
+                    "object_summary": "玻璃瓶 的主要关注部位包括 瓶身、瓶口封口区。",
+                    "object_knowledge_notes": ["本次分析重点部件为：瓶身、瓶口封口区。"],
+                    "object_knowledge_hits": [{"title": "封口区风险", "note": "瓶口封口区异常通常优先影响密封可靠性与内容物保护能力。"}],
+                    "object_knowledge_summary": "结合该对象的默认产品知识，当前更应优先关注瓶身与瓶口封口区。",
+                },
+                "similar_cases": [{"id": "case-1", "summary": "similar case context"}],
+                "possible_causes": ["possible cause"],
+                "risk_notes": ["risk note"],
+                "repair_actions": ["repair action"],
+                "analysis_summary": "analysis summary",
+                "object_profile": {"display_name": "玻璃瓶"},
+                "component_scope": ["瓶身", "瓶口封口区"],
+                "component_findings": [{"location": "middle-right", "component": "瓶身", "anomaly_type": "scratch"}],
+                "functional_impact": ["可能影响容器密封稳定性。"],
+                "object_summary": "玻璃瓶 的主要关注部位包括 瓶身、瓶口封口区。",
+                "object_knowledge_notes": ["本次分析重点部件为：瓶身、瓶口封口区。"],
+                "object_knowledge_hits": [{"title": "封口区风险", "note": "瓶口封口区异常通常优先影响密封可靠性与内容物保护能力。"}],
+                "object_knowledge_summary": "结合该对象的默认产品知识，当前更应优先关注瓶身与瓶口封口区。",
             },
             confidence=0.7,
         )
@@ -355,6 +1026,9 @@ def test_supervisor_execute_and_merge(monkeypatch: pytest.MonkeyPatch):
         assert merged_state.context["rag_context"] == "similar case context"
         assert merged_state.result.anomalies[0]["type"] == "scratch"
         assert merged_state.result.answer == "vision answer"
+        assert merged_state.shared_context.knowledge.defect_analysis.possible_causes
+        assert merged_state.shared_context.knowledge.object_analysis.component_scope
+        assert merged_state.shared_context.knowledge.object_analysis.component_findings
 
     asyncio.run(runner())
 
@@ -425,6 +1099,23 @@ def test_supervisor_merge_applies_all_registered_adapters():
             "payload": {
                 "rows": [{"id": "case-1"}],
                 "prompt_context": "retrieved context",
+                "defect_analysis": {
+                    "similar_cases": [{"id": "case-1", "summary": "retrieved context"}],
+                    "possible_causes": ["possible cause"],
+                    "risk_notes": ["risk note"],
+                    "repair_actions": ["repair action"],
+                    "analysis_summary": "analysis summary",
+                },
+                "object_analysis": {
+                    "object_profile": {"display_name": "玻璃瓶"},
+                    "component_scope": ["瓶身", "瓶口封口区"],
+                    "component_findings": [{"location": "middle-right", "component": "瓶身", "anomaly_type": "scratch"}],
+                    "functional_impact": ["可能影响容器密封稳定性。"],
+                    "object_summary": "玻璃瓶 的主要关注部位包括 瓶身、瓶口封口区。",
+                    "object_knowledge_notes": ["本次分析重点部件为：瓶身、瓶口封口区。"],
+                    "object_knowledge_hits": [{"title": "封口区风险", "note": "瓶口封口区异常通常优先影响密封可靠性与内容物保护能力。"}],
+                    "object_knowledge_summary": "结合该对象的默认产品知识，当前更应优先关注瓶身与瓶口封口区。",
+                },
             }
         },
         "clarification": {
@@ -451,6 +1142,11 @@ def test_supervisor_merge_applies_all_registered_adapters():
     assert updated.shared_context.report is not None
     assert updated.context["rag_context"] == "retrieved context"
     assert updated.shared_context.knowledge.prompt_context == "retrieved context"
+    assert updated.shared_context.knowledge.defect_analysis.analysis_summary == "analysis summary"
+    assert updated.shared_context.knowledge.object_analysis.object_summary
+    assert updated.shared_context.knowledge.object_analysis.component_findings
+    assert updated.shared_context.knowledge.object_analysis.object_knowledge_notes
+    assert updated.shared_context.knowledge.object_analysis.object_knowledge_hits
     assert updated.context["pending_question"] == "Is the defect near the upper edge?"
     assert updated.shared_context.clarification.pending_question == "Is the defect near the upper edge?"
     assert updated.needs_user_input is True
@@ -511,13 +1207,31 @@ def test_answer_node_prefers_shared_context(monkeypatch: pytest.MonkeyPatch):
         "metadata": {"confidence": 0.88},
         "answer": "vision shortcut",
     }
-    state.shared_context["knowledge"] = {"prompt_context": "retrieved knowledge"}
+    state.shared_context["knowledge"] = {
+        "prompt_context": "retrieved knowledge",
+        "possible_causes": ["surface damage may relate to contact friction"],
+        "risk_notes": ["continued use may worsen the defect"],
+        "repair_actions": ["recheck the damaged region and inspect nearby components"],
+        "analysis_summary": "structured analysis summary",
+        "component_scope": ["螺母外缘", "内孔螺纹区"],
+        "object_profile": {"display_name": "金属螺母"},
+        "component_findings": [{"location": "middle-right", "component": "内孔螺纹区", "anomaly_type": "dent"}],
+        "functional_impact": ["若异常扩展到螺纹区，可能影响连接紧固稳定性。"],
+        "object_summary": "金属螺母的主要关注部位包括外缘与螺纹区。",
+        "object_knowledge_notes": ["本次分析重点部件为：螺母外缘、内孔螺纹区。"],
+        "object_knowledge_hits": [{"title": "螺纹配合风险", "note": "内孔螺纹区异常通常优先影响连接配合与扭矩传递稳定性。"}],
+        "object_knowledge_summary": "结合该对象的默认产品知识，当前更应优先关注外缘与螺纹区。",
+    }
 
     updated = asyncio.run(answer_node(state))
 
     assert updated.context["answer"] == "Structured diagnosis answer"
     assert updated.result.anomalies[0]["type"] == "dent"
     assert updated.result.metadata["confidence"] == 0.88
+    assert updated.result.metadata["defect_analysis"]["possible_causes"]
+    assert updated.result.metadata["object_analysis"]["component_findings"][0]["component"] == "内孔螺纹区"
+    assert updated.result.metadata["mmad_analysis"]["anomaly_discrimination"]["is_anomaly"] is True
+    assert updated.result.metadata["mmad_analysis"]["object_classification"]["object_name"] == "金属螺母"
     assert updated.current_step == 2
     assert len(short_term_calls) == 1
     assert short_term_calls[0].asset_id == "asset-001"
@@ -537,10 +1251,30 @@ def test_generate_report_state_prefers_shared_context(monkeypatch: pytest.Monkey
 
     state = build_state()
     state.shared_context["vision"] = {
-        "anomalies": [{"type": "crack", "details": "surface crack"}],
+        "anomalies": [
+            {
+                "type": "crack",
+                "details": "surface crack",
+                "description": "在 middle-right 区域发现一处细长裂纹异常热区。",
+            }
+        ],
         "metadata": {"selected_backend": "anomalygpt"},
     }
-    state.shared_context["knowledge"] = {"prompt_context": "case context"}
+    state.shared_context["knowledge"] = {
+        "prompt_context": "case context",
+        "similar_cases": [{"id": "case-1", "summary": "similar crack case"}],
+        "possible_causes": ["surface crack may relate to local stress concentration"],
+        "risk_notes": ["continued use may expand the crack"],
+        "repair_actions": ["inspect the cracked region and evaluate replacement timing"],
+        "analysis_summary": "structured crack analysis summary",
+        "component_scope": ["瓶身", "瓶口封口区"],
+        "component_findings": [{"location": "middle-right", "component": "瓶身", "anomaly_type": "crack"}],
+        "functional_impact": ["若裂纹扩展至封口区，可能影响容器密封可靠性。"],
+        "object_summary": "玻璃瓶的主要关注部位包括瓶身与瓶口封口区。",
+        "object_knowledge_notes": ["本次分析重点部件为：瓶身、瓶口封口区。"],
+        "object_knowledge_hits": [{"title": "瓶身结构风险", "note": "瓶身主体裂纹或冲击损伤更容易在运输、装配或受压场景下继续扩展。"}],
+        "object_knowledge_summary": "结合该对象的默认产品知识，当前更应优先关注瓶身与瓶口封口区。",
+    }
     state.conversation_history.append({"role": "user", "content": "Please generate a full report."})
 
     updated = asyncio.run(generate_report_state(state))
@@ -548,6 +1282,15 @@ def test_generate_report_state_prefers_shared_context(monkeypatch: pytest.Monkey
     assert updated.result.summary == "Complete report content"
     assert updated.result.anomalies[0]["type"] == "crack"
     assert updated.result.metadata["selected_backend"] == "anomalygpt"
+    assert updated.result.metadata["defect_descriptions"][0].startswith("在 middle-right")
+    assert updated.result.metadata["defect_analysis"]["possible_causes"]
+    assert updated.result.metadata["defect_analysis_text"].startswith("[Analysis summary]")
+    assert updated.result.metadata["object_analysis"]["component_scope"]
+    assert updated.result.metadata["object_analysis"]["component_findings"]
+    assert updated.result.metadata["object_analysis"]["object_knowledge_notes"]
+    assert updated.result.metadata["object_analysis"]["object_knowledge_hits"]
+    assert updated.result.metadata["mmad_analysis"]["defect_classification"]["defect_type"] == "crack"
+    assert updated.result.metadata["mmad_analysis_text"].startswith("[异常判别]")
     assert updated.shared_context.report.summary == "Complete report content"
 
 
@@ -661,7 +1404,7 @@ def test_prepare_followup_state_preserves_existing_vision_context_without_new_im
 
     from app.services.state_rehydration import prepare_followup_state
 
-    updated = prepare_followup_state(previous.model_dump(), question="有没有使用rag")
+    updated = prepare_followup_state(previous.model_dump(), question="鏈夋病鏈変娇鐢╮ag")
 
     assert updated.result is not None
     assert updated.result.anomalies[0]["type"] == "scratch"
@@ -713,7 +1456,7 @@ def test_supervisor_execute_records_tool_context(monkeypatch: pytest.MonkeyPatch
     }
     tool_context_calls: list[object] = []
 
-    async def fake_vision_run(self, task):
+    async def fake_vision_run(self, task, **kwargs):
         return AgentEnvelope(
             agent_name="vision",
             summary="vision done",
@@ -730,6 +1473,49 @@ def test_supervisor_execute_records_tool_context(monkeypatch: pytest.MonkeyPatch
     assert len(tool_context_calls) == 1
     assert tool_context_calls[0].tool_name == "vision_agent"
     assert tool_context_calls[0].tool_output["anomaly_count"] == 1
+
+
+def test_supervisor_execute_failed_envelope_does_not_merge_as_success(monkeypatch: pytest.MonkeyPatch):
+    state = build_state()
+    state.execution_plan = {
+        "steps": [
+            {
+                "id": "vision-1",
+                "agent": "vision",
+                "goal": "detect anomalies",
+                "depends_on": [],
+                "retryable": True,
+            }
+        ]
+    }
+
+    async def fake_vision_run(self, task, **kwargs):
+        return AgentEnvelope(
+            agent_name="vision",
+            status="failed",
+            summary="patchcore execution failed",
+            payload={"anomalies": [], "metadata": {}},
+            confidence=0.0,
+        )
+
+    monkeypatch.setattr("app.agents.vision.agent.VisionAgent.run", fake_vision_run)
+
+    updated = asyncio.run(supervisor_execute_node(state))
+
+    assert updated.step_status["vision-1"] == "failed"
+    assert "vision" not in updated.agent_outputs
+    assert updated.execution_events[-1]["type"] == "step_failed"
+
+
+def test_answer_node_returns_failure_message_for_failed_result(monkeypatch: pytest.MonkeyPatch):
+    state = build_state()
+    state.last_failed_step = "vision-1"
+    state.result = DetectionResult(task_id=state.task.task_id, status="failed", anomalies=[])
+
+    updated = asyncio.run(answer_node(state))
+
+    assert "不能据此判断设备正常" in updated.context["answer"]
+    assert updated.current_step == 2
 
 
 def test_stream_detection_emits_execution_events_and_final_metadata(monkeypatch: pytest.MonkeyPatch):
@@ -751,6 +1537,32 @@ def test_stream_detection_emits_execution_events_and_final_metadata(monkeypatch:
         "execution_plan": {"steps": [{"id": "vision-1", "agent": "vision"}]},
         "step_status": {"vision-1": "success"},
         "step_attempts": {"vision": 1},
+        "shared_context": {
+            "mmad_analysis": {
+                "anomaly_discrimination": {"status": "success", "is_anomaly": True, "confidence": 0.8},
+                "defect_classification": {"defect_type": "surface_anomaly"},
+                "object_classification": {"category": "bottle"},
+            },
+            "knowledge": {
+                "defect_analysis": {
+                    "analysis_summary": "stream defect analysis",
+                    "possible_causes": ["surface wear"],
+                },
+                "object_analysis": {
+                    "object_summary": "stream object summary",
+                    "component_scope": ["瓶身"],
+                },
+            }
+        },
+        "result": {
+            "status": "success",
+            "summary": "stream report",
+            "metadata": {"analysis_mode": "localization"},
+        },
+        "context": {"answer": "stream answer"},
+        "logs": ["done"],
+        "loop_count": 1,
+        "confidence": 0.8,
     }
 
     class FakeGraph:
@@ -797,6 +1609,25 @@ def test_stream_detection_emits_execution_events_and_final_metadata(monkeypatch:
     assert len(execution_payloads) == 3
     assert snapshot_payloads[0]["execution_plan"]["steps"][0]["id"] == "vision-1"
     assert snapshot_payloads[0]["step_status"]["vision-1"] == "success"
+    assert snapshot_payloads[0]["analysis_contracts"]["defect_analysis"]["analysis_summary"] == "stream defect analysis"
     assert execution_payloads[0]["event"]["type"] == "plan_created"
     assert final_payloads[0]["metadata"]["step_status"]["vision-1"] == "success"
     assert final_payloads[0]["metadata"]["execution_events"][-1]["type"] == "step_completed"
+    assert final_payloads[0]["metadata"]["analysis_contracts"]["object_analysis"]["component_scope"] == ["瓶身"]
+    assert final_payloads[0]["metadata"]["mmad_analysis"]["anomaly_discrimination"]["is_anomaly"] is True
+
+
+def test_self_reflect_retries_failed_specialist_without_proceeding():
+    state = build_state()
+    state.last_failed_step = "vision-1"
+    state.step_outputs["vision-1"] = {
+        "agent_name": "vision",
+        "status": "failed",
+        "summary": "patchcore execution failed",
+    }
+
+    updated = asyncio.run(self_reflect_node(state))
+
+    assert updated.reflection_decision == "retry"
+    assert updated.retry_target == "vision"
+    assert updated.retry_strategy == "rerun_after_failure"

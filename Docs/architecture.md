@@ -47,6 +47,38 @@ The graph uses a structured execution plan with:
 - `step_outputs`
 - `execution_events`
 
+The current full runtime chain is:
+
+```text
+web/index.html or HTTP client
+  -> app/api/main.py
+  -> app/services/task_runner.py or app/services/streaming.py
+  -> app/core/graph.py
+  -> supervisor_plan
+  -> supervisor_execute
+      -> VisionAgent
+      -> KnowledgeAgent
+      -> ClarificationAgent when needed
+      -> ReportAgent when requested
+  -> supervisor_merge
+      -> shared_context.vision
+      -> shared_context.knowledge
+      -> shared_context.mmad_analysis
+      -> metadata.analysis_contracts
+      -> metadata.mmad_analysis
+  -> self_reflect or wait_user
+  -> answer
+  -> optional report
+```
+
+Operational startup, RAG build, MMAD import, and PatchCore heatmap instructions
+are documented in
+[`Docs/runtime_guide.md`](/E:/Computer/Projects/20_products/anomaly-detection/mmdl-agent/Docs/runtime_guide.md).
+
+A Chinese end-to-end explanation of the current architecture and runtime flow is
+available in
+[`Docs/system_overview.md`](/E:/Computer/Projects/20_products/anomaly-detection/mmdl-agent/Docs/system_overview.md).
+
 ## Runtime Entry Points
 
 The active task runtime lives in `app/services`:
@@ -81,6 +113,58 @@ and is the preferred place for shared domain outputs:
 
 The long-term goal is for `shared_context` to hold core business context, while
 the generic `context` dict becomes a compatibility/debug layer.
+
+`knowledge` is now split into two typed analysis contracts:
+
+- `defect_analysis`
+  - similar cases
+  - possible causes
+  - risk notes
+  - repair actions
+  - analysis summary
+- `object_analysis`
+  - object profile
+  - component scope
+  - component findings
+  - functional impact
+  - object knowledge hits and summary
+
+The flat knowledge fields (`possible_causes`, `component_scope`, and similar)
+are compatibility mirrors. Active code should consume the nested contracts
+first. `app/rag/knowledge_pipeline.py` coordinates the defect and object
+analysis pipelines before `KnowledgeAgent` emits a unified `KnowledgeContext`.
+Before that context is emitted, `KnowledgeAgent` also uses `FewShotSelector`
+and `FewShotPromptBuilder` to add balanced normal/anomaly references from RAG:
+
+```text
+KnowledgeAgent
+  -> RAG similar-case retrieval
+  -> FewShotSelector
+  -> FewShotPromptBuilder
+  -> knowledge_pipeline
+```
+
+Execution metadata also exposes these contracts under `analysis_contracts` so
+SSE snapshots, final results, and frontend analysis panels share the same
+shape.
+
+The workflow also emits an MMAD-aligned seven-task analysis contract under
+`shared_context.mmad_analysis` and `metadata.mmad_analysis`. It normalizes the
+current vision and knowledge outputs into:
+
+- `anomaly_discrimination`
+- `defect_classification`
+- `defect_localization`
+- `defect_description`
+- `defect_analysis`
+- `object_classification`
+- `object_analysis`
+
+This contract is generated after specialist outputs are merged. It is intended
+as the stable bridge between application results and MMAD-style evaluation or
+annotation pipelines. Existing `defect_analysis` and `object_analysis`
+contracts remain the source of deeper knowledge reasoning and are embedded in
+the seven-task view.
 
 ## State Grouping
 

@@ -6,18 +6,83 @@ from typing import Any, Optional
 from app.exceptions.base import AppError
 from app.memory.conversation import compact_state_conversation
 from app.memory.state import DetectionState
+from app.analysis.mmad_pipeline import dump_mmad_analysis
 from app.orchestration.context_store import get_pending_context_from_mapping
+from app.orchestration.context import KnowledgeContext, MMADAnalysisContext
+from app.rag.knowledge_pipeline import dump_analysis_contracts
 
 logger = logging.getLogger(__name__)
 
 
+def extract_analysis_contracts(state_dict: dict[str, Any]) -> dict[str, Any]:
+    def read_contracts(source: dict[str, Any]) -> dict[str, Any]:
+        knowledge = KnowledgeContext.model_validate(source)
+        contracts = dump_analysis_contracts(knowledge)
+        return {
+            key: value
+            for key, value in contracts.items()
+            if isinstance(value, dict) and any(item not in (None, "", [], {}) for item in value.values())
+        }
+
+    shared_context = state_dict.get("shared_context") or {}
+    knowledge = shared_context.get("knowledge") or {}
+    if isinstance(knowledge, dict):
+        contracts = read_contracts(knowledge)
+        if contracts:
+            return contracts
+
+    result_obj = state_dict.get("result") or {}
+    result_metadata = result_obj.get("metadata", {}) if isinstance(result_obj, dict) else {}
+    if isinstance(result_metadata, dict):
+        contracts = read_contracts(result_metadata)
+        if contracts:
+            return contracts
+
+    return {}
+
+
+def extract_mmad_analysis(state_dict: dict[str, Any]) -> dict[str, Any]:
+    def read_mmad(source: Any) -> dict[str, Any]:
+        if not isinstance(source, dict) or not source:
+            return {}
+        return dump_mmad_analysis(MMADAnalysisContext.model_validate(source))
+
+    shared_context = state_dict.get("shared_context") or {}
+    if isinstance(shared_context, dict):
+        contracts = read_mmad(shared_context.get("mmad_analysis"))
+        if contracts:
+            return contracts
+
+    result_obj = state_dict.get("result") or {}
+    result_metadata = result_obj.get("metadata", {}) if isinstance(result_obj, dict) else {}
+    if isinstance(result_metadata, dict):
+        contracts = read_mmad(result_metadata.get("mmad_analysis"))
+        if contracts:
+            return contracts
+
+    return {}
+
+
 def build_execution_metadata(state_dict: dict[str, Any]) -> dict[str, Any]:
+    result_metadata = extract_result_metadata(state_dict.get("result"))
     return {
         "agent_trace": list(state_dict.get("agent_trace", [])),
         "execution_plan": state_dict.get("execution_plan"),
         "step_status": dict(state_dict.get("step_status", {})),
         "step_attempts": dict(state_dict.get("step_attempts", {})),
         "execution_events": list(state_dict.get("execution_events", [])),
+        "analysis_contracts": extract_analysis_contracts(state_dict),
+        "mmad_analysis": extract_mmad_analysis(state_dict),
+        "few_shot": {
+            "vision": result_metadata.get("few_shot_examples")
+            or result_metadata.get("vision_few_shot", {}).get("examples")
+            or {},
+            "vision_context": result_metadata.get("few_shot_context")
+            or result_metadata.get("vision_few_shot", {}).get("context")
+            or "",
+            "knowledge": result_metadata.get("knowledge_few_shot", {}).get("examples", {}),
+            "knowledge_context": result_metadata.get("knowledge_few_shot", {}).get("context", ""),
+        },
     }
 
 
