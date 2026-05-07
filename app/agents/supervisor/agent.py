@@ -19,11 +19,25 @@ KNOWLEDGE_KEYWORDS = (
     "风险",
     "维修",
     "rag",
+    "RAG",
     "检索",
     "知识库",
+    "相似",
+    "严重",
+    "影响",
+    "为什么",
+    "怎么处理",
+    "如何处理",
+    "是否使用",
+    "有没有使用",
+    "追问",
     "repair",
     "reason",
     "knowledge",
+    "retrieve",
+    "similar",
+    "risk",
+    "suggestion",
 )
 
 SUPERVISOR_PLAN_PROMPT = """You supervise an industrial anomaly multi-agent system.
@@ -39,6 +53,7 @@ Rules:
 - If needs_user_input is true and no clarification request has been prepared, return ["clarification"].
 - If there is image input and vision has not run this turn, usually include "vision".
 - Include "knowledge" when the user asks about cause, repair, suggestion, risk, or similar cases.
+- For follow-up questions, regenerate the answer for the current question; include "knowledge" when the follow-up asks about RAG, retrieval, cause, risk, suggestion, or similar cases.
 - Do not repeat an already completed specialist in the same turn unless explicitly needed.
 - Return strict JSON only.
 
@@ -71,6 +86,14 @@ class SupervisorExecutionPlan(BaseModel):
 
 class SupervisorAgent:
     name = "supervisor"
+
+    def _followup_needs_knowledge(self, state: DetectionState, question: str) -> bool:
+        if not state.context.get("is_followup"):
+            return False
+        has_new_image = bool(state.context.get("has_new_image"))
+        if has_new_image:
+            return False
+        return any(keyword.lower() in question for keyword in KNOWLEDGE_KEYWORDS)
 
     def _goal_for_agent(self, agent_name: str, state: DetectionState) -> str:
         orchestration = state.orchestration_runtime()
@@ -146,7 +169,10 @@ class SupervisorAgent:
         if has_image and not domain.agent_outputs.get("vision"):
             requested.append("vision")
 
-        if any(keyword in question for keyword in KNOWLEDGE_KEYWORDS):
+        if any(keyword.lower() in question for keyword in KNOWLEDGE_KEYWORDS):
+            requested.append("knowledge")
+
+        if self._followup_needs_knowledge(state, question) and "knowledge" not in requested:
             requested.append("knowledge")
 
         if not requested and has_image and not domain.agent_outputs.get("vision"):
@@ -161,6 +187,9 @@ class SupervisorAgent:
         return {
             "task_id": task_runtime.task.task_id,
             "question": task_runtime.task.question or "",
+            "is_followup": bool(state.context.get("is_followup")),
+            "latest_question": state.context.get("latest_question") or task_runtime.task.question or "",
+            "has_new_image": bool(state.context.get("has_new_image")),
             "has_image": bool((task_runtime.task.parameters or {}).get("image_base64")),
             "report_requested": task_runtime.report_requested,
             "needs_user_input": orchestration.needs_user_input,
@@ -200,6 +229,11 @@ class SupervisorAgent:
             for item in plan.planned_agents:
                 if item in {"vision", "knowledge", "clarification", "report"} and item not in planned_agents:
                     planned_agents.append(item)
+            if not planned_agents and self._followup_needs_knowledge(
+                state,
+                (state.task_runtime().task.question or "").lower(),
+            ):
+                planned_agents.append("knowledge")
 
             if plan.reason:
                 state.context["supervisor_reason"] = plan.reason

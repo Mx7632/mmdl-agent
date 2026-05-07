@@ -1412,6 +1412,9 @@ def test_prepare_followup_state_compacts_history():
 
     assert len(updated.conversation_history) == 6
     assert updated.conversation_history[-1]["content"] == "latest question"
+    assert updated.context["is_followup"] is True
+    assert updated.context["latest_question"] == "latest question"
+    assert updated.context["answer"] == ""
     assert updated.conversation_summary is not None
     assert updated.context["conversation_compacted_turns"] == 1
 
@@ -1452,6 +1455,34 @@ def test_supervisor_fallback_adds_knowledge_for_rag_question(monkeypatch: pytest
     monkeypatch.setattr("app.agents.supervisor.agent.settings.openai_api_key", "")
     supervisor = get_supervisor_agent()
     state = build_state("有没有使用rag")
+    state.agent_outputs["vision"] = {"payload": {"anomalies": [{"type": "scratch"}]}}
+    state.shared_context["vision"] = {
+        "anomalies": [{"type": "scratch"}],
+        "metadata": {"selected_backend": "qwen"},
+    }
+
+    plan = supervisor.plan(state)
+
+    assert [step.agent for step in plan.steps] == ["knowledge"]
+
+
+def test_supervisor_llm_empty_plan_keeps_knowledge_for_followup_rag_question(monkeypatch: pytest.MonkeyPatch):
+    class FakeResponse:
+        content = '{"planned_agents": [], "reason": "answer directly"}'
+
+    class FakeChatOpenAI:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def invoke(self, messages):
+            return FakeResponse()
+
+    monkeypatch.setattr("app.agents.supervisor.agent.settings.openai_api_key", "fake-key")
+    monkeypatch.setattr("app.agents.supervisor.agent.ChatOpenAI", FakeChatOpenAI)
+    supervisor = get_supervisor_agent()
+    state = build_state("有没有使用rag")
+    state.context["is_followup"] = True
+    state.context["has_new_image"] = False
     state.agent_outputs["vision"] = {"payload": {"anomalies": [{"type": "scratch"}]}}
     state.shared_context["vision"] = {
         "anomalies": [{"type": "scratch"}],
