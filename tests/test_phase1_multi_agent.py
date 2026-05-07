@@ -32,7 +32,12 @@ from app.rag.knowledge_pipeline import (
     resolve_knowledge_request,
     summarize_knowledge_context,
 )
-from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool, resolve_visual_backend
+from app.tools.image_anomaly_detection import (
+    ImageAnomalyDetectionTool,
+    _build_visual_prompt,
+    filter_qwen_anomalies,
+    resolve_visual_backend,
+)
 from app.orchestration.context_store import get_pending_context_from_mapping
 from app.rag.defect_analysis import build_structured_analysis
 from app.rag.fewshot import FewShotPromptBuilder, FewShotSelector, build_fewshot_context
@@ -437,6 +442,43 @@ def test_build_fewshot_context_returns_selected_rows_and_prompt_text():
     assert selected["normal"][0]["id"] == "normal"
     assert selected["anomaly"][0]["id"] == "bad"
     assert "broken bottle" in context
+
+
+def test_qwen_anomaly_filter_removes_weak_or_uncertain_candidates():
+    anomalies = [
+        {"type": "reflection", "score": 0.92, "details": "possible reflection on normal edge"},
+        {"type": "scratch", "score": 0.42, "details": "weak contrast variation"},
+        {"type": "crack", "score": 0.81, "details": "clear localized crack with jagged contour"},
+    ]
+
+    kept, filtered = filter_qwen_anomalies(anomalies, min_score=0.65)
+
+    assert [item["type"] for item in kept] == ["crack"]
+    assert [item["filter_reason"] for item in filtered] == [
+        "uncertain_or_normal_texture",
+        "score_below_0.65",
+    ]
+
+
+def test_qwen_prompt_allows_normal_output_and_uses_fewshot_calibration():
+    task = DetectionTask(
+        task_id="qwen-prompt-001",
+        asset_id="asset-001",
+        start_time="2026-05-07T00:00:00Z",
+        end_time="2026-05-07T00:01:00Z",
+        question="请判断是否异常",
+        parameters={
+            "few_shot_context": "[Few-shot normal examples]\n- normal bottle rim",
+            "few_shot_examples": {"normal": [{"id": "normal-1"}], "anomaly": [{"id": "bad-1"}]},
+        },
+    )
+
+    prompt = _build_visual_prompt(task, {}, (900, 900))
+
+    requirements = "\n".join(prompt["requirements"])
+    assert "return anomalies as an empty list" in requirements
+    assert "closer to normal references" in requirements
+    assert prompt["normal_decision_policy"]["normal_output"]["anomalies"] == []
 
 
 def test_supervisor_fallback_returns_structured_vision_plan(monkeypatch: pytest.MonkeyPatch):

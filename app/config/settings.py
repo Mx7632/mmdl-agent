@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     llm_vision_model: str = "qwen3.5-plus"
     vision_detector_backend: str = "qwen"
+    qwen_min_anomaly_score: float = 0.65
     professional_vision_detector_type: str = "anomalygpt"
     professional_vision_detector_url: str = ""
     professional_vision_detector_timeout: float = 30.0
