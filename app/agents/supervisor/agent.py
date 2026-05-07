@@ -201,6 +201,14 @@ class SupervisorAgent:
         }
 
     def plan(self, state: DetectionState) -> SupervisorExecutionPlan:
+        orchestration = state.orchestration_runtime()
+        if orchestration.reflection_decision == "retry" and orchestration.retry_target:
+            return self._build_execution_plan(
+                state,
+                [orchestration.retry_target],
+                reason=orchestration.retry_reason or "自反思节点要求重试",
+            )
+
         if not settings.openai_api_key:
             return self._fallback_plan(state)
 

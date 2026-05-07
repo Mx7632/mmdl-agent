@@ -1494,6 +1494,25 @@ def test_supervisor_llm_empty_plan_keeps_knowledge_for_followup_rag_question(mon
     assert [step.agent for step in plan.steps] == ["knowledge"]
 
 
+def test_supervisor_retry_target_bypasses_llm_empty_plan(monkeypatch: pytest.MonkeyPatch):
+    class FakeChatOpenAI:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("retry planning must not call the LLM")
+
+    monkeypatch.setattr("app.agents.supervisor.agent.settings.openai_api_key", "fake-key")
+    monkeypatch.setattr("app.agents.supervisor.agent.ChatOpenAI", FakeChatOpenAI)
+    supervisor = get_supervisor_agent()
+    state = build_state()
+    state.reflection_decision = "retry"
+    state.retry_target = "vision"
+    state.retry_reason = "previous visual result was unreliable"
+
+    plan = supervisor.plan(state)
+
+    assert [step.agent for step in plan.steps] == ["vision"]
+    assert plan.reason == "previous visual result was unreliable"
+
+
 def test_restore_state_promotes_legacy_conversation_summary():
     from app.services.state_rehydration import restore_state
 
