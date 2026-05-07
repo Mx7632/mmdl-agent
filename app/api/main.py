@@ -17,6 +17,7 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.config.settings import settings
 from app.exceptions.base import AppError, DataMissingError, ResponseParseError
+from app.rag.service import get_rag_service
 from app.services import continue_detection, generate_report, get_pending_task, run_chat, run_detection
 from app.schemas.detection import DetectionResult, DetectionTask
 from app.schemas.detection import (
@@ -208,8 +209,6 @@ async def patchcore_categories():
 
 @app.post("/v1/rag/build", response_model=RagBuildResponse)
 async def rag_build(payload: RagBuildRequest) -> RagBuildResponse:
-    from app.rag.service import get_rag_service
-
     service = get_rag_service()
     result = service.build_from_dataset(
         dataset_root=payload.dataset_root,
@@ -257,8 +256,6 @@ async def rag_build_status(task_id: str) -> RagBuildStatusResponse:
 
 @app.post("/v1/rag/query", response_model=RagQueryResponse)
 async def rag_query(payload: RagQueryRequest) -> RagQueryResponse:
-    from app.rag.service import get_rag_service
-
     service = get_rag_service()
     rows = service.query_rows(
         query_text=payload.query_text,
@@ -277,8 +274,6 @@ async def rag_query(payload: RagQueryRequest) -> RagQueryResponse:
 
 @app.post("/v1/rag/query-image", response_model=RagQueryResponse)
 async def rag_query_image(payload: RagImageQueryRequest) -> RagQueryResponse:
-    from app.rag.service import get_rag_service
-
     service = get_rag_service()
     rows = service.query_rows_by_image(
         image_path=payload.image_path,
@@ -297,8 +292,6 @@ async def rag_query_image(payload: RagImageQueryRequest) -> RagQueryResponse:
 
 @app.post("/v1/rag/ingest-feedback", response_model=RagIngestFeedbackResponse)
 async def rag_ingest_feedback(payload: RagIngestFeedbackRequest) -> RagIngestFeedbackResponse:
-    from app.rag.service import get_rag_service
-
     service = get_rag_service()
     accepted = service.add_online_case(
         image_path=payload.image_path,

@@ -215,3 +215,28 @@ def test_stream_endpoint_dispatches_continue_flow(monkeypatch):
     assert '"type":"execution_event"' in text
     assert '"type":"final_result"' in text
     assert '"answer":"streamed continue answer"' in text
+
+
+def test_rag_build_start_uses_rag_service(monkeypatch):
+    client = TestClient(api_main.app)
+
+    class FakeRagService:
+        def start_build_job(self, dataset_root=None, include_normal=True):
+            assert dataset_root == "data_sets/mvtec_anomaly_detection"
+            assert include_normal is True
+            return "rag-build-smoke-001"
+
+    monkeypatch.setattr(api_main, "get_rag_service", lambda: FakeRagService())
+
+    response = client.post(
+        "/v1/rag/build/start",
+        json={
+            "dataset_root": "data_sets/mvtec_anomaly_detection",
+            "include_normal": True,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["task_id"] == "rag-build-smoke-001"
