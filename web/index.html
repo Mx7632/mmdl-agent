@@ -179,6 +179,11 @@
             min-height: 94px;
         }
 
+        .field input[type="checkbox"] {
+            width: auto;
+            margin-right: 8px;
+        }
+
         .inline-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -398,6 +403,61 @@
         .message.error {
             background: var(--error-soft);
             color: var(--error);
+        }
+
+        .rag-status-box {
+            margin-top: 12px;
+            border: 1px solid var(--line-soft);
+            border-radius: var(--radius-md);
+            background: #f7f9fc;
+            padding: 12px;
+        }
+
+        .rag-progress-track {
+            height: 8px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: #e3e8ef;
+        }
+
+        .rag-progress-fill {
+            width: 0%;
+            height: 100%;
+            border-radius: inherit;
+            background: var(--accent);
+            transition: width 0.24s ease;
+        }
+
+        .rag-status-meta {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .rag-result-list {
+            display: grid;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .rag-result-item {
+            border: 1px solid var(--line-soft);
+            border-radius: var(--radius-md);
+            background: #fff;
+            padding: 10px;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .rag-result-item strong {
+            display: block;
+            margin-bottom: 4px;
+            color: var(--text);
+            font-size: 12px;
         }
 
         .main-panel {
@@ -1121,6 +1181,56 @@
                 </section>
 
                 <section class="card">
+                    <h2>RAG 知识库</h2>
+                    <div class="field">
+                        <label for="rag-dataset-root">数据集目录</label>
+                        <input id="rag-dataset-root" type="text" value="data_sets/mvtec_anomaly_detection">
+                    </div>
+                    <div class="field">
+                        <label>
+                            <input id="rag-include-normal" type="checkbox" checked>
+                            包含正常样本
+                        </label>
+                        <div class="hint">建议开启，few-shot 会同时使用正常和异常参考样本。</div>
+                    </div>
+                    <div class="button-row" style="margin-top: 12px;">
+                        <button id="rag-build-button" class="primary" type="button">开始建库</button>
+                        <button id="rag-refresh-button" class="ghost" type="button" disabled>刷新进度</button>
+                    </div>
+                    <div class="rag-status-box">
+                        <div class="rag-progress-track">
+                            <div id="rag-progress-fill" class="rag-progress-fill"></div>
+                        </div>
+                        <div id="rag-status-text" class="hint">尚未开始建库。</div>
+                        <div class="rag-status-meta">
+                            <span id="rag-task-id" class="mono">task: -</span>
+                            <span id="rag-progress-count">0 / 0</span>
+                            <span id="rag-phase">phase: idle</span>
+                            <span id="rag-vector-count">vectors: -</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label for="rag-query-text">检索验证</label>
+                        <input id="rag-query-text" type="text" placeholder="例如 bottle broken small crack">
+                    </div>
+                    <div class="inline-grid">
+                        <div class="field">
+                            <label for="rag-query-category">类别</label>
+                            <input id="rag-query-category" type="text" placeholder="bottle">
+                        </div>
+                        <div class="field">
+                            <label for="rag-query-top-k">Top K</label>
+                            <input id="rag-query-top-k" type="number" min="1" max="20" value="3">
+                        </div>
+                    </div>
+                    <div class="button-row" style="margin-top: 12px;">
+                        <button id="rag-query-button" class="ghost" type="button">查询知识库</button>
+                    </div>
+                    <div id="rag-message" class="message info"></div>
+                    <div id="rag-results" class="rag-result-list"></div>
+                </section>
+
+                <section class="card">
                     <h2>任务配置</h2>
                     <div class="field">
                         <label for="asset-id">设备 ID</label>
@@ -1370,7 +1480,9 @@
             timelineFilter: 'all',
             timelinePanels: { steps: true, events: true },
             selectedTimelineItem: null,
-            patchcoreCatalog: null
+            patchcoreCatalog: null,
+            ragBuildTaskId: '',
+            ragBuildPoller: null
         };
 
         const els = {
@@ -1387,6 +1499,22 @@
             patchcoreCategory: document.getElementById('patchcore-category'),
             patchcoreThreshold: document.getElementById('patchcore-threshold'),
             patchcoreStatus: document.getElementById('patchcore-status'),
+            ragDatasetRoot: document.getElementById('rag-dataset-root'),
+            ragIncludeNormal: document.getElementById('rag-include-normal'),
+            ragBuildButton: document.getElementById('rag-build-button'),
+            ragRefreshButton: document.getElementById('rag-refresh-button'),
+            ragProgressFill: document.getElementById('rag-progress-fill'),
+            ragStatusText: document.getElementById('rag-status-text'),
+            ragTaskId: document.getElementById('rag-task-id'),
+            ragProgressCount: document.getElementById('rag-progress-count'),
+            ragPhase: document.getElementById('rag-phase'),
+            ragVectorCount: document.getElementById('rag-vector-count'),
+            ragQueryText: document.getElementById('rag-query-text'),
+            ragQueryCategory: document.getElementById('rag-query-category'),
+            ragQueryTopK: document.getElementById('rag-query-top-k'),
+            ragQueryButton: document.getElementById('rag-query-button'),
+            ragMessage: document.getElementById('rag-message'),
+            ragResults: document.getElementById('rag-results'),
             objectDisplayName: document.getElementById('object-display-name'),
             objectFunctionSummary: document.getElementById('object-function-summary'),
             objectComponents: document.getElementById('object-components'),
@@ -1448,7 +1576,7 @@
             if (topbarCopy) topbarCopy.textContent = '首轮输入用于发起检测；任务创建后，输入框继续承担追问或澄清。';
 
             const cardTitles = document.querySelectorAll('.sidebar .card h2');
-            const cardTitleText = ['任务状态', '任务配置', '异常摘要', '待澄清信息', '完整报告'];
+            const cardTitleText = ['任务状态', 'RAG 知识库', '任务配置', '异常摘要', '待澄清信息', '完整报告'];
             cardTitles.forEach((node, index) => {
                 if (cardTitleText[index]) node.textContent = cardTitleText[index];
             });
@@ -1466,6 +1594,10 @@
                 'asset-id': '设备 ID',
                 'image-input': '检测图片',
                 'visual-backend': '检测后端',
+                'rag-dataset-root': '数据集目录',
+                'rag-query-text': '检索验证',
+                'rag-query-category': '类别',
+                'rag-query-top-k': 'Top K',
                 'patchcore-category': 'PatchCore 类别',
                 'patchcore-threshold': 'PatchCore 阈值',
                 'object-display-name': '对象名称',
@@ -1489,6 +1621,9 @@
             if (els.maskOverlay) els.maskOverlay.alt = '异常热区';
             if (els.detectButton) els.detectButton.textContent = '开始检测';
             if (els.patchcoreDetectButton) els.patchcoreDetectButton.textContent = '运行 PatchCore';
+            if (els.ragBuildButton) els.ragBuildButton.textContent = '开始建库';
+            if (els.ragRefreshButton) els.ragRefreshButton.textContent = '刷新进度';
+            if (els.ragQueryButton) els.ragQueryButton.textContent = '查询知识库';
             if (els.reportButton) els.reportButton.textContent = '生成报告';
             if (els.resetButton) els.resetButton.textContent = '新任务';
             if (els.followupButton) els.followupButton.textContent = '发送追问';
@@ -1823,6 +1958,172 @@
         function setMessage(element, type, text) {
             element.className = `message ${type}${text ? ' show' : ''}`;
             element.textContent = text || '';
+        }
+
+        function renderRagBuildStatus(payload = {}) {
+            const percent = Math.max(0, Math.min(100, Number(payload.percent || 0)));
+            if (els.ragProgressFill) {
+                els.ragProgressFill.style.width = `${percent}%`;
+            }
+            if (els.ragStatusText) {
+                els.ragStatusText.textContent = payload.message || '尚未开始建库。';
+            }
+            if (els.ragTaskId) {
+                els.ragTaskId.textContent = `task: ${payload.task_id || state.ragBuildTaskId || '-'}`;
+            }
+            if (els.ragProgressCount) {
+                els.ragProgressCount.textContent = `${payload.processed || 0} / ${payload.total || 0}`;
+            }
+            if (els.ragPhase) {
+                els.ragPhase.textContent = `phase: ${payload.phase || 'idle'}`;
+            }
+            const vectorCount = payload.result?.vector_count;
+            if (els.ragVectorCount) {
+                els.ragVectorCount.textContent = `vectors: ${vectorCount ?? '-'}`;
+            }
+        }
+
+        function stopRagBuildPolling() {
+            if (state.ragBuildPoller) {
+                clearInterval(state.ragBuildPoller);
+                state.ragBuildPoller = null;
+            }
+        }
+
+        async function refreshRagBuildStatus() {
+            if (!state.ragBuildTaskId) return null;
+            const res = await fetch(`${API_BASE}/v1/rag/build/status/${encodeURIComponent(state.ragBuildTaskId)}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const payload = await res.json();
+            renderRagBuildStatus(payload);
+
+            if (payload.status === 'completed') {
+                stopRagBuildPolling();
+                els.ragBuildButton.disabled = false;
+                els.ragRefreshButton.disabled = false;
+                setMessage(els.ragMessage, 'success', `RAG 建库完成，已写入 ${payload.result?.vector_count ?? 0} 条向量。`);
+            } else if (payload.status === 'failed') {
+                stopRagBuildPolling();
+                els.ragBuildButton.disabled = false;
+                els.ragRefreshButton.disabled = false;
+                setMessage(els.ragMessage, 'error', payload.error || 'RAG 建库失败。');
+            }
+            return payload;
+        }
+
+        function startRagBuildPolling() {
+            stopRagBuildPolling();
+            state.ragBuildPoller = setInterval(() => {
+                refreshRagBuildStatus().catch(error => {
+                    stopRagBuildPolling();
+                    els.ragBuildButton.disabled = false;
+                    els.ragRefreshButton.disabled = false;
+                    setMessage(els.ragMessage, 'error', `刷新建库进度失败：${error.message}`);
+                });
+            }, 1800);
+        }
+
+        async function startRagBuild() {
+            const datasetRoot = els.ragDatasetRoot.value.trim();
+            if (!datasetRoot) {
+                setMessage(els.ragMessage, 'warning', '请输入 MVTec 数据集目录。');
+                return;
+            }
+
+            els.ragBuildButton.disabled = true;
+            els.ragRefreshButton.disabled = true;
+            els.ragResults.innerHTML = '';
+            setMessage(els.ragMessage, 'info', '正在启动 RAG 建库任务。');
+            renderRagBuildStatus({
+                task_id: '-',
+                phase: 'starting',
+                percent: 0,
+                processed: 0,
+                total: 0,
+                message: '正在提交建库请求...'
+            });
+
+            try {
+                const res = await fetch(`${API_BASE}/v1/rag/build/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        dataset_root: datasetRoot,
+                        include_normal: !!els.ragIncludeNormal.checked
+                    })
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const payload = await res.json();
+                state.ragBuildTaskId = payload.task_id || '';
+                els.ragRefreshButton.disabled = !state.ragBuildTaskId;
+                renderRagBuildStatus({
+                    task_id: state.ragBuildTaskId,
+                    phase: 'queued',
+                    percent: 0,
+                    processed: 0,
+                    total: 0,
+                    message: payload.message || '建库任务已启动。'
+                });
+                setMessage(els.ragMessage, 'info', '建库任务已启动，页面会自动刷新进度。');
+                startRagBuildPolling();
+                await refreshRagBuildStatus();
+            } catch (error) {
+                els.ragBuildButton.disabled = false;
+                els.ragRefreshButton.disabled = false;
+                setMessage(els.ragMessage, 'error', `启动 RAG 建库失败：${error.message}`);
+            }
+        }
+
+        async function queryRagKnowledge() {
+            const queryText = els.ragQueryText.value.trim();
+            if (!queryText) {
+                setMessage(els.ragMessage, 'warning', '请输入检索文本。');
+                return;
+            }
+
+            els.ragQueryButton.disabled = true;
+            els.ragResults.innerHTML = '';
+            setMessage(els.ragMessage, 'info', '正在查询 RAG 知识库。');
+
+            try {
+                const topK = Number(els.ragQueryTopK.value || 3);
+                const res = await fetch(`${API_BASE}/v1/rag/query`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query_text: queryText,
+                        category: els.ragQueryCategory.value.trim() || null,
+                        top_k: Math.max(1, Math.min(20, topK))
+                    })
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const payload = await res.json();
+                const rows = Array.isArray(payload.results) ? payload.results : [];
+                setMessage(
+                    els.ragMessage,
+                    rows.length ? 'success' : 'warning',
+                    rows.length ? `检索到 ${rows.length} 条相似案例。` : '没有检索到相似案例，请确认已完成建库。'
+                );
+                els.ragResults.innerHTML = rows.map(row => {
+                    const meta = row.metadata || {};
+                    const title = [
+                        meta.category || 'unknown',
+                        meta.anomaly_type || 'good',
+                        typeof row.distance === 'number' ? `distance ${row.distance.toFixed(4)}` : ''
+                    ].filter(Boolean).join(' / ');
+                    return `
+                        <div class="rag-result-item">
+                            <strong>${escapeHtml(title)}</strong>
+                            <div>${escapeHtml(row.description || '')}</div>
+                            <div class="hint mono">${escapeHtml(meta.image_path || row.id || '')}</div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                setMessage(els.ragMessage, 'error', `查询 RAG 失败：${error.message}`);
+            } finally {
+                els.ragQueryButton.disabled = false;
+            }
         }
 
         function getResultMetadata(result) {
@@ -3085,6 +3386,13 @@ ${data.summary}`);
 
         els.visualBackend?.addEventListener('change', syncBackendControls);
         els.patchcoreCategory?.addEventListener('change', renderPatchcoreStatus);
+        els.ragBuildButton?.addEventListener('click', startRagBuild);
+        els.ragRefreshButton?.addEventListener('click', () => {
+            refreshRagBuildStatus().catch(error => {
+                setMessage(els.ragMessage, 'error', `刷新建库进度失败：${error.message}`);
+            });
+        });
+        els.ragQueryButton?.addEventListener('click', queryRagKnowledge);
         els.detectButton.addEventListener('click', startDetection);
         els.patchcoreDetectButton?.addEventListener('click', () => startDetection(PATCHCORE_BACKEND));
         els.followupButton.addEventListener('click', sendFollowup);
