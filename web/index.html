@@ -2817,8 +2817,9 @@
         }
 
         async function startDetection(backendOverride = '') {
-            if (backendOverride && els.visualBackend) {
-                els.visualBackend.value = backendOverride;
+            const explicitBackend = typeof backendOverride === 'string' ? backendOverride : '';
+            if (explicitBackend && els.visualBackend) {
+                els.visualBackend.value = explicitBackend;
                 syncBackendControls();
             }
             const assetId = els.assetId.value.trim();
@@ -2833,7 +2834,7 @@
                 setMessage(els.detectMessage, 'warning', '请先上传检测图片。');
                 return;
             }
-            const backend = (backendOverride || getSelectedBackend()).trim().toLowerCase();
+            const backend = (explicitBackend || getSelectedBackend()).trim().toLowerCase();
             if (backend === PATCHCORE_BACKEND && state.patchcoreCatalog && !isPatchcoreCategoryTrained()) {
                 const category = (els.patchcoreCategory?.value || 'bottle').trim().toLowerCase();
                 const trained = state.patchcoreCatalog.trained_categories || [];
@@ -2868,7 +2869,7 @@
             form.append('start_time', nowIso());
             form.append('end_time', nowIso());
             form.append('question', question);
-            form.append('parameters', JSON.stringify(buildDetectionParameters(backendOverride)));
+            form.append('parameters', JSON.stringify(buildDetectionParameters(explicitBackend)));
             form.append('image', image);
 
             els.detectButton.disabled = true;
