@@ -1542,6 +1542,46 @@ def test_supervisor_execute_failed_envelope_does_not_merge_as_success(monkeypatc
     assert updated.execution_events[-1]["type"] == "step_failed"
 
 
+def test_supervisor_execute_clears_stale_failed_step_after_successful_retry(monkeypatch: pytest.MonkeyPatch):
+    state = build_state()
+    state.last_failed_step = "vision-1"
+    state.retry_target = "vision"
+    state.retry_reason = "previous patchcore failure"
+    state.retry_strategy = "rerun_after_failure"
+    state.step_status["vision-1"] = "failed"
+    state.step_attempts["vision"] = 1
+    state.execution_plan = {
+        "steps": [
+            {
+                "id": "vision-2",
+                "agent": "vision",
+                "goal": "retry visual anomaly analysis",
+                "depends_on": [],
+                "retryable": True,
+            }
+        ]
+    }
+
+    async def fake_vision_run(self, task, **kwargs):
+        return AgentEnvelope(
+            agent_name="vision",
+            status="success",
+            summary="patchcore retry succeeded",
+            payload={"anomalies": [{"type": "surface_anomaly"}], "metadata": {"confidence": 0.9}},
+            confidence=0.9,
+        )
+
+    monkeypatch.setattr("app.agents.vision.agent.VisionAgent.run", fake_vision_run)
+    monkeypatch.setattr("app.orchestration.step_executor._build_visual_fewshot", lambda task: ({}, ""))
+
+    updated = asyncio.run(supervisor_execute_node(state))
+
+    assert updated.step_status["vision-2"] == "success"
+    assert updated.last_failed_step is None
+    assert updated.retry_target is None
+    assert updated.reflection_decision is None
+
+
 def test_answer_node_returns_failure_message_for_failed_result(monkeypatch: pytest.MonkeyPatch):
     state = build_state()
     state.last_failed_step = "vision-1"

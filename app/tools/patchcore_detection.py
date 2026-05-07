@@ -435,7 +435,10 @@ def predict_patchcore_image(
     effective_threshold = float(threshold or metadata.get("recommended_threshold") or settings.patchcore_threshold)
 
     extractor = _build_feature_extractor(backbone_name, pretrained_backbone).to(device)
-    memory_bank = torch.load(artifacts.memory_bank_path, map_location="cpu")
+    try:
+        memory_bank = torch.load(artifacts.memory_bank_path, map_location="cpu", weights_only=True)
+    except TypeError:
+        memory_bank = torch.load(artifacts.memory_bank_path, map_location="cpu")
 
     image, tensor = _load_image(image_path, image_size)
     embeddings = _extract_patch_embeddings(extractor, tensor, device)
