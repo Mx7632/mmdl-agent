@@ -1493,6 +1493,38 @@ def test_prepare_followup_state_preserves_existing_vision_context_without_new_im
     assert "vision" in updated.agent_outputs
 
 
+def test_run_chat_reinvokes_graph_with_prepared_followup_state(monkeypatch: pytest.MonkeyPatch):
+    from app.services.task_runner import run_chat
+
+    previous = build_state().model_dump()
+    captured_states: list[DetectionState] = []
+
+    async def fake_load_state_values(task_id: str):
+        return previous, "memory"
+
+    @asynccontextmanager
+    async def fake_graph_session(task_id: str):
+        yield object(), {"configurable": {"thread_id": task_id}}, "memory"
+
+    async def fake_run_graph(graph, initial_state, *, config=None):
+        captured_states.append(initial_state)
+        payload = initial_state.model_dump()
+        payload.setdefault("context", {})["answer"] = "chat answer"
+        payload.setdefault("result", {"status": "success", "metadata": {}})
+        return payload
+
+    monkeypatch.setattr("app.services.task_runner.load_state_values", fake_load_state_values)
+    monkeypatch.setattr("app.services.task_runner.graph_session", fake_graph_session)
+    monkeypatch.setattr("app.services.task_runner.run_graph", fake_run_graph)
+    monkeypatch.setattr("app.services.task_runner.persist_runtime_state", lambda task_id, state, backend: None)
+
+    result = asyncio.run(run_chat(previous["task"]["task_id"], "rag有相关内容吗"))
+
+    assert captured_states[0].task.question == "rag有相关内容吗"
+    assert captured_states[0].context["is_followup"] is True
+    assert result["answer"] == "chat answer"
+
+
 def test_supervisor_fallback_adds_knowledge_for_rag_question(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("app.agents.supervisor.agent.settings.openai_api_key", "")
     supervisor = get_supervisor_agent()
@@ -1782,6 +1814,59 @@ def test_stream_detection_emits_execution_events_and_final_metadata(monkeypatch:
     assert final_payloads[0]["metadata"]["execution_events"][-1]["type"] == "step_completed"
     assert final_payloads[0]["metadata"]["analysis_contracts"]["object_analysis"]["component_scope"] == ["瓶身"]
     assert final_payloads[0]["metadata"]["mmad_analysis"]["anomaly_discrimination"]["is_anomaly"] is True
+
+
+def test_stream_detection_followup_restarts_graph_with_prepared_state(monkeypatch: pytest.MonkeyPatch):
+    previous = build_state().model_dump()
+    previous["context"] = {"answer": "old answer"}
+    captured_inputs: list[dict] = []
+
+    class FakeGraph:
+        async def astream_events(self, invoke_input, config=None, version="v2"):
+            captured_inputs.append(invoke_input)
+            output = dict(invoke_input)
+            output.setdefault("context", {})["answer"] = "followup answer"
+            output.setdefault("result", {"status": "success", "metadata": {}})
+            yield {"event": "on_chain_start", "name": "answer", "data": {}}
+            yield {"event": "on_chain_end", "name": "LangGraph", "data": {"output": output}}
+
+    @asynccontextmanager
+    async def fake_graph_session(task_id: str):
+        yield FakeGraph(), {"configurable": {"thread_id": task_id}}, "memory"
+
+    async def fake_load_state_values(task_id: str):
+        return previous, "memory"
+
+    monkeypatch.setattr("app.services.streaming.graph_session", fake_graph_session)
+    monkeypatch.setattr("app.services.streaming.load_state_values", fake_load_state_values)
+    monkeypatch.setattr("app.services.streaming.persist_runtime_state", lambda task_id, state, backend: None)
+
+    task = DetectionTask(
+        task_id=previous["task"]["task_id"],
+        asset_id="asset-001",
+        start_time="2026-05-11T00:00:00Z",
+        end_time="2026-05-11T00:01:00Z",
+        question="rag有相关内容吗",
+        parameters={},
+    )
+
+    async def collect():
+        chunks: list[str] = []
+        async for chunk in stream_detection(task):
+            chunks.append(chunk)
+        return chunks
+
+    chunks = asyncio.run(collect())
+    final_payloads = [
+        json.loads(chunk.removeprefix("data: ").strip())
+        for chunk in chunks
+        if chunk.startswith("data: ") and '"type": "final_result"' in chunk
+    ]
+
+    assert captured_inputs[0] is not None
+    assert captured_inputs[0]["task"]["question"] == "rag有相关内容吗"
+    assert captured_inputs[0]["context"]["is_followup"] is True
+    assert final_payloads[0]["answer"] == "followup answer"
 
 
 def test_self_reflect_retries_failed_specialist_without_proceeding():

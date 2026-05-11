@@ -94,8 +94,7 @@ async def run_chat(task_id: str, question: str) -> dict[str, Any]:
     state = prepare_followup_state(previous_state, question=question)
     async with graph_session(task_id) as (graph, config, backend):
         logger.info("[run_chat] checkpoint backend=%s", backend)
-        await graph.aupdate_state(config, state.model_dump())
-        result_dict = await run_graph(graph, None, config=config)
+        result_dict = await run_graph(graph, state, config=config)
         persist_runtime_state(task_id, result_dict, backend=backend)
 
     needs_suspend = result_dict.get("needs_user_input") and not result_dict.get("user_reply")
