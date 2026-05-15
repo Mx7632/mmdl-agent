@@ -13,6 +13,18 @@ MMDL-Agent 是一个面向工业视觉异常诊断的多 Agent 应用框架。�
   -> Answer / Wait User / Report
 ```
 
+## 运行文档入口
+
+当前推荐以 [Docs/runtime_guide.md](Docs/runtime_guide.md) 作为运行和调试主文档。它覆盖：
+
+- 本地启动与 `.env` 推荐配置
+- `/v1/stream` 主调试链路
+- MVTec RAG 建库和 few-shot 正常/异常样本注入
+- PatchCore 训练、热力图生成和前端调用
+- 多 Agent 时间线、MMAD metadata、few-shot metadata 的排障观察点
+
+系统架构与运行流程说明见 [Docs/system_overview.md](Docs/system_overview.md)。
+
 ## 当前架构
 
 ```text
@@ -89,6 +101,7 @@ APP_OPENAI_API_KEY=
 APP_LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 APP_LLM_MODEL=qwen3.5-plus
 APP_LLM_VISION_MODEL=qwen3.5-plus
+APP_QWEN_MIN_ANOMALY_SCORE=0.65
 
 APP_CHECKPOINT_BACKEND=postgres
 APP_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mmdl_agent
@@ -106,6 +119,7 @@ APP_RAG_MULTIMODAL_EMBEDDING_MODEL=multimodal-embedding-v1
 - `APP_OPENAI_API_KEY` 当前同时用于兼容 OpenAI 接口的 DashScope LLM 调用和 DashScope 多模态 embedding。
 - `APP_CHECKPOINT_BACKEND=postgres` 时需要配置可访问的 PostgreSQL；未配置数据库或依赖不可用时，运行时会回退到内存 checkpoint。
 - `APP_VISION_DETECTOR_BACKEND=qwen` 默认走通用视觉模型；设为 `anomalygpt` 时默认走专业 HTTP 后端。
+- `APP_QWEN_MIN_ANOMALY_SCORE` 控制 Qwen 视觉候选进入最终异常列表的最低分数，低分、疑似反光、阴影、正常纹理等候选会被记录到 metadata，但不会直接判为异常。
 
 ### 推荐启动模式
 

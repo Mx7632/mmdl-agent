@@ -159,3 +159,5 @@ class RagIngestFeedbackResponse(BaseModel):
     accepted: bool
     learning_threshold: float
     message: str
+    feedback_id: Optional[str] = None
+    review_status: Optional[str] = None

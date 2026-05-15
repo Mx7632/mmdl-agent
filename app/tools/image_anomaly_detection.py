@@ -7,8 +7,16 @@ import re
 from typing import Any
 
 import httpx
-from langchain_core.messages import HumanMessage
-from langchain_openai import ChatOpenAI
+try:  # pragma: no cover
+    from langchain_core.messages import HumanMessage
+except Exception:  # pragma: no cover
+    class HumanMessage:  # type: ignore[no-redef]
+        def __init__(self, content: Any) -> None:
+            self.content = content
+try:  # pragma: no cover
+    from langchain_openai import ChatOpenAI
+except Exception:  # pragma: no cover
+    ChatOpenAI = None  # type: ignore[assignment]
 from PIL import Image
 from pydantic import SecretStr
 
@@ -29,6 +37,10 @@ SPECIALIST_BACKEND = "specialist"
 PATCHCORE_BACKEND = "patchcore"
 
 _JSON_RE = re.compile(r"\{[\s\S]*\}")
+_UNCERTAIN_ANOMALY_RE = re.compile(
+    r"\b(possible|maybe|uncertain|slight|minor|weak|reflection|shadow|edge|texture|noise)\b"
+    r"|可能|疑似|不确定|轻微|较弱|反光|阴影|边缘|纹理|噪声"
+)
 _QWEN_ALIASES = {"qwen", "qwen_vl", "qwen3_5_plus", "qwen3.5_plus"}
 _PATCHCORE_ALIASES = {"patchcore", "patch_core"}
 _SPECIALIST_ALIASES = {
@@ -157,6 +169,43 @@ def normalize_visual_anomalies(
     return normalized
 
 
+def _coerce_score(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def filter_qwen_anomalies(
+    anomalies: list[dict[str, Any]],
+    *,
+    min_score: float,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    kept: list[dict[str, Any]] = []
+    filtered: list[dict[str, Any]] = []
+    for anomaly in anomalies:
+        score = _coerce_score(anomaly.get("score"))
+        text = " ".join(
+            str(anomaly.get(key, ""))
+            for key in ("type", "details", "description", "appearance", "location")
+        )
+        reason = ""
+        if score is None:
+            reason = "missing_score"
+        elif score < min_score:
+            reason = f"score_below_{min_score:.2f}"
+        elif _UNCERTAIN_ANOMALY_RE.search(text.lower()):
+            reason = "uncertain_or_normal_texture"
+
+        if reason:
+            filtered.append({**anomaly, "filter_reason": reason})
+        else:
+            kept.append(anomaly)
+    return kept, filtered
+
+
 def _build_visual_prompt(task: DetectionTask, detector_params: dict[str, Any], image_size: tuple[int, int] | None) -> dict[str, Any]:
     localization_mode = bool((task.parameters or {}).get("require_localization"))
     width, height = image_size or (None, None)
@@ -183,17 +232,34 @@ def _build_visual_prompt(task: DetectionTask, detector_params: dict[str, Any], i
         "image_size": {"width": width, "height": height},
         "requirements": [
             "Return JSON only.",
-            "For each anomaly, provide details and score.",
+            "If the image appears normal, return anomalies as an empty list [].",
+            "Do not force an anomaly. Normal product texture, expected edges, regular reflections, shadows, and imaging noise are not anomalies.",
+            "Only include an anomaly when there is clear localized evidence that differs from normal reference appearance.",
+            "For each anomaly, provide details and score. Use score >= 0.65 only for clear defects; use a lower score for weak or uncertain candidates.",
             "If location can be inferred, provide pixel bbox [x1,y1,x2,y2] based on original image size.",
             "Also provide a coarse location string such as top-left or middle-right.",
         ],
+        "normal_decision_policy": {
+            "normal_output": {"status": "success", "anomalies": [], "observations": "no obvious visual anomaly"},
+            "false_positive_controls": [
+                "expected object boundaries",
+                "regular texture",
+                "specular reflection",
+                "illumination shadow",
+                "background contrast",
+                "compression noise",
+            ],
+        },
         "output_schema": output_schema,
     }
     few_shot_context = (task.parameters or {}).get("few_shot_context")
     few_shot_examples = (task.parameters or {}).get("few_shot_examples")
     if few_shot_context:
         prompt["few_shot_context"] = few_shot_context
-        prompt["requirements"].append("Use few-shot normal/anomaly references only as calibration evidence.")
+        prompt["requirements"].append(
+            "Use few-shot normal/anomaly references as calibration evidence. "
+            "If the current image is closer to normal references than anomaly references, return anomalies: []."
+        )
     if few_shot_examples:
         prompt["few_shot_examples"] = few_shot_examples
     return prompt
@@ -209,6 +275,8 @@ class QwenImageAnomalyDetectionTool(BaseTool):
 
         if not settings.openai_api_key:
             raise ConfigurationError("openai_api_key not configured", config_key="APP_OPENAI_API_KEY")
+        if ChatOpenAI is None:
+            raise ConfigurationError("langchain_openai is not installed", config_key="dependencies.langchain-openai")
 
         mime = (task.parameters or {}).get("image_mime") or "image/jpeg"
         detector_params = (task.parameters or {}).get("detector_params") or {}
@@ -265,6 +333,9 @@ class QwenImageAnomalyDetectionTool(BaseTool):
         if not isinstance(anomalies, list):
             raise ResponseParseError("Vision model anomalies is not a list", raw_response=raw)
         anomalies = normalize_visual_anomalies(anomalies, image_size=image_size)
+        min_score = float(detector_params.get("qwen_min_anomaly_score", settings.qwen_min_anomaly_score))
+        raw_anomaly_count = len(anomalies)
+        anomalies, filtered_anomalies = filter_qwen_anomalies(anomalies, min_score=min_score)
 
         result = DetectionResult(
             task_id=task.task_id,
@@ -276,6 +347,10 @@ class QwenImageAnomalyDetectionTool(BaseTool):
                 "vision_model": settings.llm_vision_model,
                 "observations": parsed.get("observations"),
                 "image_size": image_size,
+                "raw_anomaly_count": raw_anomaly_count,
+                "filtered_anomaly_count": len(filtered_anomalies),
+                "qwen_min_anomaly_score": min_score,
+                "filtered_anomalies": filtered_anomalies[:5],
                 "localization_available": any(item.get("has_localization") for item in anomalies),
                 "analysis_mode": "localization" if require_localization else "detection",
                 "few_shot_examples": (task.parameters or {}).get("few_shot_examples") or {},

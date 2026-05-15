@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     anomaly_detection_url: str = "http://localhost:8080/"
     anomaly_detection_timeout: float = 30.0
 
-    openai_api_key: str = "sk-e47fe58e1afe4db2ba6d340373b48919"
+    openai_api_key: str = ""
     llm_model: str = "qwen3.5-plus"
     llm_temperature: float = 0.3
     llm_timeout: float = 60.0
@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     llm_vision_model: str = "qwen3.5-plus"
     vision_detector_backend: str = "qwen"
+    qwen_min_anomaly_score: float = 0.65
     professional_vision_detector_type: str = "anomalygpt"
     professional_vision_detector_url: str = ""
     professional_vision_detector_timeout: float = 30.0
@@ -53,6 +54,12 @@ class Settings(BaseSettings):
     rag_top_k: int = 3
     rag_learning_threshold: float = 0.85
     rag_multimodal_embedding_model: str = "multimodal-embedding-v1"
+
+    allowed_origins: str = "http://127.0.0.1:8000,http://localhost:8000"
+    require_api_token: bool = False
+    api_token: str = ""
+    low_confidence_review_threshold: float = 0.75
+    runtime_store_path: str = "data/runtime/industrial_state.json"
 
 
 settings = Settings()

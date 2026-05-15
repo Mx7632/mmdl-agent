@@ -316,6 +316,41 @@ def get_patchcore_artifacts(category: str) -> PatchCoreArtifacts:
     )
 
 
+def trained_patchcore_categories(model_root: str | Path | None = None) -> list[str]:
+    root = Path(model_root or settings.patchcore_model_root)
+    if not root.exists():
+        return []
+    categories: list[str] = []
+    for item in root.iterdir():
+        if not item.is_dir():
+            continue
+        if (item / "memory_bank.pt").exists() and (item / "metadata.json").exists():
+            categories.append(item.name)
+    return sorted(categories)
+
+
+def get_patchcore_category_status(category: str) -> dict[str, Any]:
+    normalized = str(category or "").strip().lower()
+    artifacts = get_patchcore_artifacts(normalized)
+    dataset_categories = available_mvtec_categories(settings.rag_dataset_root)
+    metadata: dict[str, Any] = {}
+    if artifacts.metadata_path.exists():
+        try:
+            metadata = json.loads(artifacts.metadata_path.read_text(encoding="utf-8"))
+        except Exception:
+            metadata = {}
+
+    return {
+        "category": normalized,
+        "dataset_available": normalized in dataset_categories,
+        "trained": artifacts.memory_bank_path.exists() and artifacts.metadata_path.exists(),
+        "model_dir": str(artifacts.model_dir).replace("\\", "/"),
+        "memory_bank_path": str(artifacts.memory_bank_path).replace("\\", "/"),
+        "metadata_path": str(artifacts.metadata_path).replace("\\", "/"),
+        "metadata": metadata,
+    }
+
+
 def train_patchcore_category(
     category: str,
     dataset_root: str | Path,
@@ -377,7 +412,7 @@ def train_patchcore_category(
 def predict_patchcore_image(
     image_path: str | Path,
     category: str,
-    threshold: float,
+    threshold: float | None,
     task_id: str,
 ) -> dict[str, Any]:
     artifacts = get_patchcore_artifacts(category)
@@ -397,10 +432,17 @@ def predict_patchcore_image(
     backbone_name = str(metadata.get("backbone") or settings.patchcore_backbone)
     pretrained_backbone = bool(metadata.get("pretrained_backbone", settings.patchcore_pretrained_backbone))
     device = str(metadata.get("device") or settings.patchcore_device)
-    effective_threshold = float(threshold or metadata.get("recommended_threshold") or settings.patchcore_threshold)
+    effective_threshold = float(
+        threshold
+        if threshold is not None
+        else metadata.get("recommended_threshold", settings.patchcore_threshold)
+    )
 
     extractor = _build_feature_extractor(backbone_name, pretrained_backbone).to(device)
-    memory_bank = torch.load(artifacts.memory_bank_path, map_location="cpu")
+    try:
+        memory_bank = torch.load(artifacts.memory_bank_path, map_location="cpu", weights_only=True)
+    except TypeError:
+        memory_bank = torch.load(artifacts.memory_bank_path, map_location="cpu")
 
     image, tensor = _load_image(image_path, image_size)
     embeddings = _extract_patch_embeddings(extractor, tensor, device)
@@ -456,15 +498,30 @@ class LocalPatchCoreImageAnomalyDetectionTool(BaseTool):
             )
 
         artifacts = get_patchcore_artifacts(category)
-        if not artifacts.model_dir.exists():
+        if not artifacts.memory_bank_path.exists() or not artifacts.metadata_path.exists():
             raise ConfigurationError(
-                f"PatchCore artifacts not found for category '{category}'. Run scripts/patchcore_train.py first.",
+                (
+                    f"PatchCore category '{category}' is not trained. "
+                    "Run scripts/patchcore_train.py for this category first or switch to the Qwen vision backend."
+                ),
                 config_key="APP_PATCHCORE_MODEL_ROOT",
-                details={"expected_model_dir": str(artifacts.model_dir)},
+                details={
+                    "category": category,
+                    "trained": False,
+                    "expected_model_dir": str(artifacts.model_dir),
+                    "expected_memory_bank": str(artifacts.memory_bank_path),
+                    "expected_metadata": str(artifacts.metadata_path),
+                    "trained_categories": trained_patchcore_categories(),
+                    "fallback_backend": "qwen",
+                },
             )
 
         detector_params = (task.parameters or {}).get("detector_params") or {}
-        threshold = float(detector_params.get("threshold") or settings.patchcore_threshold)
+        threshold = (
+            float(detector_params["threshold"])
+            if detector_params.get("threshold") not in (None, "")
+            else None
+        )
         image_dir = Path(settings.patchcore_heatmap_dir) / category
         image_dir.mkdir(parents=True, exist_ok=True)
         image_path = image_dir / f"{task.task_id}_input.png"

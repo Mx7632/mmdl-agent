@@ -129,8 +129,10 @@ async def stream_detection(task: DetectionTask) -> AsyncGenerator[str, None]:
                     question=task.question,
                     parameters=task.parameters,
                 )
-                await graph.aupdate_state(config, state.model_dump())
-                invoke_input = None
+                # A normal follow-up is a new turn on an already-ended graph
+                # thread. Passing None would only read the terminal checkpoint
+                # back instead of scheduling load_data -> supervisor -> answer.
+                invoke_input = state.model_dump()
             else:
                 state = DetectionState(task=task, stage="chat")
                 invoke_input = state.model_dump()

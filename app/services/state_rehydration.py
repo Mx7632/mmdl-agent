@@ -137,6 +137,12 @@ def prepare_followup_state(
         task_runtime.task.parameters.update(parameters)
     if question:
         task_runtime.conversation_history.append({"role": "user", "content": question})
+        state.context["is_followup"] = True
+        state.context["latest_question"] = question
+        state.context["followup_question"] = question
+        state.context["answer"] = ""
+        state.context["has_report"] = False
+    state.context["has_new_image"] = has_new_image
     task_runtime.report_requested = False
     task_runtime.stage = "chat"
     state.apply_task_runtime(task_runtime)

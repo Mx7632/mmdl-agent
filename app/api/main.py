@@ -17,7 +17,9 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.config.settings import settings
 from app.exceptions.base import AppError, DataMissingError, ResponseParseError
+from app.rag.service import get_rag_service
 from app.services import continue_detection, generate_report, get_pending_task, run_chat, run_detection
+from app.services.industrial_runtime import REVIEW_APPROVED, industrial_store, normalize_industrial_result
 from app.schemas.detection import DetectionResult, DetectionTask
 from app.schemas.detection import (
     RagBuildRequest,
@@ -43,7 +45,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        origin.strip()
+        for origin in (settings.allowed_origins or "").split(",")
+        if origin.strip()
+    ] or ["http://127.0.0.1:8000"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -59,6 +65,22 @@ app.mount("/data/uploads", StaticFiles(directory="data/uploads"), name="uploads"
 app.mount("/data/heatmaps", StaticFiles(directory="data/heatmaps"), name="heatmaps")
 
 logger = setup_logger(level=settings.log_level)
+
+
+def _is_allowed_origin(origin: str | None) -> bool:
+    allowed = [item.strip() for item in (settings.allowed_origins or "").split(",") if item.strip()]
+    return bool(origin and ("*" in allowed or origin in allowed))
+
+
+def _check_api_token(request: Request) -> None:
+    if not settings.require_api_token:
+        return
+    token = request.headers.get("x-api-token") or ""
+    auth = request.headers.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        token = auth[7:].strip()
+    if not settings.api_token or token != settings.api_token:
+        raise HTTPException(status_code=401, detail="Valid API token is required")
 
 
 _SWAGGER_STATIC_ROUTE = "/_swagger_static"
@@ -112,16 +134,29 @@ async def add_trace_id(request: Request, call_next):
         trace_id = request.headers.get(TRACE_ID_HEADER) or new_trace_id()
         setattr(request.state, "trace_id", trace_id)
         set_trace_id(trace_id)
+    except HTTPException as e:
+        response = JSONResponse(status_code=e.status_code, content={"code": "unauthorized", "message": e.detail, "trace_id": trace_id})
+        origin = request.headers.get("origin")
+        if _is_allowed_origin(origin):
+            response.headers["Access-Control-Allow-Origin"] = origin
+        return response
+    except HTTPException as e:
+        response = JSONResponse(status_code=e.status_code, content={"code": "unauthorized", "message": e.detail, "trace_id": trace_id})
+        origin = request.headers.get("origin")
+        if _is_allowed_origin(origin):
+            response.headers["Access-Control-Allow-Origin"] = origin
+        return response
     except Exception as e:
         logger.error(f"Middleware trace_id setup error: {e}")
 
     try:
+        _check_api_token(request)
         response = await call_next(request)
         response.headers[TRACE_ID_HEADER] = trace_id
         
         # 强制补充 CORS 头（防止 500 时 CORSMiddleware 失效）
         origin = request.headers.get("origin")
-        if origin:
+        if _is_allowed_origin(origin):
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Methods"] = "*"
             response.headers["Access-Control-Allow-Headers"] = "*"
@@ -136,10 +171,8 @@ async def add_trace_id(request: Request, call_next):
         
         # 错误响应也必须带上 CORS 头
         origin = request.headers.get("origin")
-        if origin:
+        if _is_allowed_origin(origin):
             response.headers["Access-Control-Allow-Origin"] = origin
-        else:
-            response.headers["Access-Control-Allow-Origin"] = "*"
             
         return response
 
@@ -180,13 +213,76 @@ async def health_check():
     return {"status": "ok", "timestamp": __import__("time").time()}
 
 
+@app.get("/v1/system/health")
+async def system_health():
+    from app.tools.patchcore_detection import trained_patchcore_categories
+
+    trained_categories = trained_patchcore_categories()
+    allowed_origins = [origin.strip() for origin in (settings.allowed_origins or "").split(",") if origin.strip()]
+    return {
+        "status": "ok",
+        "timestamp": time.time(),
+        "components": {
+            "api": {"status": "ok"},
+            "rag": {
+                "status": "ok" if Path(settings.rag_vector_dir).exists() else "missing",
+                "vector_dir": settings.rag_vector_dir,
+            },
+            "postgres": {
+                "status": "configured" if settings.database_url else "not_configured",
+                "backend": settings.checkpoint_backend,
+            },
+            "patchcore": {
+                "status": "trained" if trained_categories else "not_trained",
+                "model_root": settings.patchcore_model_root,
+                "trained_categories": trained_categories,
+            },
+            "anomalygpt_sidecar": {
+                "status": "configured" if settings.professional_vision_detector_url else "not_configured",
+                "url": settings.professional_vision_detector_url,
+            },
+            "security": {
+                "api_token_required": settings.require_api_token,
+                "allowed_origins": allowed_origins,
+            },
+        },
+        "metrics": industrial_store.metrics(),
+    }
+
+
+@app.get("/v1/metrics")
+async def runtime_metrics():
+    return {"status": "success", "metrics": industrial_store.metrics()}
+
+
+@app.get("/v1/patchcore/categories")
+async def patchcore_categories():
+    from app.tools.patchcore_detection import (
+        available_mvtec_categories,
+        get_patchcore_category_status,
+        trained_patchcore_categories,
+    )
+
+    dataset_categories = available_mvtec_categories(settings.rag_dataset_root)
+    trained_categories = trained_patchcore_categories()
+    all_categories = sorted(set(dataset_categories) | set(trained_categories))
+    return {
+        "status": "success",
+        "dataset_root": settings.rag_dataset_root,
+        "model_root": settings.patchcore_model_root,
+        "default_category": settings.patchcore_default_category,
+        "default_threshold": settings.patchcore_threshold,
+        "dataset_categories": dataset_categories,
+        "trained_categories": trained_categories,
+        "categories": [get_patchcore_category_status(category) for category in all_categories],
+    }
+
+
 # ── RAG 端点（来自 origin/main）───────────────────────────────────────────────
 
 
 @app.post("/v1/rag/build", response_model=RagBuildResponse)
 async def rag_build(payload: RagBuildRequest) -> RagBuildResponse:
-    from app.rag.service import get_rag_service
-
     service = get_rag_service()
     result = service.build_from_dataset(
         dataset_root=payload.dataset_root,
@@ -234,8 +330,6 @@ async def rag_build_status(task_id: str) -> RagBuildStatusResponse:
 
 @app.post("/v1/rag/query", response_model=RagQueryResponse)
 async def rag_query(payload: RagQueryRequest) -> RagQueryResponse:
-    from app.rag.service import get_rag_service
-
     service = get_rag_service()
     rows = service.query_rows(
         query_text=payload.query_text,
@@ -254,8 +348,6 @@ async def rag_query(payload: RagQueryRequest) -> RagQueryResponse:
 
 @app.post("/v1/rag/query-image", response_model=RagQueryResponse)
 async def rag_query_image(payload: RagImageQueryRequest) -> RagQueryResponse:
-    from app.rag.service import get_rag_service
-
     service = get_rag_service()
     rows = service.query_rows_by_image(
         image_path=payload.image_path,
@@ -274,8 +366,6 @@ async def rag_query_image(payload: RagImageQueryRequest) -> RagQueryResponse:
 
 @app.post("/v1/rag/ingest-feedback", response_model=RagIngestFeedbackResponse)
 async def rag_ingest_feedback(payload: RagIngestFeedbackRequest) -> RagIngestFeedbackResponse:
-    from app.rag.service import get_rag_service
-
     service = get_rag_service()
     accepted = service.add_online_case(
         image_path=payload.image_path,
@@ -367,11 +457,155 @@ async def detect(request: Request):
 
     try:
         result = await run_detection(task)
-        return result
+        return normalize_industrial_result(result)
     except Exception as e:
         import traceback
         logger.error(f"[detect] run_detection failed: {e}\n{traceback.format_exc()}")
         raise
+
+
+def now_iso_or(value: str) -> str:
+    cleaned = (value or "").strip()
+    return cleaned or datetime.now().isoformat()
+
+
+@app.post("/v1/batches/detect")
+async def batch_detect(request: Request):
+    content_type = (request.headers.get("content-type") or "").lower()
+    if "multipart/form-data" not in content_type:
+        raise DataMissingError("Only multipart/form-data is supported for /v1/batches/detect")
+
+    form = await request.form()
+    asset_id = get_form_text(form, "asset_id").strip()
+    question = get_form_text(form, "question").strip() or None
+    if not asset_id:
+        raise DataMissingError("asset_id is required")
+
+    raw_parameters = form.get("parameters")
+    try:
+        parameters = json.loads(raw_parameters) if isinstance(raw_parameters, str) and raw_parameters else {}
+    except Exception as exc:
+        raise ResponseParseError("parameters must be valid JSON string", raw_response=raw_parameters, original_error=exc)
+
+    uploads = [
+        item
+        for item in [*form.getlist("images"), *form.getlist("image")]
+        if isinstance(item, StarletteUploadFile) and getattr(item, "filename", None)
+    ]
+    if not uploads:
+        raise DataMissingError("At least one image is required")
+
+    batch = industrial_store.create_batch(asset_id=asset_id, question=question, item_count=len(uploads))
+    task_ids: list[str] = []
+    results: list[dict[str, Any]] = []
+    for index, upload in enumerate(uploads, start=1):
+        image_bytes = await upload.read()
+        task_parameters = dict(parameters)
+        task_parameters.setdefault("tool_type", settings.vision_detector_backend)
+        task_parameters["image_base64"] = base64.b64encode(image_bytes).decode("ascii")
+        task_parameters["image_mime"] = getattr(upload, "content_type", None) or "image/jpeg"
+        task_parameters["source_filename"] = upload.filename
+        task_id = f"{batch['batch_id']}-{index:03d}"
+        task = DetectionTask(
+            task_id=task_id,
+            asset_id=asset_id,
+            start_time=now_iso_or(get_form_text(form, "start_time")),
+            end_time=now_iso_or(get_form_text(form, "end_time")),
+            data_source=get_form_text(form, "data_source").strip() or "batch_upload",
+            input_type="image",
+            question=question,
+            parameters=task_parameters,
+        )
+        result = normalize_industrial_result(await run_detection(task))
+        industrial_store.record_task(task, result, batch_id=batch["batch_id"])
+        task_ids.append(task_id)
+        results.append(result)
+
+    batch = industrial_store.finish_batch(batch["batch_id"], task_ids)
+    return {
+        "status": "success",
+        "batch": batch,
+        "results": results,
+        "report": industrial_store.batch_report(batch["batch_id"]),
+    }
+
+
+@app.get("/v1/tasks")
+async def list_task_history(
+    asset_id: str | None = None,
+    status: str | None = None,
+    defect_type: str | None = None,
+    review_status: str | None = None,
+    limit: int = 50,
+):
+    return {
+        "status": "success",
+        "tasks": industrial_store.list_tasks(
+            asset_id=asset_id,
+            status=status,
+            defect_type=defect_type,
+            review_status=review_status,
+            limit=limit,
+        ),
+    }
+
+
+@app.get("/v1/reviews/pending")
+async def pending_reviews(limit: int = 50):
+    return {"status": "success", "tasks": industrial_store.pending_reviews(limit=limit)}
+
+
+@app.post("/v1/tasks/{task_id}/review")
+async def review_task(task_id: str, request: Request):
+    body = await request.json()
+    decision = str(body.get("decision", "")).strip().lower()
+    if decision not in {"approve", "approved", "confirm", "confirmed", "reject", "rejected"}:
+        raise DataMissingError("decision must be approve/confirm or reject")
+    try:
+        task = industrial_store.review_task(
+            task_id,
+            decision=decision,
+            defect_type=(body.get("defect_type") or None),
+            notes=(body.get("notes") or None),
+            reviewer=(body.get("reviewer") or None),
+        )
+    except KeyError:
+        return JSONResponse(status_code=404, content={"code": "not_found", "message": f"Task {task_id} not found"})
+    return {"status": "success", "task": task}
+
+
+@app.post("/v1/batches/{batch_id}/report")
+async def batch_report(batch_id: str):
+    try:
+        return {"status": "success", **industrial_store.batch_report(batch_id)}
+    except KeyError:
+        return JSONResponse(status_code=404, content={"code": "not_found", "message": f"Batch {batch_id} not found"})
+
+
+@app.post("/v1/rag/feedback/{feedback_id}/review")
+async def review_rag_feedback(feedback_id: str, request: Request):
+    body = await request.json()
+    decision = str(body.get("decision", "")).strip().lower()
+    if decision not in {"approve", "approved", "reject", "rejected"}:
+        raise DataMissingError("decision must be approve or reject")
+    try:
+        feedback = industrial_store.review_feedback(feedback_id, decision)
+    except KeyError:
+        return JSONResponse(status_code=404, content={"code": "not_found", "message": "feedback not found"})
+    return {"status": "success", "feedback": feedback}
+
+
+@app.post("/v1/rag/feedback/queue", response_model=RagIngestFeedbackResponse)
+async def queue_rag_feedback(payload: RagIngestFeedbackRequest) -> RagIngestFeedbackResponse:
+    feedback = industrial_store.create_feedback(payload.model_dump())
+    return RagIngestFeedbackResponse(
+        status="success",
+        accepted=False,
+        learning_threshold=settings.rag_learning_threshold,
+        message="Feedback is queued for human review before it can enter the RAG store.",
+        feedback_id=feedback["feedback_id"],
+        review_status=feedback["review_status"],
+    )
 
 
 @app.post("/v1/continue")

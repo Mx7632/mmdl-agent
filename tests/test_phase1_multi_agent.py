@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import shutil
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -30,14 +32,24 @@ from app.rag.knowledge_pipeline import (
     resolve_knowledge_request,
     summarize_knowledge_context,
 )
-from app.tools.image_anomaly_detection import ImageAnomalyDetectionTool, resolve_visual_backend
+from app.tools.image_anomaly_detection import (
+    ImageAnomalyDetectionTool,
+    _build_visual_prompt,
+    filter_qwen_anomalies,
+    resolve_visual_backend,
+)
 from app.orchestration.context_store import get_pending_context_from_mapping
 from app.rag.defect_analysis import build_structured_analysis
 from app.rag.fewshot import FewShotPromptBuilder, FewShotSelector, build_fewshot_context
 from app.rag.object_analysis import build_structured_object_analysis
 from app.rag.object_knowledge import query_object_knowledge
 from app.services.state_rehydration import build_execution_metadata
-from app.tools.patchcore_detection import _extract_anomalies_from_heatmap, resolve_patchcore_category
+from app.tools.patchcore_detection import (
+    _extract_anomalies_from_heatmap,
+    get_patchcore_category_status,
+    resolve_patchcore_category,
+    trained_patchcore_categories,
+)
 
 
 def build_state(question: str = "Please analyze the anomaly in this image.") -> DetectionState:
@@ -432,6 +444,43 @@ def test_build_fewshot_context_returns_selected_rows_and_prompt_text():
     assert "broken bottle" in context
 
 
+def test_qwen_anomaly_filter_removes_weak_or_uncertain_candidates():
+    anomalies = [
+        {"type": "reflection", "score": 0.92, "details": "possible reflection on normal edge"},
+        {"type": "scratch", "score": 0.42, "details": "weak contrast variation"},
+        {"type": "crack", "score": 0.81, "details": "clear localized crack with jagged contour"},
+    ]
+
+    kept, filtered = filter_qwen_anomalies(anomalies, min_score=0.65)
+
+    assert [item["type"] for item in kept] == ["crack"]
+    assert [item["filter_reason"] for item in filtered] == [
+        "uncertain_or_normal_texture",
+        "score_below_0.65",
+    ]
+
+
+def test_qwen_prompt_allows_normal_output_and_uses_fewshot_calibration():
+    task = DetectionTask(
+        task_id="qwen-prompt-001",
+        asset_id="asset-001",
+        start_time="2026-05-07T00:00:00Z",
+        end_time="2026-05-07T00:01:00Z",
+        question="请判断是否异常",
+        parameters={
+            "few_shot_context": "[Few-shot normal examples]\n- normal bottle rim",
+            "few_shot_examples": {"normal": [{"id": "normal-1"}], "anomaly": [{"id": "bad-1"}]},
+        },
+    )
+
+    prompt = _build_visual_prompt(task, {}, (900, 900))
+
+    requirements = "\n".join(prompt["requirements"])
+    assert "return anomalies as an empty list" in requirements
+    assert "closer to normal references" in requirements
+    assert prompt["normal_decision_policy"]["normal_output"]["anomalies"] == []
+
+
 def test_supervisor_fallback_returns_structured_vision_plan(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("app.agents.supervisor.agent.settings.openai_api_key", "")
     supervisor = get_supervisor_agent()
@@ -465,6 +514,34 @@ def test_patchcore_category_resolution_prefers_detector_params():
     )
 
     assert resolve_patchcore_category(task) == "bottle"
+
+
+def test_trained_patchcore_categories_require_memory_bank_and_metadata(monkeypatch: pytest.MonkeyPatch):
+    temp_root = Path("tests/.tmp_patchcore_categories")
+    shutil.rmtree(temp_root, ignore_errors=True)
+    model_root = temp_root / "models" / "patchcore"
+    trained_dir = model_root / "bottle"
+    partial_dir = model_root / "capsule"
+    trained_dir.mkdir(parents=True)
+    partial_dir.mkdir(parents=True)
+    (trained_dir / "memory_bank.pt").write_bytes(b"demo")
+    (trained_dir / "metadata.json").write_text('{"memory_bank_size": 10}', encoding="utf-8")
+    (partial_dir / "memory_bank.pt").write_bytes(b"demo")
+
+    monkeypatch.setattr("app.tools.patchcore_detection.settings.patchcore_model_root", str(model_root))
+    monkeypatch.setattr("app.tools.patchcore_detection.settings.rag_dataset_root", str(temp_root / "dataset"))
+
+    try:
+        assert trained_patchcore_categories() == ["bottle"]
+        status = get_patchcore_category_status("bottle")
+        missing_status = get_patchcore_category_status("capsule")
+
+        assert status["trained"] is True
+        assert status["metadata"]["memory_bank_size"] == 10
+        assert missing_status["trained"] is False
+        assert missing_status["memory_bank_path"].endswith("capsule/memory_bank.pt")
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
 
 
 def test_patchcore_heatmap_anomalies_include_structured_description():
@@ -1377,6 +1454,9 @@ def test_prepare_followup_state_compacts_history():
 
     assert len(updated.conversation_history) == 6
     assert updated.conversation_history[-1]["content"] == "latest question"
+    assert updated.context["is_followup"] is True
+    assert updated.context["latest_question"] == "latest question"
+    assert updated.context["answer"] == ""
     assert updated.conversation_summary is not None
     assert updated.context["conversation_compacted_turns"] == 1
 
@@ -1413,6 +1493,38 @@ def test_prepare_followup_state_preserves_existing_vision_context_without_new_im
     assert "vision" in updated.agent_outputs
 
 
+def test_run_chat_reinvokes_graph_with_prepared_followup_state(monkeypatch: pytest.MonkeyPatch):
+    from app.services.task_runner import run_chat
+
+    previous = build_state().model_dump()
+    captured_states: list[DetectionState] = []
+
+    async def fake_load_state_values(task_id: str):
+        return previous, "memory"
+
+    @asynccontextmanager
+    async def fake_graph_session(task_id: str):
+        yield object(), {"configurable": {"thread_id": task_id}}, "memory"
+
+    async def fake_run_graph(graph, initial_state, *, config=None):
+        captured_states.append(initial_state)
+        payload = initial_state.model_dump()
+        payload.setdefault("context", {})["answer"] = "chat answer"
+        payload.setdefault("result", {"status": "success", "metadata": {}})
+        return payload
+
+    monkeypatch.setattr("app.services.task_runner.load_state_values", fake_load_state_values)
+    monkeypatch.setattr("app.services.task_runner.graph_session", fake_graph_session)
+    monkeypatch.setattr("app.services.task_runner.run_graph", fake_run_graph)
+    monkeypatch.setattr("app.services.task_runner.persist_runtime_state", lambda task_id, state, backend: None)
+
+    result = asyncio.run(run_chat(previous["task"]["task_id"], "rag有相关内容吗"))
+
+    assert captured_states[0].task.question == "rag有相关内容吗"
+    assert captured_states[0].context["is_followup"] is True
+    assert result["answer"] == "chat answer"
+
+
 def test_supervisor_fallback_adds_knowledge_for_rag_question(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("app.agents.supervisor.agent.settings.openai_api_key", "")
     supervisor = get_supervisor_agent()
@@ -1426,6 +1538,53 @@ def test_supervisor_fallback_adds_knowledge_for_rag_question(monkeypatch: pytest
     plan = supervisor.plan(state)
 
     assert [step.agent for step in plan.steps] == ["knowledge"]
+
+
+def test_supervisor_llm_empty_plan_keeps_knowledge_for_followup_rag_question(monkeypatch: pytest.MonkeyPatch):
+    class FakeResponse:
+        content = '{"planned_agents": [], "reason": "answer directly"}'
+
+    class FakeChatOpenAI:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def invoke(self, messages):
+            return FakeResponse()
+
+    monkeypatch.setattr("app.agents.supervisor.agent.settings.openai_api_key", "fake-key")
+    monkeypatch.setattr("app.agents.supervisor.agent.ChatOpenAI", FakeChatOpenAI)
+    supervisor = get_supervisor_agent()
+    state = build_state("有没有使用rag")
+    state.context["is_followup"] = True
+    state.context["has_new_image"] = False
+    state.agent_outputs["vision"] = {"payload": {"anomalies": [{"type": "scratch"}]}}
+    state.shared_context["vision"] = {
+        "anomalies": [{"type": "scratch"}],
+        "metadata": {"selected_backend": "qwen"},
+    }
+
+    plan = supervisor.plan(state)
+
+    assert [step.agent for step in plan.steps] == ["knowledge"]
+
+
+def test_supervisor_retry_target_bypasses_llm_empty_plan(monkeypatch: pytest.MonkeyPatch):
+    class FakeChatOpenAI:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("retry planning must not call the LLM")
+
+    monkeypatch.setattr("app.agents.supervisor.agent.settings.openai_api_key", "fake-key")
+    monkeypatch.setattr("app.agents.supervisor.agent.ChatOpenAI", FakeChatOpenAI)
+    supervisor = get_supervisor_agent()
+    state = build_state()
+    state.reflection_decision = "retry"
+    state.retry_target = "vision"
+    state.retry_reason = "previous visual result was unreliable"
+
+    plan = supervisor.plan(state)
+
+    assert [step.agent for step in plan.steps] == ["vision"]
+    assert plan.reason == "previous visual result was unreliable"
 
 
 def test_restore_state_promotes_legacy_conversation_summary():
@@ -1505,6 +1664,46 @@ def test_supervisor_execute_failed_envelope_does_not_merge_as_success(monkeypatc
     assert updated.step_status["vision-1"] == "failed"
     assert "vision" not in updated.agent_outputs
     assert updated.execution_events[-1]["type"] == "step_failed"
+
+
+def test_supervisor_execute_clears_stale_failed_step_after_successful_retry(monkeypatch: pytest.MonkeyPatch):
+    state = build_state()
+    state.last_failed_step = "vision-1"
+    state.retry_target = "vision"
+    state.retry_reason = "previous patchcore failure"
+    state.retry_strategy = "rerun_after_failure"
+    state.step_status["vision-1"] = "failed"
+    state.step_attempts["vision"] = 1
+    state.execution_plan = {
+        "steps": [
+            {
+                "id": "vision-2",
+                "agent": "vision",
+                "goal": "retry visual anomaly analysis",
+                "depends_on": [],
+                "retryable": True,
+            }
+        ]
+    }
+
+    async def fake_vision_run(self, task, **kwargs):
+        return AgentEnvelope(
+            agent_name="vision",
+            status="success",
+            summary="patchcore retry succeeded",
+            payload={"anomalies": [{"type": "surface_anomaly"}], "metadata": {"confidence": 0.9}},
+            confidence=0.9,
+        )
+
+    monkeypatch.setattr("app.agents.vision.agent.VisionAgent.run", fake_vision_run)
+    monkeypatch.setattr("app.orchestration.step_executor._build_visual_fewshot", lambda task: ({}, ""))
+
+    updated = asyncio.run(supervisor_execute_node(state))
+
+    assert updated.step_status["vision-2"] == "success"
+    assert updated.last_failed_step is None
+    assert updated.retry_target is None
+    assert updated.reflection_decision is None
 
 
 def test_answer_node_returns_failure_message_for_failed_result(monkeypatch: pytest.MonkeyPatch):
@@ -1615,6 +1814,59 @@ def test_stream_detection_emits_execution_events_and_final_metadata(monkeypatch:
     assert final_payloads[0]["metadata"]["execution_events"][-1]["type"] == "step_completed"
     assert final_payloads[0]["metadata"]["analysis_contracts"]["object_analysis"]["component_scope"] == ["瓶身"]
     assert final_payloads[0]["metadata"]["mmad_analysis"]["anomaly_discrimination"]["is_anomaly"] is True
+
+
+def test_stream_detection_followup_restarts_graph_with_prepared_state(monkeypatch: pytest.MonkeyPatch):
+    previous = build_state().model_dump()
+    previous["context"] = {"answer": "old answer"}
+    captured_inputs: list[dict] = []
+
+    class FakeGraph:
+        async def astream_events(self, invoke_input, config=None, version="v2"):
+            captured_inputs.append(invoke_input)
+            output = dict(invoke_input)
+            output.setdefault("context", {})["answer"] = "followup answer"
+            output.setdefault("result", {"status": "success", "metadata": {}})
+            yield {"event": "on_chain_start", "name": "answer", "data": {}}
+            yield {"event": "on_chain_end", "name": "LangGraph", "data": {"output": output}}
+
+    @asynccontextmanager
+    async def fake_graph_session(task_id: str):
+        yield FakeGraph(), {"configurable": {"thread_id": task_id}}, "memory"
+
+    async def fake_load_state_values(task_id: str):
+        return previous, "memory"
+
+    monkeypatch.setattr("app.services.streaming.graph_session", fake_graph_session)
+    monkeypatch.setattr("app.services.streaming.load_state_values", fake_load_state_values)
+    monkeypatch.setattr("app.services.streaming.persist_runtime_state", lambda task_id, state, backend: None)
+
+    task = DetectionTask(
+        task_id=previous["task"]["task_id"],
+        asset_id="asset-001",
+        start_time="2026-05-11T00:00:00Z",
+        end_time="2026-05-11T00:01:00Z",
+        question="rag有相关内容吗",
+        parameters={},
+    )
+
+    async def collect():
+        chunks: list[str] = []
+        async for chunk in stream_detection(task):
+            chunks.append(chunk)
+        return chunks
+
+    chunks = asyncio.run(collect())
+    final_payloads = [
+        json.loads(chunk.removeprefix("data: ").strip())
+        for chunk in chunks
+        if chunk.startswith("data: ") and '"type": "final_result"' in chunk
+    ]
+
+    assert captured_inputs[0] is not None
+    assert captured_inputs[0]["task"]["question"] == "rag有相关内容吗"
+    assert captured_inputs[0]["context"]["is_followup"] is True
+    assert final_payloads[0]["answer"] == "followup answer"
 
 
 def test_self_reflect_retries_failed_specialist_without_proceeding():

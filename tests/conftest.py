@@ -8,7 +8,12 @@ def pytest_pyfunc_call(pyfuncitem):
         loop = asyncio.new_event_loop()
         try:
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(test_function(**pyfuncitem.funcargs))
+            kwargs = {
+                name: pyfuncitem.funcargs[name]
+                for name in inspect.signature(test_function).parameters
+                if name in pyfuncitem.funcargs
+            }
+            loop.run_until_complete(test_function(**kwargs))
         finally:
             loop.close()
             asyncio.set_event_loop(None)

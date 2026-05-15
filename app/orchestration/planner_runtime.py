@@ -75,11 +75,16 @@ async def supervisor_execute_node(state: DetectionState) -> DetectionState:
     orchestration.loop_count += 1
     state.apply_orchestration_runtime(orchestration)
 
+    current_step_ids = {step["id"] for step in planned_steps}
     successful_step_ids = {
-        step_id for step_id, status in orchestration.step_status.items() if status == "success"
+        step_id
+        for step_id, status in orchestration.step_status.items()
+        if step_id in current_step_ids and status == "success"
     }
     terminal_step_ids = {
-        step_id for step_id, status in orchestration.step_status.items() if status in {"success", "failed"}
+        step_id
+        for step_id, status in orchestration.step_status.items()
+        if step_id in current_step_ids and status in {"success", "failed"}
     }
 
     while len(terminal_step_ids) < len(planned_steps):
@@ -236,6 +241,17 @@ async def supervisor_execute_node(state: DetectionState) -> DetectionState:
             domain.agent_outputs[agent_name] = envelope.model_dump()
             state.apply_domain_runtime(domain)
             orchestration.step_status[step_id] = "success"
+            failed_step_agent = (
+                orchestration.last_failed_step.split("-", 1)[0]
+                if orchestration.last_failed_step
+                else None
+            )
+            if orchestration.last_failed_step == step_id or failed_step_agent == agent_name:
+                orchestration.last_failed_step = None
+                orchestration.retry_target = None
+                orchestration.retry_reason = None
+                orchestration.retry_strategy = None
+                orchestration.reflection_decision = None
             append_execution_event(
                 state,
                 "step_completed",
