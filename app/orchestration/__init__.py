@@ -1,4 +1,3 @@
-from app.orchestration.envelope import AgentEnvelope
 from app.orchestration.context import (
     ClarificationContext,
     KnowledgeContext,
@@ -6,15 +5,7 @@ from app.orchestration.context import (
     SharedContext,
     VisionContext,
 )
-from app.orchestration.context_store import (
-    clear_pending_clarification,
-    get_pending_context_from_mapping,
-    get_pending_context_from_state,
-    get_prompt_context,
-    set_pending_clarification,
-    set_prompt_context,
-)
-from app.orchestration.events import append_execution_event
+from app.orchestration.envelope import AgentEnvelope
 
 __all__ = [
     "AgentEnvelope",
@@ -31,3 +22,22 @@ __all__ = [
     "SharedContext",
     "VisionContext",
 ]
+
+
+def __getattr__(name: str):
+    if name == "append_execution_event":
+        from app.orchestration.events import append_execution_event
+
+        return append_execution_event
+    if name in {
+        "clear_pending_clarification",
+        "get_pending_context_from_mapping",
+        "get_pending_context_from_state",
+        "get_prompt_context",
+        "set_pending_clarification",
+        "set_prompt_context",
+    }:
+        from app.orchestration import context_store
+
+        return getattr(context_store, name)
+    raise AttributeError(name)

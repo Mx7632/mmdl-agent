@@ -5,7 +5,10 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import chromadb
+try:  # pragma: no cover
+    import chromadb
+except Exception:  # pragma: no cover
+    chromadb = None  # type: ignore[assignment]
 
 from app.config.settings import settings
 from app.rag.dataset_analyzer import ImageMetadata
@@ -22,6 +25,9 @@ class VectorStore:
     """Manage fused multimodal vectors for anomaly retrieval."""
 
     def __init__(self, persist_dir: str | Path):
+        if chromadb is None:
+            raise RuntimeError("chromadb is not installed; install project RAG dependencies before using vector retrieval")
+
         self.persist_dir = Path(persist_dir)
         self.persist_dir.mkdir(parents=True, exist_ok=True)
 

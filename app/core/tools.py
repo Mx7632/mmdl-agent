@@ -6,7 +6,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Type
 
-from langchain_core.tools import BaseTool
+try:  # pragma: no cover
+    from langchain_core.tools import BaseTool
+except Exception:  # pragma: no cover
+    class BaseTool:  # type: ignore[no-redef]
+        name: str = ""
+        description: str = ""
+        args_schema: Any = None
 from pydantic import BaseModel, Field
 
 from app.rag.service import RagService

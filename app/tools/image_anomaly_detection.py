@@ -7,8 +7,16 @@ import re
 from typing import Any
 
 import httpx
-from langchain_core.messages import HumanMessage
-from langchain_openai import ChatOpenAI
+try:  # pragma: no cover
+    from langchain_core.messages import HumanMessage
+except Exception:  # pragma: no cover
+    class HumanMessage:  # type: ignore[no-redef]
+        def __init__(self, content: Any) -> None:
+            self.content = content
+try:  # pragma: no cover
+    from langchain_openai import ChatOpenAI
+except Exception:  # pragma: no cover
+    ChatOpenAI = None  # type: ignore[assignment]
 from PIL import Image
 from pydantic import SecretStr
 
@@ -267,6 +275,8 @@ class QwenImageAnomalyDetectionTool(BaseTool):
 
         if not settings.openai_api_key:
             raise ConfigurationError("openai_api_key not configured", config_key="APP_OPENAI_API_KEY")
+        if ChatOpenAI is None:
+            raise ConfigurationError("langchain_openai is not installed", config_key="dependencies.langchain-openai")
 
         mime = (task.parameters or {}).get("image_mime") or "image/jpeg"
         detector_params = (task.parameters or {}).get("detector_params") or {}

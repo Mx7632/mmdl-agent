@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
-from langchain_openai import ChatOpenAI
+try:  # pragma: no cover
+    from langchain_openai import ChatOpenAI
+except Exception:  # pragma: no cover
+    ChatOpenAI = None  # type: ignore[assignment]
 from pydantic import SecretStr
 
 from app.config.settings import settings
@@ -16,8 +20,8 @@ class AnomalyTextGenerator:
     """Generate anomaly descriptions with LLM fallback to rules."""
 
     def __init__(self) -> None:
-        self.llm: ChatOpenAI | None = None
-        if settings.openai_api_key:
+        self.llm: Any | None = None
+        if settings.openai_api_key and ChatOpenAI is not None:
             try:
                 self.llm = ChatOpenAI(
                     model=settings.llm_model,

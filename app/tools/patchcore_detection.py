@@ -412,7 +412,7 @@ def train_patchcore_category(
 def predict_patchcore_image(
     image_path: str | Path,
     category: str,
-    threshold: float,
+    threshold: float | None,
     task_id: str,
 ) -> dict[str, Any]:
     artifacts = get_patchcore_artifacts(category)
@@ -432,7 +432,11 @@ def predict_patchcore_image(
     backbone_name = str(metadata.get("backbone") or settings.patchcore_backbone)
     pretrained_backbone = bool(metadata.get("pretrained_backbone", settings.patchcore_pretrained_backbone))
     device = str(metadata.get("device") or settings.patchcore_device)
-    effective_threshold = float(threshold or metadata.get("recommended_threshold") or settings.patchcore_threshold)
+    effective_threshold = float(
+        threshold
+        if threshold is not None
+        else metadata.get("recommended_threshold", settings.patchcore_threshold)
+    )
 
     extractor = _build_feature_extractor(backbone_name, pretrained_backbone).to(device)
     try:
@@ -513,7 +517,11 @@ class LocalPatchCoreImageAnomalyDetectionTool(BaseTool):
             )
 
         detector_params = (task.parameters or {}).get("detector_params") or {}
-        threshold = float(detector_params.get("threshold") or settings.patchcore_threshold)
+        threshold = (
+            float(detector_params["threshold"])
+            if detector_params.get("threshold") not in (None, "")
+            else None
+        )
         image_dir = Path(settings.patchcore_heatmap_dir) / category
         image_dir.mkdir(parents=True, exist_ok=True)
         image_path = image_dir / f"{task.task_id}_input.png"

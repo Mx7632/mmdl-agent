@@ -3,9 +3,6 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from app.agents.report.service import generate_report_state
-from app.core.runtime import graph_session, load_state_values, persist_runtime_state
-from app.core.wait_user import build_continue_state
 from app.exceptions.base import TaskNotFoundError
 from app.memory.state import DetectionState
 from app.schemas.detection import DetectionTask
@@ -17,11 +14,19 @@ from app.services.state_rehydration import (
     prepare_followup_state,
     restore_state,
 )
+from app.services.industrial_runtime import industrial_store, normalize_industrial_result
 
 logger = logging.getLogger(__name__)
 
 
+def _runtime_helpers():
+    from app.core.runtime import graph_session, load_state_values, persist_runtime_state
+
+    return graph_session, load_state_values, persist_runtime_state
+
+
 async def get_pending_task(task_id: str) -> Optional[dict[str, Any]]:
+    _, load_state_values, _ = _runtime_helpers()
     state, _ = await load_state_values(task_id)
     if state is None:
         return None
@@ -39,6 +44,7 @@ async def get_pending_task(task_id: str) -> Optional[dict[str, Any]]:
 
 
 async def run_detection(task: DetectionTask) -> dict[str, Any]:
+    graph_session, _, persist_runtime_state = _runtime_helpers()
     try:
         logger.info("[run_detection] START task_id=%s, question=%s", task.task_id, task.question)
         state = DetectionState(task=task, stage="chat")
@@ -53,7 +59,7 @@ async def run_detection(task: DetectionTask) -> dict[str, Any]:
     needs_suspend = result_dict.get("needs_user_input") and not result_dict.get("user_reply")
     if needs_suspend:
         pending_clarification, pending_question = extract_pending_context(result_dict)
-        return {
+        response = {
             "status": "pending",
             "task_id": task.task_id,
             "message": "Additional user clarification is required before continuing.",
@@ -63,6 +69,8 @@ async def run_detection(task: DetectionTask) -> dict[str, Any]:
             "conversation_history": list(result_dict.get("conversation_history", [])),
             **build_execution_metadata(result_dict),
         }
+        industrial_store.record_task(task, response)
+        return normalize_industrial_result(response)
 
     answer = result_dict.get("context", {}).get(
         "answer",
@@ -71,7 +79,7 @@ async def run_detection(task: DetectionTask) -> dict[str, Any]:
     anomalies = extract_anomalies(result_dict.get("result"))
     result_metadata = extract_result_metadata(result_dict.get("result"))
 
-    return {
+    response = {
         "task_id": task.task_id,
         "status": "success",
         "answer": answer,
@@ -84,9 +92,12 @@ async def run_detection(task: DetectionTask) -> dict[str, Any]:
             **build_execution_metadata(result_dict),
         },
     }
+    industrial_store.record_task(task, response)
+    return normalize_industrial_result(response)
 
 
 async def run_chat(task_id: str, question: str) -> dict[str, Any]:
+    graph_session, load_state_values, persist_runtime_state = _runtime_helpers()
     previous_state, _ = await load_state_values(task_id)
     if previous_state is None:
         raise TaskNotFoundError(f"Task {task_id} was not found. Please run detection first.")
@@ -100,7 +111,7 @@ async def run_chat(task_id: str, question: str) -> dict[str, Any]:
     needs_suspend = result_dict.get("needs_user_input") and not result_dict.get("user_reply")
     if needs_suspend:
         pending_clarification, pending_question = extract_pending_context(result_dict)
-        return {
+        return normalize_industrial_result({
             "status": "pending",
             "task_id": task_id,
             "message": "Additional user clarification is required before continuing.",
@@ -113,7 +124,7 @@ async def run_chat(task_id: str, question: str) -> dict[str, Any]:
                 "confidence": result_dict.get("confidence", 0.0),
                 **build_execution_metadata(result_dict),
             },
-        }
+        })
 
     answer = result_dict.get("context", {}).get(
         "answer",
@@ -121,7 +132,7 @@ async def run_chat(task_id: str, question: str) -> dict[str, Any]:
     )
     anomalies = extract_anomalies(result_dict.get("result"))
     result_metadata = extract_result_metadata(result_dict.get("result"))
-    return {
+    return normalize_industrial_result({
         "task_id": task_id,
         "status": "success",
         "answer": answer,
@@ -134,10 +145,13 @@ async def run_chat(task_id: str, question: str) -> dict[str, Any]:
             "result_metadata": result_metadata,
             **build_execution_metadata(result_dict),
         },
-    }
+    })
 
 
 async def generate_report(task_id: str) -> dict[str, Any]:
+    graph_session, load_state_values, persist_runtime_state = _runtime_helpers()
+    from app.agents.report.service import generate_report_state
+
     previous_state, _ = await load_state_values(task_id)
     if previous_state is None:
         raise TaskNotFoundError(f"Task {task_id} was not found. Please run detection first.")
@@ -169,7 +183,7 @@ async def generate_report(task_id: str) -> dict[str, Any]:
     task_runtime = state.task_runtime()
     orchestration_runtime = state.orchestration_runtime()
     result = state.domain_runtime().result
-    return {
+    return normalize_industrial_result({
         "task_id": task_id,
         "status": result.status if result else "success",
         "summary": result.summary if result else None,
@@ -182,10 +196,13 @@ async def generate_report(task_id: str) -> dict[str, Any]:
             "result_metadata": result.metadata if result else {},
             **build_execution_metadata(state.model_dump()),
         },
-    }
+    })
 
 
 async def continue_detection(task_id: str, user_reply: str) -> dict[str, Any]:
+    graph_session, load_state_values, persist_runtime_state = _runtime_helpers()
+    from app.core.wait_user import build_continue_state
+
     previous_state, _ = await load_state_values(task_id)
     if previous_state is None:
         raise TaskNotFoundError(f"Suspended task not found: {task_id}")
@@ -202,7 +219,7 @@ async def continue_detection(task_id: str, user_reply: str) -> dict[str, Any]:
     needs_suspend = result_dict.get("needs_user_input") and not result_dict.get("user_reply")
     if needs_suspend:
         pending_clarification, pending_question = extract_pending_context(result_dict)
-        return {
+        return normalize_industrial_result({
             "status": "pending",
             "task_id": task_id,
             "message": "More user clarification is still required.",
@@ -211,12 +228,12 @@ async def continue_detection(task_id: str, user_reply: str) -> dict[str, Any]:
             "loop_count": result_dict.get("loop_count", 0),
             "conversation_history": list(result_dict.get("conversation_history", [])),
             **build_execution_metadata(result_dict),
-        }
+        })
 
     answer = result_dict.get("context", {}).get("answer", "")
     anomalies = extract_anomalies(result_dict.get("result"))
     result_metadata = extract_result_metadata(result_dict.get("result"))
-    return {
+    return normalize_industrial_result({
         "task_id": task_id,
         "status": "success",
         "answer": answer,
@@ -229,7 +246,7 @@ async def continue_detection(task_id: str, user_reply: str) -> dict[str, Any]:
             "result_metadata": result_metadata,
             **build_execution_metadata(result_dict),
         },
-    }
+    })
 
 
 async def run_graph(graph: Any, initial_state: DetectionState | dict[str, Any] | None, *, config: Optional[dict[str, Any]] = None) -> dict[str, Any]:
