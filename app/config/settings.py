@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     patchcore_heatmap_dir: str = "data/heatmaps"
     patchcore_detector_aliases: str = "patchcore,patch_core"
 
+    grad_checkpoint_dir: str = "models/grad"
+    grad_device: str = "cpu"
+    grad_default_category: str = "bottle"
+    grad_threshold: float = 0.5
+    grad_heatmap_dir: str = "data/heatmaps"
+    grad_detector_aliases: str = "grad,grad_anomaly,grad_ad"
+
     rag_enabled: bool = True
     rag_dataset_root: str = "data_sets/mvtec_anomaly_detection"
     rag_vector_dir: str = "data/rag/chroma"
