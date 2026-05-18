@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.config.settings import settings
 from app.memory.state import DetectionState
 from app.rag.fewshot import build_fewshot_context
 from app.rag.knowledge_pipeline import resolve_knowledge_request
@@ -9,6 +10,9 @@ from app.rag.service import get_rag_service
 
 
 def _build_visual_fewshot(task: Any) -> tuple[dict[str, list[dict[str, Any]]], str]:
+    # 检查 RAG 是否启用，避免 ChromaDB Rust 后端在 Windows 上崩溃
+    if not settings.rag_enabled:
+        return {}, ""
     try:
         service = get_rag_service()
         request = resolve_knowledge_request(task)

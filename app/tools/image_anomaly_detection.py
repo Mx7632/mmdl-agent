@@ -30,8 +30,9 @@ from app.exceptions.base import (
 )
 from app.schemas.detection import DetectionResult, DetectionTask, ToolResponse
 from app.tools.anomaly_detection import BaseTool
-from app.tools.grad_detection import LocalGRADImageAnomalyDetectionTool
-from app.tools.patchcore_detection import LocalPatchCoreImageAnomalyDetectionTool
+# 延迟导入，避免顶层 import torch 导致 DLL 加载失败
+# from app.tools.grad_detection import LocalGRADImageAnomalyDetectionTool
+# from app.tools.patchcore_detection import LocalPatchCoreImageAnomalyDetectionTool
 
 QWEN_BACKEND = "qwen"
 SPECIALIST_BACKEND = "specialist"
@@ -492,8 +493,23 @@ class ImageAnomalyDetectionTool(BaseTool):
     ) -> None:
         self.qwen_tool = qwen_tool or QwenImageAnomalyDetectionTool()
         self.specialist_tool = specialist_tool or HttpProfessionalImageAnomalyDetectionTool()
-        self.patchcore_tool = patchcore_tool or LocalPatchCoreImageAnomalyDetectionTool()
-        self.grad_tool = grad_tool or LocalGRADImageAnomalyDetectionTool()
+        # 延迟实例化，避免 import torch
+        self._patchcore_tool = patchcore_tool
+        self._grad_tool = grad_tool
+
+    @property
+    def patchcore_tool(self) -> BaseTool:
+        if self._patchcore_tool is None:
+            from app.tools.patchcore_detection import LocalPatchCoreImageAnomalyDetectionTool
+            self._patchcore_tool = LocalPatchCoreImageAnomalyDetectionTool()
+        return self._patchcore_tool
+
+    @property
+    def grad_tool(self) -> BaseTool:
+        if self._grad_tool is None:
+            from app.tools.grad_detection import LocalGRADImageAnomalyDetectionTool
+            self._grad_tool = LocalGRADImageAnomalyDetectionTool()
+        return self._grad_tool
 
     async def run(self, task: DetectionTask) -> ToolResponse:
         tool_type = (task.parameters or {}).get("tool_type")
