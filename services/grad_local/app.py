@@ -7,7 +7,7 @@ import os
 import sys
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -46,13 +46,13 @@ app = FastAPI(title="grad-local-detector")
 
 class DetectRequest(BaseModel):
     task_id: str
-    asset_id: str | None = None
-    question: str | None = None
+    asset_id: Optional[str] = None
+    question: Optional[str] = None
     image_base64: str
     image_mime: str = "image/jpeg"
     detector_type: str = "grad"
-    detector_params: dict[str, Any] = Field(default_factory=dict)
-    parameters: dict[str, Any] = Field(default_factory=dict)
+    detector_params: Dict[str, Any] = Field(default_factory=dict)
+    parameters: Dict[str, Any] = Field(default_factory=dict)
 
 
 def _load_config() -> EasyDict:
@@ -74,7 +74,7 @@ def _load_config() -> EasyDict:
 
 
 @lru_cache(maxsize=1)
-def _load_model() -> tuple[ModelHelper, EasyDict]:
+def _load_model() -> Tuple[ModelHelper, EasyDict]:
     if not torch.cuda.is_available():
         raise RuntimeError("GRAD service requires CUDA because the upstream implementation calls .cuda().")
     if not CHECKPOINT_PATH.exists():
@@ -126,7 +126,7 @@ def _normalize_heatmap(pred: torch.Tensor, width: int, height: int) -> np.ndarra
     return np.clip(pred, 0.0, 1.0)
 
 
-def _save_visualizations(image: Image.Image, heatmap: np.ndarray, task_id: str, category: str) -> dict[str, str]:
+def _save_visualizations(image: Image.Image, heatmap: np.ndarray, task_id: str, category: str) -> Dict[str, str]:
     output_dir = OUTPUT_DIR / category
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -150,7 +150,7 @@ def _save_visualizations(image: Image.Image, heatmap: np.ndarray, task_id: str, 
     }
 
 
-def _location_from_bbox(bbox: list[int], image_size: tuple[int, int]) -> str:
+def _location_from_bbox(bbox: List[int], image_size: Tuple[int, int]) -> str:
     width, height = image_size
     x1, y1, x2, y2 = bbox
     center_x = (x1 + x2) / 2
@@ -160,12 +160,12 @@ def _location_from_bbox(bbox: list[int], image_size: tuple[int, int]) -> str:
     return f"{vertical}-{horizontal}"
 
 
-def _extract_anomalies(heatmap: np.ndarray, threshold: float, image_size: tuple[int, int]) -> list[dict[str, Any]]:
+def _extract_anomalies(heatmap: np.ndarray, threshold: float, image_size: Tuple[int, int]) -> List[Dict[str, Any]]:
     width, height = image_size
     mask = (heatmap >= threshold).astype(np.uint8)
     num_labels, _, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
     min_area = max(16, int(0.0005 * width * height))
-    anomalies: list[dict[str, Any]] = []
+    anomalies: List[Dict[str, Any]] = []
 
     for index in range(1, num_labels):
         x, y, w, h, area = stats[index]
@@ -190,7 +190,7 @@ def _extract_anomalies(heatmap: np.ndarray, threshold: float, image_size: tuple[
 
 
 @app.get("/health")
-def health() -> dict[str, Any]:
+def health() -> Dict[str, Any]:
     return {
         "status": "ok",
         "repo_dir": str(REPO_DIR),
@@ -202,7 +202,7 @@ def health() -> dict[str, Any]:
 
 
 @app.post("/detect")
-def detect(payload: DetectRequest) -> dict[str, Any]:
+def detect(payload: DetectRequest) -> Dict[str, Any]:
     try:
         model, config = _load_model()
         image = _decode_image(payload.image_base64)
