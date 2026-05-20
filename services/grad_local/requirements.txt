@@ -1,0 +1,8 @@
+fastapi>=0.115
+uvicorn>=0.30
+python-multipart>=0.0.9
+easydict
+PyYAML
+opencv-python-headless
+Pillow
+numpy

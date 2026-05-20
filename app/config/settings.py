@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     professional_vision_detector_aliases: str = (
         "anomalygpt,anomaly_gpt,specialist-http,specialist_http,professional"
     )
+    grad_detector_url: str = ""
+    grad_detector_timeout: float = 60.0
+    grad_detector_aliases: str = "grad,bi_grid,bi-grid"
 
     patchcore_model_root: str = "models/patchcore"
     patchcore_device: str = "cpu"

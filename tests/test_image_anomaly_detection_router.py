@@ -8,6 +8,7 @@ from app.exceptions.base import ConfigurationError
 from app.schemas.detection import DetectionResult, DetectionTask, ToolResponse
 from app.core.tools import VisualAnomalyLocalizationTool
 from app.tools.image_anomaly_detection import (
+    HttpGradImageAnomalyDetectionTool,
     HttpProfessionalImageAnomalyDetectionTool,
     ImageAnomalyDetectionTool,
     normalize_visual_anomalies,
@@ -77,6 +78,37 @@ async def test_image_router_uses_specialist_backend_for_anomalygpt():
     assert response.result.metadata["selected_backend"] == "specialist"
 
 
+async def test_image_router_uses_grad_backend_for_grad_tool_type():
+    qwen_tool = DummyImageTool("qwen")
+    specialist_tool = DummyImageTool("specialist")
+    patchcore_tool = DummyImageTool("patchcore")
+    grad_tool = DummyImageTool("grad")
+    router = ImageAnomalyDetectionTool(
+        qwen_tool=qwen_tool,
+        specialist_tool=specialist_tool,
+        patchcore_tool=patchcore_tool,
+        grad_tool=grad_tool,
+    )
+
+    task = DetectionTask(
+        task_id="task-grad",
+        asset_id="asset-1",
+        start_time="2026-04-22T00:00:00Z",
+        end_time="2026-04-22T00:00:00Z",
+        parameters={"image_base64": base64.b64encode(b"img").decode("ascii"), "tool_type": "grad"},
+    )
+
+    response = await router.run(task)
+
+    assert qwen_tool.calls == []
+    assert specialist_tool.calls == []
+    assert patchcore_tool.calls == []
+    assert grad_tool.calls == ["task-grad"]
+    assert response.tool_name == "grad"
+    assert response.result is not None
+    assert response.result.metadata["selected_backend"] == "grad"
+
+
 async def test_specialist_detector_requires_service_url(monkeypatch):
     tool = HttpProfessionalImageAnomalyDetectionTool()
     monkeypatch.setattr(
@@ -90,6 +122,22 @@ async def test_specialist_detector_requires_service_url(monkeypatch):
         start_time="2026-04-22T00:00:00Z",
         end_time="2026-04-22T00:00:00Z",
         parameters={"image_base64": base64.b64encode(b"img").decode("ascii"), "tool_type": "anomalygpt"},
+    )
+
+    with pytest.raises(ConfigurationError):
+        await tool.run(task)
+
+
+async def test_grad_detector_requires_service_url(monkeypatch):
+    tool = HttpGradImageAnomalyDetectionTool()
+    monkeypatch.setattr("app.tools.image_anomaly_detection.settings.grad_detector_url", "")
+
+    task = DetectionTask(
+        task_id="task-grad-missing-url",
+        asset_id="asset-1",
+        start_time="2026-04-22T00:00:00Z",
+        end_time="2026-04-22T00:00:00Z",
+        parameters={"image_base64": base64.b64encode(b"img").decode("ascii"), "tool_type": "grad"},
     )
 
     with pytest.raises(ConfigurationError):

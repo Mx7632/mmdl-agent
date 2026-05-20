@@ -241,6 +241,10 @@ async def system_health():
                 "status": "configured" if settings.professional_vision_detector_url else "not_configured",
                 "url": settings.professional_vision_detector_url,
             },
+            "grad_sidecar": {
+                "status": "configured" if settings.grad_detector_url else "not_configured",
+                "url": settings.grad_detector_url,
+            },
             "security": {
                 "api_token_required": settings.require_api_token,
                 "allowed_origins": allowed_origins,

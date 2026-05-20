@@ -35,6 +35,7 @@ from app.tools.patchcore_detection import LocalPatchCoreImageAnomalyDetectionToo
 QWEN_BACKEND = "qwen"
 SPECIALIST_BACKEND = "specialist"
 PATCHCORE_BACKEND = "patchcore"
+GRAD_BACKEND = "grad"
 
 _JSON_RE = re.compile(r"\{[\s\S]*\}")
 _UNCERTAIN_ANOMALY_RE = re.compile(
@@ -43,6 +44,7 @@ _UNCERTAIN_ANOMALY_RE = re.compile(
 )
 _QWEN_ALIASES = {"qwen", "qwen_vl", "qwen3_5_plus", "qwen3.5_plus"}
 _PATCHCORE_ALIASES = {"patchcore", "patch_core"}
+_GRAD_ALIASES = {"grad", "bi_grid", "bigrid"}
 _SPECIALIST_ALIASES = {
     "anomalygpt",
     "anomaly_gpt",
@@ -74,11 +76,18 @@ def resolve_visual_backend(tool_type: str | None) -> str:
         for alias in (_normalize_detector_name(item) for item in settings.patchcore_detector_aliases.split(","))
         if alias
     } | _PATCHCORE_ALIASES
+    grad_aliases = {
+        alias
+        for alias in (_normalize_detector_name(item) for item in settings.grad_detector_aliases.split(","))
+        if alias
+    } | _GRAD_ALIASES
 
     if requested in specialist_aliases or requested.startswith("anomaly"):
         return SPECIALIST_BACKEND
     if requested in patchcore_aliases or requested.startswith("patchcore"):
         return PATCHCORE_BACKEND
+    if requested in grad_aliases or requested.startswith("grad"):
+        return GRAD_BACKEND
     if requested in _QWEN_ALIASES or requested.startswith("qwen"):
         return QWEN_BACKEND
 
@@ -90,6 +99,8 @@ def resolve_visual_backend(tool_type: str | None) -> str:
         return SPECIALIST_BACKEND
     if default_backend in patchcore_aliases or default_backend == PATCHCORE_BACKEND:
         return PATCHCORE_BACKEND
+    if default_backend in grad_aliases or default_backend == GRAD_BACKEND:
+        return GRAD_BACKEND
     return QWEN_BACKEND
 
 
@@ -467,6 +478,101 @@ class HttpProfessionalImageAnomalyDetectionTool(BaseTool):
         return ToolResponse(tool_name=self.name, success=True, result=result)
 
 
+class HttpGradImageAnomalyDetectionTool(BaseTool):
+    name = "grad_image_anomaly_detection"
+
+    async def run(self, task: DetectionTask) -> ToolResponse:
+        image_b64 = (task.parameters or {}).get("image_base64")
+        if not image_b64:
+            raise ToolExecutionError(self.name, {"task_id": task.task_id}, ValueError("image_base64 missing"))
+
+        service_url = (settings.grad_detector_url or "").strip()
+        if not service_url:
+            raise ConfigurationError(
+                "GRAD detector url not configured",
+                config_key="APP_GRAD_DETECTOR_URL",
+            )
+
+        mime = (task.parameters or {}).get("image_mime") or "image/jpeg"
+        detector_params = (task.parameters or {}).get("detector_params") or {}
+
+        try:
+            base64.b64decode(image_b64, validate=True)
+        except Exception as exc:
+            raise ToolExecutionError(self.name, {"task_id": task.task_id}, exc) from exc
+
+        payload = {
+            "task_id": task.task_id,
+            "asset_id": task.asset_id,
+            "start_time": task.start_time,
+            "end_time": task.end_time,
+            "question": task.question,
+            "image_base64": image_b64,
+            "image_mime": mime,
+            "detector_type": "grad",
+            "detector_params": detector_params,
+            "parameters": task.parameters,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=settings.grad_detector_timeout) as client:
+                response = await client.post(
+                    service_url,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+                response.raise_for_status()
+                result_data = response.json()
+        except httpx.HTTPStatusError as exc:
+            raise ExternalServiceError(
+                message=f"GRAD detector returned {exc.response.status_code}",
+                details={"url": service_url, "status_code": exc.response.status_code},
+                original_error=exc,
+            ) from exc
+        except httpx.RequestError as exc:
+            raise ExternalServiceError(
+                message="Failed to connect to GRAD detector",
+                details={"url": service_url},
+                original_error=exc,
+            ) from exc
+        except Exception as exc:
+            raise ToolExecutionError(self.name, {"task_id": task.task_id}, exc) from exc
+
+        parsed = result_data.get("result") if isinstance(result_data, dict) else None
+        if parsed is None:
+            parsed = result_data
+        if not isinstance(parsed, dict):
+            raise ResponseParseError("GRAD detector response is not JSON object", raw_response=result_data)
+
+        anomalies = parsed.get("anomalies") or parsed.get("predictions") or []
+        if not isinstance(anomalies, list):
+            raise ResponseParseError("GRAD detector anomalies is not a list", raw_response=result_data)
+
+        image_size = _decode_image_size(image_b64)
+        anomalies = normalize_visual_anomalies(anomalies, image_size=image_size)
+        metadata = dict(parsed.get("metadata") or {})
+        metadata.update(
+            {
+                "tool": self.name,
+                "detector_type": "grad",
+                "service_url": service_url,
+                "image_size": image_size,
+                "localization_available": any(item.get("has_localization") for item in anomalies),
+                "analysis_mode": "localization" if (task.parameters or {}).get("require_localization") else "detection",
+            }
+        )
+
+        result = DetectionResult(
+            task_id=parsed.get("task_id", task.task_id),
+            status=parsed.get("status", "success"),
+            answer=parsed.get("answer"),
+            anomalies=anomalies,
+            summary=parsed.get("summary"),
+            metadata=metadata,
+        )
+        return ToolResponse(tool_name=self.name, success=True, result=result)
+
+
 class ImageAnomalyDetectionTool(BaseTool):
     name = "image_anomaly_detection"
 
@@ -475,10 +581,12 @@ class ImageAnomalyDetectionTool(BaseTool):
         qwen_tool: BaseTool | None = None,
         specialist_tool: BaseTool | None = None,
         patchcore_tool: BaseTool | None = None,
+        grad_tool: BaseTool | None = None,
     ) -> None:
         self.qwen_tool = qwen_tool or QwenImageAnomalyDetectionTool()
         self.specialist_tool = specialist_tool or HttpProfessionalImageAnomalyDetectionTool()
         self.patchcore_tool = patchcore_tool or LocalPatchCoreImageAnomalyDetectionTool()
+        self.grad_tool = grad_tool or HttpGradImageAnomalyDetectionTool()
 
     async def run(self, task: DetectionTask) -> ToolResponse:
         tool_type = (task.parameters or {}).get("tool_type")
@@ -487,6 +595,8 @@ class ImageAnomalyDetectionTool(BaseTool):
             selected_tool = self.specialist_tool
         elif backend == PATCHCORE_BACKEND:
             selected_tool = self.patchcore_tool
+        elif backend == GRAD_BACKEND:
+            selected_tool = self.grad_tool
         else:
             selected_tool = self.qwen_tool
         response = await selected_tool.run(task)
