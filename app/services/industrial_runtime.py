@@ -218,6 +218,29 @@ class IndustrialRuntimeStore:
         row = self._state["tasks"].get(task_id)
         return self._public_task(row) if row else None
 
+    def delete_task(self, task_id: str) -> bool:
+        """Delete a single task record. Returns True if it existed."""
+        self._ensure_loaded()
+        with self._lock:
+            removed = self._state["tasks"].pop(task_id, None)
+            if removed is not None:
+                metrics = self._state.setdefault("metrics", {})
+                metrics["task_count"] = len(self._state["tasks"])
+                self._save()
+                return True
+            return False
+
+    def delete_all_tasks(self) -> int:
+        """Delete all task records. Returns count of removed tasks."""
+        self._ensure_loaded()
+        with self._lock:
+            count = len(self._state["tasks"])
+            self._state["tasks"] = {}
+            metrics = self._state.setdefault("metrics", {})
+            metrics["task_count"] = 0
+            self._save()
+            return count
+
     def review_task(
         self,
         task_id: str,

@@ -276,6 +276,25 @@
             .left{width:100%;max-width:none;min-width:auto;border-right:none;border-top:1px solid var(--border);height:50vh}
             .right{height:50vh;max-width:none}
         }
+    /* 任务历史 */
+    .task-history-item{background:var(--bg-1);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:all .15s}
+    .task-history-item:hover{border-color:var(--brand);background:var(--brand-light)}
+    .task-history-item.active{border-color:var(--brand);background:var(--brand-light)}
+    .task-history-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px}
+    .task-history-id{font-family:monospace;font-size:13px;font-weight:600;color:var(--text-1)}
+    .task-history-badge{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600}
+    .task-history-badge.ok{background:#d1fae5;color:#065f46}
+    .task-history-badge.warn{background:#fef3c7;color:#92400e}
+    .task-history-badge.err{background:#fee2e2;color:#991b1b}
+    .task-history-anomaly,.task-history-normal{font-size:11px}
+    .task-history-review{font-size:11px;color:var(--text-3);margin-left:auto}
+    .task-history-meta{display:flex;gap:12px;font-size:11px;color:var(--text-3);flex-wrap:wrap}
+    .task-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:12px;padding:10px;background:var(--bg-1);border-radius:8px;border:1px solid var(--border)}
+    .task-detail-field{display:flex;flex-direction:column;gap:2px}
+    .task-detail-field label{font-size:11px;color:var(--text-3)}
+    .task-detail-field span{font-size:13px;color:var(--text-1)}
+    .task-conv-title{font-size:13px;font-weight:600;color:var(--text-2);margin:8px 0;border-bottom:1px solid var(--border);padding-bottom:4px}
+    .ok{color:#065f46}.warn{color:#92400e}.err{color:#991b1b}
     </style>
 </head>
 <body>
@@ -303,6 +322,7 @@
         <button class="sidebar-btn" data-nav="rag" onclick="switchNav('rag')" title="知识库">📚<span class="sidebar-label">知识库</span></button>
         <button class="sidebar-btn" data-nav="industrial" onclick="switchNav('industrial')" title="工业元数据">🏭<span class="sidebar-label">工业</span></button>
         <button class="sidebar-btn" data-nav="batch" onclick="switchNav('batch')" title="批量检测">📦<span class="sidebar-label">批量</span></button>
+        <button class="sidebar-btn" data-nav="tasks" onclick="switchNav('tasks');loadTaskList()" title="任务历史">📋<span class="sidebar-label">历史</span></button>
     </nav>
     <!-- 左栏 -->
     <div class="left">
@@ -532,6 +552,21 @@
                     <div id="batch-message" class="msg info"></div>
                 </div>
             </div><!-- /panel-batch -->
+
+            <!-- ====== 面板：任务历史 ====== -->
+            <div class="nav-panel" id="panel-tasks" style="display:none">
+                <div class="card">
+                    <div class="card-title">📋 任务历史</div>
+                    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+                        <button class="btn btn-ghost btn-sm" onclick="loadTaskList()" style="flex-shrink:0">🔄 刷新</button>
+                        <button class="btn btn-ghost btn-sm" onclick="deleteAllTasks()" style="flex-shrink:0;color:var(--err)">🗑 清空</button>
+                        <span id="task-count-label" style="font-size:12px;color:var(--text-3)"></span>
+                    </div>
+                    <div id="task-list-container" style="max-height:calc(100vh - 220px);overflow-y:auto">
+                        <div style="color:var(--text-3);font-size:13px;text-align:center;padding:24px">点击刷新加载任务列表</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1841,6 +1876,170 @@ function handleComposerAction() {
     if (!state.taskId) startDetection();
     else if (state.pending) continueTask();
     else sendFollowup();
+}
+
+// ====== 任务历史 ======
+async function deleteTask(taskId) {
+    if (!confirm('确定删除任务 ' + taskId + '？此操作不可恢复。')) return;
+    try {
+        const resp = await fetch(API_BASE + '/v1/tasks/' + encodeURIComponent(taskId), { method: 'DELETE' });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        loadTaskList();
+    } catch (e) {
+        alert('删除失败: ' + e.message);
+    }
+}
+
+async function deleteAllTasks() {
+    const count = document.querySelectorAll('.task-history-item').length;
+    if (!count) return;
+    if (!confirm(`确定清空全部 ${count} 条任务记录？此操作不可恢复。`)) return;
+    try {
+        const resp = await fetch(API_BASE + '/v1/tasks', { method: 'DELETE' });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        loadTaskList();
+    } catch (e) {
+        alert('清空失败: ' + e.message);
+    }
+}
+
+async function loadTaskList() {
+    const container = $('task-list-container');
+    const label = $('task-count-label');
+    if (!container) return;
+    container.innerHTML = '<div style="font-size:13px;color:var(--text-3);text-align:center;padding:16px">⏳ 加载中…</div>';
+    try {
+        const resp = await fetch(API_BASE + '/v1/tasks?limit=50');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        const tasks = data.tasks || [];
+        if (label) label.textContent = `共 ${tasks.length} 条任务`;
+        if (!tasks.length) {
+            container.innerHTML = '<div style="font-size:13px;color:var(--text-3);text-align:center;padding:24px">暂无任务记录</div>';
+            return;
+        }
+        container.innerHTML = tasks.map(t => {
+            const statusCls = t.status === 'success' ? 'ok' : t.status === 'pending' ? 'warn' : 'err';
+            const reviewCls = t.requires_review ? '⏳待审' : '✅已审';
+            const created = t.created_at ? new Date(t.created_at).toLocaleString('zh-CN') : '-';
+            return `<div class="task-history-item" data-id="${escapeHtmlAttr(t.task_id)}" onclick="loadTaskDetail('${escapeHtmlAttr(t.task_id)}')">
+                <div class="task-history-row">
+                    <span class="task-history-id" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtmlAttr(t.task_id)}">${escapeHtml(t.task_id || '-')}</span>
+                    <span class="task-history-badge ${statusCls}">${t.status || '-'}</span>
+                    ${t.is_anomaly ? '<span class="task-history-anomaly">⚠️异常</span>' : '<span class="task-history-normal">✅正常</span>'}
+                    <span class="task-history-review">${reviewCls}</span>
+                    <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();deleteTask('${escapeHtmlAttr(t.task_id)}')" title="删除" style="padding:2px 6px;font-size:11px;color:var(--err);flex-shrink:0">✕</button>
+                </div>
+                <div class="task-history-meta">
+                    <span>设备: ${escapeHtml(t.asset_id || '-')}</span>
+                    <span>类型: ${escapeHtml(t.defect_type || 'good')}</span>
+                    <span>分数: ${typeof t.score === 'number' ? t.score.toFixed(3) : '-'}</span>
+                    <span>${created}</span>
+                </div>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        container.innerHTML = `<div style="font-size:13px;color:var(--err);text-align:center;padding:16px">加载失败: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+async function loadTaskDetail(taskId) {
+    const container = $('task-list-container');
+    if (!container) return;
+    container.innerHTML = '<div style="font-size:13px;color:var(--text-3);text-align:center;padding:16px">⏳ 加载任务详情…</div>';
+    try {
+        const resp = await fetch(API_BASE + '/v1/tasks/' + encodeURIComponent(taskId));
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const task = await resp.json();
+        const result = task.result || {};
+        const conv = result.conversation_history || [];
+        const created = task.created_at ? new Date(task.created_at).toLocaleString('zh-CN') : '-';
+        container.innerHTML = `
+            <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <button class="btn btn-ghost btn-sm" onclick="loadTaskList()">← 返回列表</button>
+                <button class="btn btn-primary btn-sm" onclick="switchToTask('${escapeHtmlAttr(taskId)}')">切换到此任务</button>
+                <button class="btn btn-ghost btn-sm" onclick="deleteTask('${escapeHtmlAttr(taskId)}');loadTaskList()" style="color:var(--err)">🗑 删除此任务</button>
+                <span style="font-size:12px;color:var(--text-3)">${escapeHtml(taskId)}</span>
+            </div>
+            <div class="task-detail-grid">
+                <div class="task-detail-field"><label>状态</label><span class="${task.status === 'success' ? 'ok' : task.status === 'pending' ? 'warn' : 'err'}">${task.status || '-'}</span></div>
+                <div class="task-detail-field"><label>设备ID</label><span>${escapeHtml(task.asset_id || '-')}</span></div>
+                <div class="task-detail-field"><label>异常</label><span>${task.is_anomaly ? '⚠️是' : '✅否'}</span></div>
+                <div class="task-detail-field"><label>缺陷类型</label><span>${escapeHtml(task.defect_type || 'good')}</span></div>
+                <div class="task-detail-field"><label>置信度</label><span>${typeof task.score === 'number' ? task.score.toFixed(3) : '-'}</span></div>
+                <div class="task-detail-field"><label>模型</label><span>${escapeHtml(task.model_backend || '-')}</span></div>
+                <div class="task-detail-field"><label>审核</label><span>${task.requires_review ? '⏳待审' : '✅已审'}</span></div>
+                <div class="task-detail-field"><label>创建时间</label><span>${created}</span></div>
+            </div>
+            ${conv.length ? `<div class="task-conv-title">对话历史 (${conv.length} 条)</div>` + conv.map(m => {
+                const role = m.role || m.agent || 'unknown';
+                return `<div class="bubble ${role}"><div class="bubble-role">${role === 'user' ? '用户' : role === 'assistant' ? '助手' : role}</div><div class="bubble-content">${renderMarkdown(m.text || m.content || '')}</div></div>`;
+            }).join('') : '<div style="font-size:12px;color:var(--text-3);margin-top:8px">无对话历史</div>'}
+            ${result.answer ? `<div style="margin-top:12px"><div style="font-size:12px;color:var(--text-2);margin-bottom:4px">检测结论</div><div class="answer-text" style="background:var(--bg-2);padding:10px;border-radius:6px">${renderMarkdown(result.answer)}</div></div>` : ''}
+        `;
+    } catch (e) {
+        container.innerHTML = `<div style="font-size:13px;color:var(--err);text-align:center;padding:16px">加载失败: ${escapeHtml(e.message)}<br><button class="btn btn-ghost btn-sm" onclick="loadTaskList()">← 返回</button></div>`;
+    }
+}
+
+function switchToTask(taskId) {
+    if (!confirm('切换任务将清空当前检测状态，继续？')) return;
+    state.taskId = taskId;
+    state.pending = false;
+    state.history = [];
+    state.lastResult = null;
+    state.executionPlan = null;
+    state.executionEvents = [];
+    state.stepStatus = {};
+    state.stepAttempts = {};
+    state.selectedTimelineItem = null;
+    renderTaskState();
+    renderExecutionTimeline();
+    renderHistory();
+    loadTaskDetail(taskId);
+    setMessage(els.detectMessage, 'info', '已切换到任务: ' + taskId);
+    switchNav('detect');
+    // 加载任务历史到对话区
+    loadConversationForTask(taskId);
+}
+
+async function loadConversationForTask(taskId) {
+    try {
+        const resp = await fetch(API_BASE + '/v1/tasks/' + encodeURIComponent(taskId));
+        if (!resp.ok) return;
+        const task = await resp.json();
+        const result = task.result || {};
+        const conv = result.conversation_history || [];
+        state.history = []
+        // 恢复用户原始问题（首次提问）
+        if (result.question) {
+            state.history.push({ role: 'user', text: result.question });
+        }
+        // 恢复对话历史（含追问后的 user_reply + 所有 assistant 回复）
+        if (conv.length) {
+            conv.forEach(m => {
+                const role = m.role === 'user' ? 'user' : m.role === 'assistant' ? 'assistant' : 'system';
+                state.history.push({ role, text: m.text || m.content || '', time: m.time || '' });
+            });
+        }
+        if (task.pending_question || task.pending_clarification) {
+            state.pending = true;
+            pushHistory('system', (task.pending_question || '') + '\n' + (task.pending_clarification || ''));
+        }
+        renderHistory();
+        // 回填时间线数据
+        const execEvts = result.execution_events || [];
+        if (execEvts.length) {
+            state.executionEvents = Array.isArray(execEvts) ? execEvts : [];
+            state.executionPlan = result.execution_plan || state.executionPlan;
+            state.stepStatus = result.step_status || state.stepStatus;
+            state.stepAttempts = result.step_attempts || state.stepAttempts;
+            renderExecutionTimeline();
+        }
+        // 回填基本信息
+        if (task.asset_id && els.assetId) els.assetId.value = task.asset_id;
+        renderIndustrialSummary(result);
+    } catch (e) { void e; }
 }
 
 function resetTask() {

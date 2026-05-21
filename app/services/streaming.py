@@ -9,6 +9,7 @@ from app.core.wait_user import build_continue_state
 from app.exceptions.base import TaskNotFoundError
 from app.memory.state import DetectionState
 from app.schemas.detection import DetectionTask
+from app.services.industrial_runtime import industrial_store
 from app.services.state_rehydration import (
     build_execution_metadata,
     extract_anomalies,
@@ -18,6 +19,55 @@ from app.services.state_rehydration import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _persist_task_record(task_id: str, final_payload: dict[str, Any], final_output: dict[str, Any]) -> None:
+    """Fire-and-forget: save detection result to industrial_store for /v1/tasks listing."""
+    try:
+        meta = final_payload.get("metadata", {}) or {}
+        anomalies = final_payload.get("anomalies") or []
+        is_anomaly = bool(anomalies)
+        score = float(meta.get("confidence", 0) or 0)
+        result_record = {
+            "task_id": task_id,
+            "status": final_payload.get("status", "success"),
+            "answer": final_payload.get("answer", ""),
+            "anomalies": anomalies,
+            "is_anomaly": is_anomaly,
+            "score": score,
+            "defect_type": anomalies[0].get("defect_type", "unknown") if anomalies else "good",
+            "metadata": meta,
+            # Persist original question (user's first message) for conversation restoration
+            "question": (
+                (final_output.get("task", {}).get("question") if isinstance(final_output.get("task"), dict) else None)
+                or getattr(final_output.get("task"), "question", None)
+            ),
+            # Persist conversation history for task-switch restoration
+            "conversation_history": list(final_output.get("conversation_history", [])),
+            # Persist timeline data for task-switch restoration
+            "execution_events": list(final_output.get("execution_events", [])),
+            "execution_plan": final_output.get("execution_plan"),
+            "step_status": final_output.get("step_status"),
+            "step_attempts": final_output.get("step_attempts"),
+        }
+        # build a lightweight task-like object for record_task
+        # extract asset_id from LangGraph state or task sub-object
+        _task_obj = final_output.get("task")
+        if isinstance(_task_obj, dict):
+            _asset_id = _task_obj.get("asset_id", "") or ""
+        else:
+            _asset_id = getattr(_task_obj, "asset_id", "") or ""
+        _asset_id = _asset_id or final_output.get("asset_id") or ""
+        class _MinimalTask:
+            def __init__(self, tid, aid):
+                self.task_id = tid
+                self.asset_id = aid
+                self.parameters = {}
+        industrial_store.record_task(_MinimalTask(task_id, _asset_id), result_record)
+        logger.info("[stream] Task %s recorded to industrial_store", task_id)
+    except Exception as exc:
+        import traceback
+        logger.warning("[stream] Failed to record task %s: %s\n%s", task_id, exc, traceback.format_exc())
 
 
 def build_stream_final_payload(task_id: str, final_output: dict[str, Any]) -> dict[str, Any]:
@@ -117,6 +167,8 @@ async def stream_langgraph_events(
                     final_output if isinstance(final_output, dict) else {},
                 )
                 yield f"data: {json.dumps(final_payload)}\n\n"
+                # Immediately persist to industrial_store when first result is ready
+                _persist_task_record(task_id, final_payload, final_output if isinstance(final_output, dict) else {})
 
 
 async def stream_detection(task: DetectionTask) -> AsyncGenerator[str, None]:
