@@ -156,6 +156,12 @@ class IndustrialRuntimeStore:
             "review": None,
         }
         with self._lock:
+            # Merge with existing record to preserve report metadata etc.
+            existing = self._state["tasks"].get(record["task_id"])
+            if existing and isinstance(existing.get("result"), dict):
+                for key in ("has_report", "summary"):
+                    if key in existing["result"] and key not in normalized:
+                        normalized[key] = existing["result"][key]
             self._state["tasks"][record["task_id"]] = record
             metrics = self._state.setdefault("metrics", {})
             metrics["task_count"] = len(self._state["tasks"])
@@ -217,6 +223,18 @@ class IndustrialRuntimeStore:
         self._ensure_loaded()
         row = self._state["tasks"].get(task_id)
         return self._public_task(row) if row else None
+
+    def patch_task_result(self, task_id: str, updates: dict) -> bool:
+        """Patch specific fields into an existing task's result dict. Returns True if task existed."""
+        self._ensure_loaded()
+        with self._lock:
+            row = self._state["tasks"].get(task_id)
+            if row is None:
+                return False
+            row["result"].update(updates)
+            row["updated_at"] = _now()
+            self._save()
+            return True
 
     def delete_task(self, task_id: str) -> bool:
         """Delete a single task record. Returns True if it existed."""

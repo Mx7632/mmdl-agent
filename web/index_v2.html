@@ -149,10 +149,14 @@
         .localization-note{margin-top:6px;color:var(--text-2);font-size:11px}
 
         /* 折叠 */
-        .collapse-toggle{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-2);cursor:pointer;user-select:none;padding:5px 0}
-        .collapse-toggle .arrow{display:inline-block;transition:transform .2s;font-size:9px}
-        .collapse-toggle.open .arrow{transform:rotate(90deg)}
-        .collapse-body{display:none}.collapse-body.open{display:block}
+        .collapse-toggle{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text-2);cursor:pointer;user-select:none;padding:8px 12px;border-radius:8px;transition:background .15s,color .15s}
+        .collapse-toggle:hover{background:var(--brand-light);color:var(--brand)}
+        .collapse-toggle.open{background:var(--brand-light);color:var(--brand)}
+        .collapse-toggle .arrow{display:inline-block;transition:transform .25s ease;font-size:10px;margin-left:auto;opacity:.5}
+        .collapse-toggle.open .arrow{transform:rotate(90deg);opacity:1}
+        .collapse-toggle .toggle-icon{font-size:15px;flex-shrink:0}
+        .collapse-body{display:none;overflow:hidden;max-height:0;transition:max-height .3s ease,opacity .2s ease;opacity:0}
+        .collapse-body.open{display:block;max-height:2000px;opacity:1}
 
         /* 按钮 */
         .btn{
@@ -174,10 +178,17 @@
         .anomaly-chip.warning{background:var(--warning-bg);color:var(--warning)}
         .anomaly-chip.ok{background:var(--success-bg);color:var(--success)}
         .answer-text{font-size:13px;line-height:1.75;white-space:pre-wrap;word-break:break-word}
-        .answer-text h1,.answer-text h2,.answer-text h3{margin-top:10px;margin-bottom:4px;font-weight:700}
-        .answer-text h1{font-size:15px}.answer-text h2{font-size:14px}.answer-text h3{font-size:13px}
+        .answer-text h1,.answer-text h2,.answer-text h3{margin-top:12px;margin-bottom:6px;font-weight:700}
+        .answer-text h1{font-size:15px}.answer-text h2{font-size:14px;color:var(--brand)}.answer-text h3{font-size:13px;color:#374151}
         .answer-text ul,.answer-text ol{padding-left:16px;margin:4px 0}
         .answer-text code{background:#f3f4f6;padding:1px 4px;border-radius:3px;font-size:11px}
+        /* 报告区域 */
+        #report-card{border-color:#dbeafe;background:linear-gradient(135deg,#f8fbff 0%,#fff 100%)}
+        #report-card .collapse-toggle{gap:8px;font-size:13px;padding:10px 14px;background:var(--brand-light);color:var(--brand);border-radius:10px 10px 0 0;margin:-14px -14px 0 -14px;border-bottom:2px solid var(--brand)}
+        #report-card .collapse-toggle:hover{background:#dbeafe}
+        #report-card .collapse-toggle.open{border-radius:10px 10px 0 0}
+        #report-card .collapse-toggle .toggle-icon{font-size:16px}
+        #report-card .collapse-body{padding:12px 14px;border-left:3px solid var(--brand);margin-top:8px;background:#fafcff;border-radius:0 8px 8px 0}
         .anomaly-card{border:1px solid var(--border);border-radius:10px;padding:10px;margin-top:8px;background:#fafbfc}
         .anomaly-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
         .anomaly-card-title{font-weight:600;font-size:12px}
@@ -381,7 +392,7 @@
                 </div>
                 <!-- 高级配置 -->
                 <div class="collapse-toggle" id="adv-toggle" onclick="toggleCollapse('adv')">
-                    <span class="arrow">▶</span> 高级配置
+                    高级配置<span class="arrow">▶</span>
                 </div>
                 <div class="collapse-body" id="adv-body">
                     <div class="field">
@@ -437,12 +448,11 @@
                 <div class="card">
                     <div class="card-title">🔍 检测结果</div>
                     <div id="anomaly-chips"></div>
-                    <div id="answer-panel" class="answer-text" style="margin-top:10px"></div>
                     <div id="pending-panel" class="msg warning" style="display:none"></div>
                 </div>
                 <div class="card">
                     <div class="collapse-toggle open" id="analysis-toggle" onclick="toggleCollapse('analysis')">
-                        <span class="arrow">▶</span> 详细分析
+                        详细分析<span class="arrow">▶</span>
                     </div>
                     <div class="collapse-body open" id="analysis-body">
                         <div id="analysis-summary" class="answer-text" style="margin-bottom:8px"></div>
@@ -455,8 +465,12 @@
 
             <!-- 报告 -->
             <div class="card" id="report-card" style="display:none">
-                <div class="card-title">📄 报告摘要</div>
-                <div id="report-panel" class="answer-text"></div>
+                <div class="collapse-toggle open" id="report-toggle" onclick="toggleCollapse('report')">
+                    <span class="toggle-icon">📋</span> 检测报告<span class="arrow">▶</span>
+                </div>
+                <div class="collapse-body open" id="report-body">
+                    <div id="report-panel" class="answer-text"></div>
+                </div>
             </div>
             </div><!-- /panel-detect -->
 
@@ -928,6 +942,9 @@ function toggleCollapse(name) {
     if (name === 'adv') {
         $('adv-toggle').classList.toggle('open');
         $('adv-body').classList.toggle('open');
+    } else if (name === 'report') {
+        $('report-toggle').classList.toggle('open');
+        $('report-body').classList.toggle('open');
     } else {
         $('analysis-toggle').classList.toggle('open');
         $('analysis-body').classList.toggle('open');
@@ -1672,7 +1689,6 @@ async function submitStreamingTask(form, sourceLabel) {
         }
         if (payload.type === 'stream' && payload.subtype === 'answer') {
             streamedAnswer += payload.content || '';
-            if (streamedAnswer && els.answerPanel) setMarkdownContent(els.answerPanel, streamedAnswer, '暂无结果');
             return;
         }
         if (payload.type === 'error') {
@@ -1702,7 +1718,6 @@ function applyResult(result, sourceLabel) {
     renderExecutionTimeline();
 
     if (result.answer) {
-        setMarkdownContent(els.answerPanel, result.answer, '暂无结果');
         pushHistory('assistant', result.answer);
     }
 
@@ -1862,6 +1877,10 @@ async function generateReport() {
         if (data.summary) {
             if (els.reportPanel) setMarkdownContent(els.reportPanel, data.summary);
             if (els.reportCard) els.reportCard.style.display = 'block';
+            // Auto-expand report section when generated
+            const rt = $('report-toggle'), rb = $('report-body');
+            if (rt) rt.classList.add('open');
+            if (rb) rb.classList.add('open');
             pushHistory('assistant', '📄 报告摘要\n' + data.summary);
         }
         setMessage(els.reportMessage, 'success', '报告已生成。');
@@ -1928,6 +1947,7 @@ async function loadTaskList() {
                     <span class="task-history-badge ${statusCls}">${t.status || '-'}</span>
                     ${t.is_anomaly ? '<span class="task-history-anomaly">⚠️异常</span>' : '<span class="task-history-normal">✅正常</span>'}
                     <span class="task-history-review">${reviewCls}</span>
+                    <span class="task-history-badge" style="font-size:11px;${(t.result && t.result.has_report) ? 'background:#dbeafe;color:#1e40af' : 'background:var(--bg-2);color:var(--text-3)'}">${(t.result && t.result.has_report) ? '📄已生成报告' : '📝未生成报告'}</span>
                     <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();deleteTask('${escapeHtmlAttr(t.task_id)}')" title="删除" style="padding:2px 6px;font-size:11px;color:var(--err);flex-shrink:0">✕</button>
                 </div>
                 <div class="task-history-meta">
@@ -1969,6 +1989,7 @@ async function loadTaskDetail(taskId) {
                 <div class="task-detail-field"><label>置信度</label><span>${typeof task.score === 'number' ? task.score.toFixed(3) : '-'}</span></div>
                 <div class="task-detail-field"><label>模型</label><span>${escapeHtml(task.model_backend || '-')}</span></div>
                 <div class="task-detail-field"><label>审核</label><span>${task.requires_review ? '⏳待审' : '✅已审'}</span></div>
+                <div class="task-detail-field"><label>报告</label><span>${(result && result.has_report) ? '📄已生成报告' : '📝未生成报告'}</span></div>
                 <div class="task-detail-field"><label>创建时间</label><span>${created}</span></div>
             </div>
             ${conv.length ? `<div class="task-conv-title">对话历史 (${conv.length} 条)</div>` + conv.map(m => {
@@ -1984,23 +2005,22 @@ async function loadTaskDetail(taskId) {
 
 function switchToTask(taskId) {
     if (!confirm('切换任务将清空当前检测状态，继续？')) return;
+    resetTask();
     state.taskId = taskId;
     state.pending = false;
-    state.history = [];
-    state.lastResult = null;
-    state.executionPlan = null;
-    state.executionEvents = [];
-    state.stepStatus = {};
-    state.stepAttempts = {};
-    state.selectedTimelineItem = null;
-    renderTaskState();
-    renderExecutionTimeline();
-    renderHistory();
     loadTaskDetail(taskId);
     setMessage(els.detectMessage, 'info', '已切换到任务: ' + taskId);
     switchNav('detect');
     // 加载任务历史到对话区
     loadConversationForTask(taskId);
+}
+
+function formatTime(isoOrStr) {
+    if (!isoOrStr) return '';
+    try {
+        const d = new Date(isoOrStr);
+        return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    } catch (_) { return ''; }
 }
 
 async function loadConversationForTask(taskId) {
@@ -2010,35 +2030,81 @@ async function loadConversationForTask(taskId) {
         const task = await resp.json();
         const result = task.result || {};
         const conv = result.conversation_history || [];
-        state.history = []
+        state.history = [];
         // 恢复用户原始问题（首次提问）
         if (result.question) {
-            state.history.push({ role: 'user', text: result.question });
+            state.history.push({ role: 'user', text: result.question, time: formatTime(task.created_at) });
         }
         // 恢复对话历史（含追问后的 user_reply + 所有 assistant 回复）
+        // conv[0] 可能是 Bug 8 修复时自动补入的 user question，与 result.question 重复，需去重
         if (conv.length) {
-            conv.forEach(m => {
+            let skipFirst = result.question && conv[0] && conv[0].role === 'user' && (conv[0].content || conv[0].text) === result.question;
+            const baseTime = task.created_at || '';
+            conv.forEach((m, idx) => {
+                if (skipFirst && idx === 0) return;
                 const role = m.role === 'user' ? 'user' : m.role === 'assistant' ? 'assistant' : 'system';
-                state.history.push({ role, text: m.text || m.content || '', time: m.time || '' });
+                // 后端 conversation_history 可能缺少 time 字段，用 task.created_at 作为 fallback
+                const msgTime = (m.time || m.timestamp) || baseTime;
+                state.history.push({ role, text: m.text || m.content || '', time: formatTime(msgTime) });
             });
         }
         if (task.pending_question || task.pending_clarification) {
             state.pending = true;
-            pushHistory('system', (task.pending_question || '') + '\n' + (task.pending_clarification || ''));
+            state.history.push({ role: 'system', text: (task.pending_question || '') + '\n' + (task.pending_clarification || ''), time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) });
         }
         renderHistory();
         // 回填时间线数据
-        const execEvts = result.execution_events || [];
-        if (execEvts.length) {
-            state.executionEvents = Array.isArray(execEvts) ? execEvts : [];
-            state.executionPlan = result.execution_plan || state.executionPlan;
-            state.stepStatus = result.step_status || state.stepStatus;
-            state.stepAttempts = result.step_attempts || state.stepAttempts;
-            renderExecutionTimeline();
-        }
+        const execMeta = result.metadata || {};
+        state.executionEvents = Array.isArray(execMeta.execution_events) ? execMeta.execution_events : [];
+        state.executionPlan = execMeta.execution_plan || null;
+        state.stepStatus = execMeta.step_status || {};
+        state.stepAttempts = execMeta.step_attempts || {};
+        renderExecutionTimeline();
+        // 回填完整结果状态（与 applyResult 保持一致）
+        state.lastResult = result;
+        state.pending = result.status === 'pending';
+        renderTaskState();
         // 回填基本信息
         if (task.asset_id && els.assetId) els.assetId.value = task.asset_id;
+        // 恢复图片预览（如果后端存了 image_base64）
+        const imgB64 = result.image_base64;
+        const imgMime = result.image_mime || 'image/jpeg';
+        if (imgB64) {
+            if (els.previewImage) {
+                els.previewImage.src = 'data:' + imgMime + ';base64,' + imgB64;
+                els.previewImage.style.display = 'block';
+            }
+            if (els.previewArea) els.previewArea.style.display = 'block';
+            if (els.previewText) els.previewText.textContent = '已恢复历史检测图片';
+        }
+        // 更新 stepper 到结果步骤
+        setStep(task.status === 'pending' ? 2 : (result.has_report ? 4 : 3));
+        // 显示结果区域并渲染所有结果面板
+        // 注意：不再单独 pushHistory result.answer，因为 conversation_history 已包含完整对话
+        if (els.resultSection) els.resultSection.style.display = 'block';
+        renderAnomalies(result.anomalies);
+        renderAnalysisPanel(getStructuredAnalysis(result), getMmadAnalysis(result));
+        renderLocalization(result.anomalies, result);
         renderIndustrialSummary(result);
+        refreshIndustrialPanels();
+        if (state.pending) {
+            const pendingText = [result.pending_question || '', result.pending_clarification || ''].filter(Boolean).join('\n\n');
+            setMarkdownContent(els.pendingPanel, pendingText, '当前没有待澄清问题');
+            if (els.pendingPanel) els.pendingPanel.style.display = 'block';
+        } else {
+            if (els.pendingPanel) els.pendingPanel.style.display = 'none';
+        }
+        // 回填报告
+        if (result.has_report && result.summary) {
+            if (els.reportPanel) setMarkdownContent(els.reportPanel, result.summary);
+            if (els.reportCard) els.reportCard.style.display = 'block';
+            const rt = $('report-toggle'), rb = $('report-body');
+            if (rt) rt.classList.add('open');
+            if (rb) rb.classList.add('open');
+            setMessage(els.reportMessage, 'success', '报告已生成。');
+            state.history.push({ role: 'assistant', text: '📄 检测报告\n' + result.summary, time: formatTime(task.updated_at || task.created_at) });
+            renderHistory();
+        }
     } catch (e) { void e; }
 }
 
