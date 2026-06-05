@@ -23,7 +23,7 @@ MMDL-Agent 是一个面向工业视觉异常诊断的多 Agent 应用框架。�
 - PatchCore 训练、热力图生成和前端调用
 - 多 Agent 时间线、MMAD metadata、few-shot metadata 的排障观察点
 
-系统架构与运行流程说明见 [Docs/system_overview.md](Docs/system_overview.md)。
+系统架构与运行流程说明见 [Docs/system_overview.md](Docs/system_overview.md)。论文“系统总体设计”章节草稿见 [Docs/thesis_system_design.md](Docs/thesis_system_design.md)，第五章“系统详细设计与实现”初稿见 [Docs/thesis_chapter5_detailed_design.md](Docs/thesis_chapter5_detailed_design.md)。
 
 ## 当前架构
 

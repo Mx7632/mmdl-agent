@@ -7,9 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request, File, UploadFile, BackgroundTasks, Form, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,8 +18,8 @@ from app.config.settings import settings
 from app.exceptions.base import AppError, DataMissingError, ResponseParseError, TaskNotFoundError
 from app.rag.service import get_rag_service
 from app.services import continue_detection, generate_report, get_pending_task, run_chat, run_detection
-from app.services.industrial_runtime import REVIEW_APPROVED, industrial_store, normalize_industrial_result
-from app.schemas.detection import DetectionResult, DetectionTask
+from app.services.industrial_runtime import industrial_store, normalize_industrial_result
+from app.schemas.detection import DetectionTask
 from app.schemas.detection import (
     RagBuildRequest,
     RagBuildResponse,
@@ -257,6 +256,43 @@ async def system_health():
 @app.get("/v1/metrics")
 async def runtime_metrics():
     return {"status": "success", "metrics": industrial_store.metrics()}
+
+
+@app.get("/v1/memory/sessions")
+async def list_memory_sessions(limit: int = 30):
+    return {"status": "success", "sessions": industrial_store.list_sessions(limit=limit)}
+
+
+@app.post("/v1/memory/sessions")
+async def save_memory_session(request: Request):
+    body = await request.json()
+    history = body.get("history") if isinstance(body.get("history"), list) else []
+    session = industrial_store.upsert_session(
+        session_id=(body.get("session_id") or None),
+        title=(body.get("title") or None),
+        task_id=(body.get("task_id") or None),
+        asset_id=(body.get("asset_id") or None),
+        history=history,
+        summary=(body.get("summary") or None),
+        metadata=body.get("metadata") if isinstance(body.get("metadata"), dict) else {},
+    )
+    return {"status": "success", "session": session}
+
+
+@app.get("/v1/memory/sessions/{session_id}")
+async def get_memory_session(session_id: str):
+    session = industrial_store.get_session(session_id)
+    if session is None:
+        return JSONResponse(status_code=404, content={"code": "not_found", "message": f"Session {session_id} not found"})
+    return {"status": "success", "session": session}
+
+
+@app.delete("/v1/memory/sessions/{session_id}")
+async def delete_memory_session(session_id: str):
+    deleted = industrial_store.delete_session(session_id)
+    if not deleted:
+        return JSONResponse(status_code=404, content={"code": "not_found", "message": f"Session {session_id} not found"})
+    return {"status": "success", "deleted": True}
 
 
 @app.get("/v1/patchcore/categories")

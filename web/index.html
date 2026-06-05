@@ -1302,6 +1302,7 @@
             body.sidebar-collapsed .brand-tag,
             body.sidebar-collapsed .brand h1,
             body.sidebar-collapsed .brand p,
+            body.sidebar-collapsed .memory-panel,
             body.sidebar-collapsed .sidebar-scroll,
             body.sidebar-collapsed .nav-item {
                 display: none;
@@ -1344,6 +1345,79 @@
 
         .sidebar .sidebar-scroll .card:not(:first-child) {
             display: none;
+        }
+
+        .memory-panel {
+            padding: 10px;
+            border-bottom: 1px solid rgba(31, 36, 32, 0.06);
+        }
+
+        .memory-panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            color: #4d5851;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .memory-action {
+            min-height: 28px;
+            padding: 0 9px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.78);
+            color: var(--accent);
+            font-size: 12px;
+        }
+
+        .session-list {
+            display: grid;
+            gap: 5px;
+            max-height: 240px;
+            overflow: auto;
+        }
+
+        .session-item {
+            display: grid;
+            gap: 3px;
+            width: 100%;
+            padding: 8px 9px;
+            border: 0;
+            border-radius: 8px;
+            background: transparent;
+            color: #27302a;
+            text-align: left;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        .session-item:hover,
+        .session-item.is-active {
+            background: rgba(255, 255, 255, 0.78);
+        }
+
+        .session-title {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 12px;
+            font-weight: 750;
+        }
+
+        .session-meta {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .session-empty {
+            padding: 8px 9px;
+            color: var(--muted);
+            font-size: 12px;
         }
 
         .workspace-grid {
@@ -1744,6 +1818,16 @@
                 <a href="#timeline-workspace" class="nav-item">时间线</a>
             </nav>
 
+            <section class="memory-panel">
+                <div class="memory-panel-head">
+                    <span>会话记忆</span>
+                    <button id="new-session-button" class="memory-action" type="button">新建</button>
+                </div>
+                <div id="session-list" class="session-list">
+                    <div class="session-empty">暂无会话</div>
+                </div>
+            </section>
+
             <div class="sidebar-scroll">
                 <section class="card">
                     <h2>任务状态</h2>
@@ -2096,6 +2180,9 @@
         const PATCHCORE_BACKEND = 'patchcore';
         const state = {
             taskId: '',
+            sessionId: '',
+            sessions: [],
+            sessionSaveTimer: null,
             pending: false,
             imageFile: null,
             history: [],
@@ -2195,7 +2282,9 @@
             batchMessage: document.getElementById('batch-message'),
             reviewQueue: document.getElementById('review-queue'),
             historyList: document.getElementById('history-list'),
-            sidebarToggle: document.getElementById('sidebar-toggle')
+            sidebarToggle: document.getElementById('sidebar-toggle'),
+            sessionList: document.getElementById('session-list'),
+            newSessionButton: document.getElementById('new-session-button')
         };
 
         function applySidebarCollapsed(collapsed) {
@@ -2212,6 +2301,110 @@
             try {
                 localStorage.setItem('mmdl-sidebar-collapsed', collapsed ? '1' : '0');
             } catch (_) {}
+        }
+
+        function inferSessionTitle() {
+            const firstUser = state.history.find(item => item.role === 'user' && String(item.text || '').trim());
+            if (firstUser) {
+                const text = String(firstUser.text || '').replace(/\s+/g, ' ').trim();
+                return text.slice(0, 28) + (text.length > 28 ? '...' : '');
+            }
+            const assetId = els.assetId?.value?.trim();
+            return assetId ? `${assetId} 检测会话` : '新检测会话';
+        }
+
+        function renderSessionList() {
+            if (!els.sessionList) return;
+            const sessions = Array.isArray(state.sessions) ? state.sessions : [];
+            if (!sessions.length) {
+                els.sessionList.innerHTML = '<div class="session-empty">暂无会话</div>';
+                return;
+            }
+            els.sessionList.innerHTML = sessions.map(session => {
+                const active = session.session_id === state.sessionId;
+                const meta = [
+                    session.asset_id || '未绑定设备',
+                    `${session.turn_count || 0} 轮`,
+                    session.updated_at ? session.updated_at.slice(5, 16).replace('T', ' ') : ''
+                ].filter(Boolean).join(' · ');
+                return `
+                    <button class="session-item ${active ? 'is-active' : ''}" type="button" data-session-id="${escapeHtmlAttr(session.session_id)}">
+                        <span class="session-title">${escapeHtml(session.title || '未命名会话')}</span>
+                        <span class="session-meta">${escapeHtml(meta)}</span>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        async function refreshSessions() {
+            try {
+                const res = await fetch(`${API_BASE}/v1/memory/sessions?limit=30`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                state.sessions = Array.isArray(data.sessions) ? data.sessions : [];
+                renderSessionList();
+            } catch (error) {
+                if (els.sessionList) {
+                    els.sessionList.innerHTML = `<div class="session-empty">会话加载失败：${escapeHtml(error.message)}</div>`;
+                }
+            }
+        }
+
+        function scheduleSessionSave() {
+            if (state.sessionSaveTimer) clearTimeout(state.sessionSaveTimer);
+            state.sessionSaveTimer = setTimeout(() => {
+                saveCurrentSession().catch(() => {});
+            }, 600);
+        }
+
+        async function saveCurrentSession() {
+            if (!state.history.length && !state.taskId) return null;
+            const payload = {
+                session_id: state.sessionId || null,
+                title: inferSessionTitle(),
+                task_id: state.taskId || '',
+                asset_id: els.assetId?.value?.trim() || '',
+                history: state.history,
+                metadata: {
+                    pending: state.pending,
+                    last_result: state.lastResult || null,
+                    visual_mode: state.visualMode
+                }
+            };
+            const res = await fetch(`${API_BASE}/v1/memory/sessions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            state.sessionId = data.session?.session_id || state.sessionId;
+            await refreshSessions();
+            return data.session;
+        }
+
+        async function restoreSession(sessionId) {
+            if (!sessionId) return;
+            const res = await fetch(`${API_BASE}/v1/memory/sessions/${encodeURIComponent(sessionId)}`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+            const session = data.session || {};
+            state.sessionId = session.session_id || sessionId;
+            state.taskId = session.task_id || '';
+            state.history = Array.isArray(session.history) ? session.history : [];
+            state.pending = !!session.metadata?.pending;
+            state.lastResult = session.metadata?.last_result || null;
+            if (els.assetId) els.assetId.value = session.asset_id || '';
+            renderHistory();
+            renderTaskState();
+            renderIndustrialSummary(state.lastResult);
+            if (state.lastResult) {
+                applyResult(state.lastResult, 'memory');
+            } else {
+                setMarkdownContent(els.answerPanel, session.summary || '', '暂无结果');
+                setMarkdownContent(els.answerPanelInline, session.summary || '', '暂无结果');
+            }
+            renderSessionList();
         }
 
         function moveCardContaining(elementId, targetId) {
@@ -3386,6 +3579,7 @@
             if (!text) return;
             state.history.push({ role, text, tone, time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) });
             renderHistory();
+            scheduleSessionSave();
         }
 
         function renderHistory() {
@@ -3832,6 +4026,7 @@
             renderAnalysisPanel(getStructuredAnalysis(result), getMmadAnalysis(result));
             renderLocalization(result.anomalies, result);
             renderIndustrialSummary(result);
+            scheduleSessionSave();
             refreshIndustrialPanels();
 
             if (state.pending) {
@@ -3858,6 +4053,7 @@
 
         function resetTask() {
             state.taskId = '';
+            state.sessionId = '';
             state.pending = false;
             state.imageFile = null;
             state.history = [];
@@ -3910,6 +4106,7 @@
             syncBackendControls();
             applyStaticUiText();
             renderPreviewModes();
+            renderSessionList();
         }
 
         async function startDetection(backendOverride = '') {
@@ -4178,6 +4375,17 @@ ${data.summary}`);
             };
             renderExecutionTimeline();
         });
+        els.sessionList?.addEventListener('click', event => {
+            const button = event.target.closest('[data-session-id]');
+            if (!button) return;
+            restoreSession(button.dataset.sessionId).catch(error => {
+                setMessage(els.detectMessage, 'error', `恢复会话失败：${error.message}`);
+            });
+        });
+        els.newSessionButton?.addEventListener('click', () => {
+            resetTask();
+            refreshSessions();
+        });
 
         els.visualBackend?.addEventListener('change', syncBackendControls);
         els.patchcoreCategory?.addEventListener('change', renderPatchcoreStatus);
@@ -4226,6 +4434,7 @@ ${data.summary}`);
         applyStaticUiText();
         resetTask();
         checkHealth();
+        refreshSessions();
         refreshIndustrialPanels();
         refreshPatchcoreCatalog();
     </script>

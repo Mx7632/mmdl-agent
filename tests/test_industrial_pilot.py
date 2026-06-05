@@ -112,6 +112,41 @@ def test_batch_history_review_and_health_endpoints(monkeypatch, tmp_path):
     assert feedback.json()["review_status"] == "pending_review"
 
 
+def test_memory_session_crud_endpoints(tmp_path):
+    industrial_store.reset_for_tests(tmp_path / "industrial_state.json")
+    client = TestClient(api_main.app)
+
+    saved = client.post(
+        "/v1/memory/sessions",
+        json={
+            "title": "Pump scratch analysis",
+            "task_id": "task-memory-001",
+            "asset_id": "PUMP-001",
+            "history": [
+                {"role": "user", "text": "检查泵体划痕"},
+                {"role": "assistant", "text": "发现低置信度异常候选"},
+            ],
+            "metadata": {"pending": False},
+        },
+    )
+    assert saved.status_code == 200
+    session = saved.json()["session"]
+    assert session["session_id"]
+    assert session["title"] == "Pump scratch analysis"
+
+    listed = client.get("/v1/memory/sessions").json()
+    assert listed["sessions"][0]["session_id"] == session["session_id"]
+    assert listed["sessions"][0]["turn_count"] == 2
+
+    loaded = client.get(f"/v1/memory/sessions/{session['session_id']}")
+    assert loaded.status_code == 200
+    assert loaded.json()["session"]["history"][0]["text"] == "检查泵体划痕"
+
+    deleted = client.delete(f"/v1/memory/sessions/{session['session_id']}")
+    assert deleted.status_code == 200
+    assert client.get(f"/v1/memory/sessions/{session['session_id']}").status_code == 404
+
+
 def test_patchcore_prediction_uses_category_recommended_threshold(monkeypatch, tmp_path):
     captured = {}
 

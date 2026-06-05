@@ -47,3 +47,12 @@ models/patchcore/
 data/mmad*/
 .tmp/
 .tmp_mmad_importer_test/
+
+# Local generated thesis/demo artifacts
+data_sets.zip
+data/grad_lace/
+output/
+defense_ppt_codex/
+defense_ppt_editable/
+article.md
+manifest.json

@@ -106,7 +106,7 @@ class IndustrialRuntimeStore:
     def __init__(self, path: str | Path | None = None) -> None:
         self.path = Path(path or settings.runtime_store_path)
         self._lock = RLock()
-        self._state: dict[str, Any] = {"tasks": {}, "batches": {}, "feedback": {}, "metrics": {}}
+        self._state: dict[str, Any] = {"tasks": {}, "batches": {}, "feedback": {}, "sessions": {}, "metrics": {}}
         self._loaded = False
 
     def _ensure_loaded(self) -> None:
@@ -119,10 +119,11 @@ class IndustrialRuntimeStore:
                 try:
                     self._state = json.loads(self.path.read_text(encoding="utf-8"))
                 except Exception:
-                    self._state = {"tasks": {}, "batches": {}, "feedback": {}, "metrics": {}}
+                    self._state = {"tasks": {}, "batches": {}, "feedback": {}, "sessions": {}, "metrics": {}}
             self._state.setdefault("tasks", {})
             self._state.setdefault("batches", {})
             self._state.setdefault("feedback", {})
+            self._state.setdefault("sessions", {})
             self._state.setdefault("metrics", {})
             self._loaded = True
 
@@ -311,6 +312,59 @@ class IndustrialRuntimeStore:
             self._save()
         return dict(record)
 
+    def upsert_session(
+        self,
+        *,
+        session_id: str | None,
+        title: str | None,
+        task_id: str | None,
+        asset_id: str | None,
+        history: list[dict[str, Any]] | None,
+        summary: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self._ensure_loaded()
+        clean_id = (session_id or "").strip() or f"session-{uuid4().hex[:12]}"
+        clean_history = [dict(item) for item in (history or []) if isinstance(item, dict)]
+        inferred_title = title or self._infer_session_title(clean_history, asset_id=asset_id)
+        now = _now()
+        with self._lock:
+            existing = self._state["sessions"].get(clean_id) or {}
+            record = {
+                **existing,
+                "session_id": clean_id,
+                "title": inferred_title,
+                "task_id": task_id or existing.get("task_id") or "",
+                "asset_id": asset_id or existing.get("asset_id") or "",
+                "history": clean_history[-80:],
+                "summary": summary or self._summarize_session(clean_history),
+                "metadata": metadata or existing.get("metadata") or {},
+                "created_at": existing.get("created_at") or now,
+                "updated_at": now,
+            }
+            self._state["sessions"][clean_id] = record
+            self._save()
+            return dict(record)
+
+    def list_sessions(self, *, limit: int = 30) -> list[dict[str, Any]]:
+        self._ensure_loaded()
+        rows = list(self._state["sessions"].values())
+        rows.sort(key=lambda row: row.get("updated_at", ""), reverse=True)
+        return [self._public_session(row) for row in rows[: max(1, min(limit, 100))]]
+
+    def get_session(self, session_id: str) -> dict[str, Any] | None:
+        self._ensure_loaded()
+        row = self._state["sessions"].get(session_id)
+        return dict(row) if row else None
+
+    def delete_session(self, session_id: str) -> bool:
+        self._ensure_loaded()
+        with self._lock:
+            existed = self._state["sessions"].pop(session_id, None) is not None
+            if existed:
+                self._save()
+            return existed
+
     def review_feedback(self, feedback_id: str, decision: str) -> dict[str, Any]:
         self._ensure_loaded()
         normalized = REVIEW_APPROVED if decision in {"approve", "approved"} else REVIEW_REJECTED
@@ -357,6 +411,7 @@ class IndustrialRuntimeStore:
             "task_count": len(tasks),
             "batch_count": len(self._state["batches"]),
             "feedback_count": len(self._state["feedback"]),
+            "session_count": len(self._state.get("sessions", {})),
             "status_counts": dict(statuses),
             "review_counts": dict(reviews),
             "backend_counts": dict(backends),
@@ -367,7 +422,7 @@ class IndustrialRuntimeStore:
         with self._lock:
             if path is not None:
                 self.path = Path(path)
-            self._state = {"tasks": {}, "batches": {}, "feedback": {}, "metrics": {}}
+            self._state = {"tasks": {}, "batches": {}, "feedback": {}, "sessions": {}, "metrics": {}}
             self._loaded = True
             if self.path.exists():
                 self.path.unlink()
@@ -395,6 +450,37 @@ class IndustrialRuntimeStore:
                 "review",
             )
         } | {"result": result}
+
+    def _public_session(self, row: dict[str, Any]) -> dict[str, Any]:
+        history = row.get("history") or []
+        return {
+            "session_id": row.get("session_id"),
+            "title": row.get("title") or "未命名会话",
+            "task_id": row.get("task_id") or "",
+            "asset_id": row.get("asset_id") or "",
+            "summary": row.get("summary") or "",
+            "turn_count": len(history) if isinstance(history, list) else 0,
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+        }
+
+    def _infer_session_title(self, history: list[dict[str, Any]], *, asset_id: str | None) -> str:
+        for item in history:
+            if item.get("role") == "user" and str(item.get("text") or "").strip():
+                text = " ".join(str(item.get("text")).split())
+                return text[:28] + ("..." if len(text) > 28 else "")
+        return f"{asset_id} 检测会话" if asset_id else "新检测会话"
+
+    def _summarize_session(self, history: list[dict[str, Any]]) -> str:
+        if not history:
+            return "尚未产生对话。"
+        parts = []
+        for item in history[-4:]:
+            role = item.get("role") or "message"
+            text = " ".join(str(item.get("text") or "").split())
+            if text:
+                parts.append(f"{role}: {text[:90]}")
+        return " / ".join(parts)[:360] or "尚未产生有效摘要。"
 
 
 industrial_store = IndustrialRuntimeStore()
