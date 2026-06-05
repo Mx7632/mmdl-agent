@@ -9,6 +9,7 @@ from app.core.wait_user import build_continue_state
 from app.exceptions.base import TaskNotFoundError
 from app.memory.state import DetectionState
 from app.schemas.detection import DetectionTask
+from app.services.industrial_runtime import industrial_store
 from app.services.state_rehydration import (
     build_execution_metadata,
     extract_anomalies,
@@ -18,6 +19,93 @@ from app.services.state_rehydration import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _persist_task_record(task_id: str, final_payload: dict[str, Any], final_output: dict[str, Any]) -> None:
+    """Fire-and-forget: save detection result to industrial_store for /v1/tasks listing."""
+    try:
+        meta = final_payload.get("metadata", {}) or {}
+        anomalies = final_payload.get("anomalies") or []
+        is_anomaly = bool(anomalies)
+        score = float(meta.get("confidence", 0) or 0)
+        # Build conversation history: merge with existing store data to avoid losing previous turns
+        new_conv = list(final_output.get("conversation_history", []))
+        try:
+            from app.services.industrial_runtime import get_industrial_store
+            existing_task = get_industrial_store().get_task(task_id)
+            if existing_task and existing_task.get("result", {}).get("conversation_history"):
+                old_conv = existing_task["result"]["conversation_history"]
+                # Keep old entries not present in new_conv (by content+role dedup)
+                old_content_set = {(m.get("role", ""), m.get("content", "")) for m in new_conv}
+                for msg in old_conv:
+                    key = (msg.get("role", ""), msg.get("content", ""))
+                    if key not in old_content_set:
+                        new_conv.insert(0, msg)
+        except Exception:
+            pass
+
+        # Ensure user question is included if missing
+        user_question = (
+            (final_output.get("task", {}).get("question") if isinstance(final_output.get("task"), dict) else None)
+            or getattr(final_output.get("task"), "question", None)
+        )
+        has_user_msg = any(m.get("role") == "user" for m in new_conv)
+        if user_question and not has_user_msg:
+            new_conv.insert(0, {"role": "user", "content": user_question})
+
+        # Preserve original question: follow-up updates task.question in LangGraph state,
+        # but we must keep the first user question for conversation restoration.
+        original_question = user_question
+        try:
+            if existing_task and existing_task.get("result", {}).get("question"):
+                original_question = existing_task["result"]["question"]
+        except Exception:
+            pass
+
+        result_record = {
+            "task_id": task_id,
+            "status": final_payload.get("status", "success"),
+            "answer": final_payload.get("answer", ""),
+            "anomalies": anomalies,
+            "is_anomaly": is_anomaly,
+            "score": score,
+            "defect_type": anomalies[0].get("defect_type", "unknown") if anomalies else "good",
+            "metadata": meta,
+            "question": original_question,
+            "conversation_history": new_conv,
+            "execution_events": list(final_output.get("execution_events", [])),
+            "execution_plan": final_output.get("execution_plan"),
+            "step_status": final_output.get("step_status"),
+            "step_attempts": final_output.get("step_attempts"),
+        }
+        # Extract original image for preview restoration (if available)
+        _task_params = {}
+        _task_obj_tmp = final_output.get("task")
+        if isinstance(_task_obj_tmp, dict):
+            _task_params = _task_obj_tmp.get("parameters", {}) or {}
+        elif hasattr(_task_obj_tmp, "parameters"):
+            _task_params = _task_obj_tmp.parameters or {}
+        if _task_params.get("image_base64"):
+            result_record["image_base64"] = _task_params["image_base64"]
+            result_record["image_mime"] = _task_params.get("image_mime", "image/jpeg")
+        # build a lightweight task-like object for record_task
+        # extract asset_id from LangGraph state or task sub-object
+        _task_obj = final_output.get("task")
+        if isinstance(_task_obj, dict):
+            _asset_id = _task_obj.get("asset_id", "") or ""
+        else:
+            _asset_id = getattr(_task_obj, "asset_id", "") or ""
+        _asset_id = _asset_id or final_output.get("asset_id") or ""
+        class _MinimalTask:
+            def __init__(self, tid, aid):
+                self.task_id = tid
+                self.asset_id = aid
+                self.parameters = {}
+        industrial_store.record_task(_MinimalTask(task_id, _asset_id), result_record)
+        logger.info("[stream] Task %s recorded to industrial_store", task_id)
+    except Exception as exc:
+        import traceback
+        logger.warning("[stream] Failed to record task %s: %s\n%s", task_id, exc, traceback.format_exc())
 
 
 def build_stream_final_payload(task_id: str, final_output: dict[str, Any]) -> dict[str, Any]:
@@ -117,6 +205,8 @@ async def stream_langgraph_events(
                     final_output if isinstance(final_output, dict) else {},
                 )
                 yield f"data: {json.dumps(final_payload)}\n\n"
+                # Immediately persist to industrial_store when first result is ready
+                _persist_task_record(task_id, final_payload, final_output if isinstance(final_output, dict) else {})
 
 
 async def stream_detection(task: DetectionTask) -> AsyncGenerator[str, None]:
@@ -135,6 +225,17 @@ async def stream_detection(task: DetectionTask) -> AsyncGenerator[str, None]:
                 invoke_input = state.model_dump()
             else:
                 state = DetectionState(task=task, stage="chat")
+                # Restore conversation_history from industrial_store when checkpoint is empty
+                try:
+                    from app.services.industrial_runtime import get_industrial_store
+                    store_task = get_industrial_store().get_task(task.task_id)
+                    if store_task and store_task.get("result", {}).get("conversation_history"):
+                        existing_conv = store_task["result"]["conversation_history"]
+                        if task.question:
+                            existing_conv.append({"role": "user", "content": task.question})
+                        state.task_runtime().conversation_history = existing_conv
+                except Exception:
+                    pass
                 invoke_input = state.model_dump()
 
             logger.info(

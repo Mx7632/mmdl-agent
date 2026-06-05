@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.config.settings import settings
-from app.exceptions.base import AppError, DataMissingError, ResponseParseError
+from app.exceptions.base import AppError, DataMissingError, ResponseParseError, TaskNotFoundError
 from app.rag.service import get_rag_service
 from app.services import continue_detection, generate_report, get_pending_task, run_chat, run_detection
 from app.services.industrial_runtime import REVIEW_APPROVED, industrial_store, normalize_industrial_result
@@ -557,6 +557,28 @@ async def list_task_history(
 @app.get("/v1/reviews/pending")
 async def pending_reviews(limit: int = 50):
     return {"status": "success", "tasks": industrial_store.pending_reviews(limit=limit)}
+
+
+@app.get("/v1/tasks/{task_id}")
+async def get_task_detail(task_id: str):
+    task = industrial_store.get_task(task_id)
+    if task is None:
+        raise TaskNotFoundError(f"Task {task_id} not found")
+    return {"status": "success", **task}
+
+
+@app.delete("/v1/tasks/{task_id}")
+async def delete_task(task_id: str):
+    deleted = industrial_store.delete_task(task_id)
+    if not deleted:
+        raise TaskNotFoundError(f"Task {task_id} not found")
+    return {"status": "success", "deleted": task_id}
+
+
+@app.delete("/v1/tasks")
+async def delete_all_tasks():
+    count = industrial_store.delete_all_tasks()
+    return {"status": "success", "deleted_count": count}
 
 
 @app.post("/v1/tasks/{task_id}/review")

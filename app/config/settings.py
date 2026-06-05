@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     )
     grad_detector_url: str = ""
     grad_detector_timeout: float = 60.0
-    grad_detector_aliases: str = "grad,bi_grid,bi-grid"
+    grad_detector_aliases: str = "grad,bi_grid,bi-grid,grad_anomaly,grad_ad"
 
     patchcore_model_root: str = "models/patchcore"
     patchcore_device: str = "cpu"
@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     patchcore_max_memory_bank: int = 10000
     patchcore_heatmap_dir: str = "data/heatmaps"
     patchcore_detector_aliases: str = "patchcore,patch_core"
+
+    grad_checkpoint_dir: str = "models/grad"
+    grad_device: str = "cpu"
+    grad_default_category: str = "bottle"
+    grad_threshold: float = 0.5
+    grad_heatmap_dir: str = "data/heatmaps"
 
     rag_enabled: bool = True
     rag_dataset_root: str = "data_sets/mvtec_anomaly_detection"

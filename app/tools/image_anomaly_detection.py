@@ -30,7 +30,9 @@ from app.exceptions.base import (
 )
 from app.schemas.detection import DetectionResult, DetectionTask, ToolResponse
 from app.tools.anomaly_detection import BaseTool
-from app.tools.patchcore_detection import LocalPatchCoreImageAnomalyDetectionTool
+# 延迟导入，避免顶层 import torch 导致 DLL 加载失败
+# from app.tools.grad_detection import LocalGRADImageAnomalyDetectionTool
+# from app.tools.patchcore_detection import LocalPatchCoreImageAnomalyDetectionTool
 
 QWEN_BACKEND = "qwen"
 SPECIALIST_BACKEND = "specialist"
@@ -44,7 +46,7 @@ _UNCERTAIN_ANOMALY_RE = re.compile(
 )
 _QWEN_ALIASES = {"qwen", "qwen_vl", "qwen3_5_plus", "qwen3.5_plus"}
 _PATCHCORE_ALIASES = {"patchcore", "patch_core"}
-_GRAD_ALIASES = {"grad", "bi_grid", "bigrid"}
+_GRAD_ALIASES = {"grad", "bi_grid", "bigrid", "grad_anomaly", "grad_ad"}
 _SPECIALIST_ALIASES = {
     "anomalygpt",
     "anomaly_gpt",
@@ -76,6 +78,7 @@ def resolve_visual_backend(tool_type: str | None) -> str:
         for alias in (_normalize_detector_name(item) for item in settings.patchcore_detector_aliases.split(","))
         if alias
     } | _PATCHCORE_ALIASES
+
     grad_aliases = {
         alias
         for alias in (_normalize_detector_name(item) for item in settings.grad_detector_aliases.split(","))
@@ -585,8 +588,27 @@ class ImageAnomalyDetectionTool(BaseTool):
     ) -> None:
         self.qwen_tool = qwen_tool or QwenImageAnomalyDetectionTool()
         self.specialist_tool = specialist_tool or HttpProfessionalImageAnomalyDetectionTool()
-        self.patchcore_tool = patchcore_tool or LocalPatchCoreImageAnomalyDetectionTool()
-        self.grad_tool = grad_tool or HttpGradImageAnomalyDetectionTool()
+        # 延迟实例化，避免 import torch
+        self._patchcore_tool = patchcore_tool
+        self._grad_tool = grad_tool
+
+    @property
+    def patchcore_tool(self) -> BaseTool:
+        if self._patchcore_tool is None:
+            from app.tools.patchcore_detection import LocalPatchCoreImageAnomalyDetectionTool
+            self._patchcore_tool = LocalPatchCoreImageAnomalyDetectionTool()
+        return self._patchcore_tool
+
+    @property
+    def grad_tool(self) -> BaseTool:
+        if self._grad_tool is None:
+            if settings.grad_detector_url:
+                self._grad_tool = HttpGradImageAnomalyDetectionTool()
+            else:
+                from app.tools.grad_detection import LocalGRADImageAnomalyDetectionTool
+
+                self._grad_tool = LocalGRADImageAnomalyDetectionTool()
+        return self._grad_tool
 
     async def run(self, task: DetectionTask) -> ToolResponse:
         tool_type = (task.parameters or {}).get("tool_type")
