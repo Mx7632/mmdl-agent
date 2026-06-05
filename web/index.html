@@ -3506,6 +3506,38 @@
             applyVisualizationMode();
         }
 
+        function getPreviewImageViewport() {
+            const image = els.previewImage;
+            const layer = els.bboxLayer;
+            if (!image || !layer) return null;
+
+            const imageRect = image.getBoundingClientRect();
+            const layerRect = layer.getBoundingClientRect();
+            const naturalWidth = image.naturalWidth || image.clientWidth;
+            const naturalHeight = image.naturalHeight || image.clientHeight;
+            const elementWidth = imageRect.width;
+            const elementHeight = imageRect.height;
+
+            if (!elementWidth || !elementHeight || !naturalWidth || !naturalHeight) return null;
+
+            const naturalRatio = naturalWidth / naturalHeight;
+            const elementRatio = elementWidth / elementHeight;
+            let displayWidth = elementWidth;
+            let displayHeight = elementHeight;
+            let offsetX = imageRect.left - layerRect.left;
+            let offsetY = imageRect.top - layerRect.top;
+
+            if (elementRatio > naturalRatio) {
+                displayWidth = elementHeight * naturalRatio;
+                offsetX += (elementWidth - displayWidth) / 2;
+            } else {
+                displayHeight = elementWidth / naturalRatio;
+                offsetY += (elementHeight - displayHeight) / 2;
+            }
+
+            return { displayWidth, displayHeight, naturalWidth, naturalHeight, offsetX, offsetY };
+        }
+
         function renderLocalization(anomalies, result) {
             clearLocalizationOverlay();
             state.visualAssets = getVisualizationAssets(result);
@@ -3521,24 +3553,21 @@
                 return;
             }
 
-            const renderedWidth = els.previewImage.clientWidth;
-            const renderedHeight = els.previewImage.clientHeight;
-            const naturalWidth = els.previewImage.naturalWidth || renderedWidth;
-            const naturalHeight = els.previewImage.naturalHeight || renderedHeight;
-
-            if (!renderedWidth || !renderedHeight || !naturalWidth || !naturalHeight) {
+            const viewport = getPreviewImageViewport();
+            if (!viewport) {
                 return;
             }
+            const { displayWidth, displayHeight, naturalWidth, naturalHeight, offsetX, offsetY } = viewport;
 
             const boxes = anomalies.map((item, index) => {
                 const bbox = Array.isArray(item?.bbox) && item.bbox.length === 4 ? item.bbox.map(Number) : null;
                 if (!bbox) return '';
 
                 const [x1, y1, x2, y2] = bbox;
-                const left = Math.max(0, (x1 / naturalWidth) * renderedWidth);
-                const top = Math.max(0, (y1 / naturalHeight) * renderedHeight);
-                const width = Math.max(2, ((x2 - x1) / naturalWidth) * renderedWidth);
-                const height = Math.max(2, ((y2 - y1) / naturalHeight) * renderedHeight);
+                const left = offsetX + Math.max(0, (x1 / naturalWidth) * displayWidth);
+                const top = offsetY + Math.max(0, (y1 / naturalHeight) * displayHeight);
+                const width = Math.max(2, ((x2 - x1) / naturalWidth) * displayWidth);
+                const height = Math.max(2, ((y2 - y1) / naturalHeight) * displayHeight);
                 const label = item?.type || item?.label || `异常 ${index + 1}`;
                 const location = item?.location ? ` / ${item.location}` : '';
 
