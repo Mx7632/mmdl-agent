@@ -927,6 +927,32 @@
             color: var(--text);
         }
 
+        .report-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .report-head h2,
+        .report-head h3 {
+            margin: 0;
+        }
+
+        .report-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .report-actions button {
+            min-height: 32px;
+            padding: 7px 11px;
+            font-size: 12px;
+        }
+
         .markdown-body {
             white-space: normal;
             word-break: break-word;
@@ -2152,7 +2178,13 @@
                 </section>
 
                 <section class="card">
-                    <h2>完整报告</h2>
+                    <div class="report-head">
+                        <h2>完整报告</h2>
+                        <div class="report-actions">
+                            <button class="ghost report-action" type="button" data-report-action="copy" disabled>复制</button>
+                            <button class="secondary report-action" type="button" data-report-action="download" disabled>下载</button>
+                        </div>
+                    </div>
                     <div id="report-panel" class="result-copy">尚未生成报告</div>
                 </section>
             </div>
@@ -2194,7 +2226,13 @@
                         <div id="answer-panel-inline" class="result-copy">暂无结果</div>
                     </section>
                     <section class="result-card">
-                        <h3>报告摘要</h3>
+                        <div class="report-head">
+                            <h3>报告摘要</h3>
+                            <div class="report-actions">
+                                <button class="ghost report-action" type="button" data-report-action="copy" disabled>复制</button>
+                                <button class="secondary report-action" type="button" data-report-action="download" disabled>下载</button>
+                            </div>
+                        </div>
                         <div id="report-panel-inline" class="result-copy">尚未生成报告</div>
                     </section>
                 </div>
@@ -2327,6 +2365,7 @@
             history: [],
             lastResult: null,
             lastAnalysis: null,
+            reportMarkdown: '',
             visualAssets: {},
             visualMode: 'original',
             overlayOpacity: 72,
@@ -2396,6 +2435,7 @@
             pendingPanel: document.getElementById('pending-panel'),
             reportPanel: document.getElementById('report-panel'),
             reportPanelInline: document.getElementById('report-panel-inline'),
+            reportActions: Array.from(document.querySelectorAll('.report-action')),
             anomalyChips: document.getElementById('anomaly-chips'),
             analysisPanel: document.getElementById('analysis-panel'),
             analysisSummary: document.getElementById('analysis-summary'),
@@ -2964,6 +3004,74 @@
         function setMessage(element, type, text) {
             element.className = `message ${type}${text ? ' show' : ''}`;
             element.textContent = text || '';
+        }
+
+        function renderReportActions() {
+            const hasReport = Boolean(String(state.reportMarkdown || '').trim());
+            els.reportActions.forEach(button => {
+                button.disabled = !hasReport;
+            });
+        }
+
+        function buildReportFilename() {
+            const assetId = (els.assetId?.value || 'asset').trim().replace(/[^\w.-]+/g, '-');
+            const taskId = (state.taskId || 'task').replace(/[^\w.-]+/g, '-');
+            const date = new Date().toISOString().slice(0, 10);
+            return `mmdl-report-${assetId}-${taskId}-${date}.md`;
+        }
+
+        async function copyReportMarkdown() {
+            const text = String(state.reportMarkdown || '').trim();
+            if (!text) {
+                setMessage(els.reportMessage, 'warning', '当前没有可复制的报告内容。');
+                return;
+            }
+            try {
+                if (navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    textarea.setAttribute('readonly', '');
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                }
+                setMessage(els.reportMessage, 'success', '报告内容已复制。');
+            } catch (error) {
+                setMessage(els.reportMessage, 'error', `复制失败：${error.message}`);
+            }
+        }
+
+        function downloadReportMarkdown() {
+            const text = String(state.reportMarkdown || '').trim();
+            if (!text) {
+                setMessage(els.reportMessage, 'warning', '当前没有可下载的报告内容。');
+                return;
+            }
+            const blob = new Blob([`${text}\n`], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = buildReportFilename();
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            URL.revokeObjectURL(url);
+            setMessage(els.reportMessage, 'success', '报告 Markdown 已开始下载。');
+        }
+
+        function handleReportAction(action) {
+            if (action === 'copy') {
+                copyReportMarkdown();
+                return;
+            }
+            if (action === 'download') {
+                downloadReportMarkdown();
+            }
         }
 
         function renderHealthComponents(components = {}) {
@@ -4253,8 +4361,10 @@
             }
 
             if (result.summary) {
+                state.reportMarkdown = String(result.summary || '').trim();
                 setMarkdownContent(els.reportPanel, result.summary, '尚未生成报告');
                 setMarkdownContent(els.reportPanelInline, result.summary, '尚未生成报告');
+                renderReportActions();
             }
 
             renderAnomalies(result.anomalies);
@@ -4300,6 +4410,7 @@
             state.history = [];
             state.lastResult = null;
             state.lastAnalysis = null;
+            state.reportMarkdown = '';
             state.visualAssets = {};
             state.visualMode = 'original';
             state.overlayOpacity = 72;
@@ -4332,6 +4443,7 @@
             setMarkdownContent(els.pendingPanel, '', '当前没有待澄清问题');
             setMarkdownContent(els.reportPanel, '', '尚未生成报告');
             setMarkdownContent(els.reportPanelInline, '', '尚未生成报告');
+            renderReportActions();
             els.anomalyChips.innerHTML = '';
             renderAnalysisPanel(null, null);
             renderIndustrialSummary(null);
@@ -4651,6 +4763,9 @@ ${data.summary}`);
         els.followupButton.addEventListener('click', sendFollowup);
         els.continueButton.addEventListener('click', continueTask);
         els.reportButton.addEventListener('click', generateReport);
+        els.reportActions.forEach(button => {
+            button.addEventListener('click', () => handleReportAction(button.dataset.reportAction));
+        });
         els.resetButton.addEventListener('click', resetTask);
 
         els.question.addEventListener('keydown', event => {

@@ -131,6 +131,8 @@ Started:
 - Upgraded the pilot quality status area into a structured inspection verdict
   panel with score, defect type, review status, detector backend, model version,
   and sample version.
+- Added report copy/download actions so generated Markdown summaries can be
+  reused directly during product demos and thesis material preparation.
 
 Recommended tasks:
 
