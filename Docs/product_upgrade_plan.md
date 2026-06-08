@@ -146,6 +146,14 @@ Recommended tasks:
 
 Goal: make the product demo repeatable.
 
+Started:
+
+- Added a static frontend contract test for the mounted workbench and product
+  demo markers.
+- Added a mock-based stream contract test for the initial image detection SSE
+  path so the frontend's primary `/v1/stream` workflow remains protected even
+  when no real detector backend is configured locally.
+
 Recommended tasks:
 
 - Move focused tests into the target directory structure from `AGENTS.md`
@@ -155,7 +163,7 @@ Recommended tasks:
   - `tests/rag/`
   - `tests/fixtures/`
 - Add a smoke test for `/v1/system/health`.
-- Add a mock-based streaming test for timeline payload shape.
+- Expand mock-based streaming tests for timeline payload shape edge cases.
 - Add a manual frontend verification record after UI changes.
 
 ## Immediate Next Work Item
