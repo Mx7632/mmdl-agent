@@ -82,3 +82,22 @@ def test_report_openapi_uses_product_analysis_schemas():
         == "#/components/schemas/ProductAnalysisResponse"
     )
     assert "ProductAnalysisResponse" in schema["components"]["schemas"]
+
+
+def test_rag_query_openapi_exposes_source_metadata_schema():
+    client = TestClient(api_main.app)
+
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    schema = response.json()
+    assert (
+        schema["paths"]["/v1/rag/query"]["post"]["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]["$ref"]
+        == "#/components/schemas/RagQueryResponse"
+    )
+    metadata_schema = schema["components"]["schemas"]["RagQueryItem"]["properties"]["metadata"]
+    assert metadata_schema["$ref"] == "#/components/schemas/RagSourceMetadata"
+    source_props = schema["components"]["schemas"]["RagSourceMetadata"]["properties"]
+    assert {"source", "image_path", "category", "anomaly_type", "mask_path"}.issubset(source_props)

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 class DetectionTask(BaseModel):
@@ -34,7 +34,9 @@ class DetectionResult(BaseModel):
     anomalies: List[Dict[str, Any]] = Field(default_factory=list)
     summary: Optional[str] = None
     thought: Optional[str] = Field(None, description="The expert agent's reasoning process")
-    explanation: Optional[Dict[str, Any]] = Field(None, description="Detailed explanation of findings")
+    explanation: Optional[Dict[str, Any]] = Field(
+        None, description="Detailed explanation of findings"
+    )
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -122,13 +124,28 @@ class RagImageQueryRequest(BaseModel):
     top_k: int = Field(default=3, ge=1, le=20)
 
 
+class RagSourceMetadata(BaseModel):
+    """Structured source metadata for a retrieved RAG case."""
+
+    model_config = ConfigDict(extra="allow")
+
+    source: Optional[str] = None
+    image_path: Optional[str] = None
+    category: Optional[str] = None
+    split: Optional[str] = None
+    is_anomaly: Optional[bool] = None
+    anomaly_type: Optional[str] = None
+    severity: Optional[str] = None
+    mask_path: Optional[str] = None
+
+
 class RagQueryItem(BaseModel):
     """RAG 查询结果项"""
 
     id: str
     description: str
     distance: float
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: RagSourceMetadata = Field(default_factory=RagSourceMetadata)
 
 
 class RagQueryResponse(BaseModel):

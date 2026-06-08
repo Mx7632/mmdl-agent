@@ -421,7 +421,7 @@ async def rag_build_status(task_id: str) -> RagBuildStatusResponse:
     return RagBuildStatusResponse(**status)
 
 
-@app.post("/v1/rag/query", response_model=RagQueryResponse)
+@app.post("/v1/rag/query", response_model=RagQueryResponse, response_model_exclude_none=True)
 async def rag_query(payload: RagQueryRequest) -> RagQueryResponse:
     service = get_rag_service()
     rows = service.query_rows(
@@ -439,7 +439,11 @@ async def rag_query(payload: RagQueryRequest) -> RagQueryResponse:
     )
 
 
-@app.post("/v1/rag/query-image", response_model=RagQueryResponse)
+@app.post(
+    "/v1/rag/query-image",
+    response_model=RagQueryResponse,
+    response_model_exclude_none=True,
+)
 async def rag_query_image(payload: RagImageQueryRequest) -> RagQueryResponse:
     service = get_rag_service()
     rows = service.query_rows_by_image(

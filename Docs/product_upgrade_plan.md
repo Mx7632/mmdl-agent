@@ -99,8 +99,11 @@ Started:
   batch detection, batch report, and RAG feedback review responses.
 - Added product analysis/report response schemas for `/v1/generate_report` and
   `/v1/detect_with_report`.
+- Added a structured RAG source metadata schema for `/v1/rag/query` and
+  `/v1/rag/query-image`, while preserving extension fields for future dataset
+  provenance.
 - Added OpenAPI regression coverage for health, task detail, and batch report
-  response schemas, plus report-facing response schemas.
+  response schemas, report-facing response schemas, and RAG source metadata.
 
 Recommended tasks:
 
