@@ -60,10 +60,18 @@ Completed in the second pass:
 - Added an integration test for the product runtime health contract.
 - Added a manual product workflow QA checklist with detector-readiness notes.
 
+Completed during route modularization:
+
+- Introduced `app/api/routes/` as the target home for FastAPI route modules.
+- Moved `/v1/system/health` and `/v1/metrics` into `app/api/routes/system.py`
+  without changing paths, response schemas, or frontend-facing JSON fields.
+
 Next recommended checks:
 
 - Verify one frontend detection workflow through `/web/index.html`.
 - Run a broader test subset around streaming and graph runtime.
+- Continue route modularization with low-risk modules such as memory sessions,
+  task history, and report endpoints before touching the core detection route.
 
 ### Phase 2: Main Workflow Product Closure
 
