@@ -23,13 +23,6 @@ from app.schemas.detection import DetectionResult, DetectionTask, ToolResponse
 from app.tools.anomaly_detection import BaseTool
 from app.tools.grad_vendor.grad_model import load_grad_model
 from app.tools.patchcore_detection import (
-    _build_patchcore_description,
-    _derive_color_hint,
-    _derive_location_text,
-    _derive_severity_hint,
-    _derive_shape_label,
-    _derive_size_label,
-    _derive_texture_hint,
     _extract_anomalies_from_heatmap,
     _save_visualizations,
 )
@@ -38,11 +31,13 @@ from app.tools.patchcore_detection import (
 # Image preprocessing (matches GRAD training pipeline)
 # ---------------------------------------------------------------------------
 
-GRAD_TRANSFORM = transforms.Compose([
-    transforms.Resize((256, 256)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
+GRAD_TRANSFORM = transforms.Compose(
+    [
+        transforms.Resize((256, 256)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ]
+)
 
 # ---------------------------------------------------------------------------
 # Model cache (keyed by resolved checkpoint path)
@@ -55,6 +50,7 @@ _model_cache: dict[str, Any] = {}
 # Artifacts
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class GRADArtifacts:
     category: str
@@ -65,6 +61,7 @@ class GRADArtifacts:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def resolve_grad_category(task: DetectionTask) -> str:
     detector_params = (task.parameters or {}).get("detector_params") or {}
@@ -108,7 +105,9 @@ def _grad_heatmap_from_scores(anomaly_map: np.ndarray, width: int, height: int) 
     return heatmap
 
 
-def _extract_grad_anomalies(heatmap: np.ndarray, threshold: float, image_size: tuple[int, int]) -> list[dict[str, Any]]:
+def _extract_grad_anomalies(
+    heatmap: np.ndarray, threshold: float, image_size: tuple[int, int]
+) -> list[dict[str, Any]]:
     """Thin wrapper that fixes the 'details' field after PatchCore's extractor."""
     anomalies = _extract_anomalies_from_heatmap(heatmap, threshold, image_size)
     for anomaly in anomalies:
@@ -119,6 +118,7 @@ def _extract_grad_anomalies(heatmap: np.ndarray, threshold: float, image_size: t
 # ---------------------------------------------------------------------------
 # Core prediction
 # ---------------------------------------------------------------------------
+
 
 def predict_grad_image(
     image_path: str | Path,
@@ -168,8 +168,7 @@ def predict_grad_image(
         **saved_paths,
     }
     summary = (
-        f"GRAD detected {len(anomalies)} anomalous region(s) for "
-        f"category '{category}'."
+        f"GRAD detected {len(anomalies)} anomalous region(s) for category '{category}'."
         if anomalies
         else f"GRAD found no strong anomaly for category '{category}'."
     )
@@ -186,6 +185,7 @@ def predict_grad_image(
 # Tool class
 # ---------------------------------------------------------------------------
 
+
 class LocalGRADImageAnomalyDetectionTool(BaseTool):
     name = "grad_image_anomaly_detection"
 
@@ -193,7 +193,8 @@ class LocalGRADImageAnomalyDetectionTool(BaseTool):
         image_b64 = (task.parameters or {}).get("image_base64")
         if not image_b64:
             raise ToolExecutionError(
-                self.name, {"task_id": task.task_id},
+                self.name,
+                {"task_id": task.task_id},
                 ValueError("image_base64 missing"),
             )
 

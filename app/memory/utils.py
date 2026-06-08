@@ -4,6 +4,7 @@ from typing import Any
 from app.memory.config import MEMORY_STORE_PATH, MEMORY_ARCHIVE_PATH
 from datetime import datetime
 
+
 # ── 数据写入本地文件（持久化）───
 def save_memory_to_file(filename: str, data: Any):
     """将记忆数据写入本地 JSON 文件，轻量级持久化。"""
@@ -42,7 +43,6 @@ def delete_expired_file(filename: str):
 # ── 压缩存档（新增）───
 def save_archive(filename: str, data: Any):
     """将压缩后的记忆存档到 archive/ 目录。"""
-    file_path = os.path.join(MEMORY_ARCHIVE_PATH, filename)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     archive_name = f"{ts}_{filename}"
     archive_path = os.path.join(MEMORY_ARCHIVE_PATH, archive_name)
