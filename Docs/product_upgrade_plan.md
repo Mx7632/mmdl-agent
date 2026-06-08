@@ -123,6 +123,12 @@ Recommended tasks:
 
 Goal: turn the frontend into a clear inspection workbench.
 
+Started:
+
+- Added backend component health chips to the workbench status area.
+- Added structured RAG source chips for query results so retrieved cases expose
+  source, category, anomaly type, severity, anomaly flag, and distance.
+
 Recommended tasks:
 
 - Keep the first screen focused on upload, detector settings, preview, result,
