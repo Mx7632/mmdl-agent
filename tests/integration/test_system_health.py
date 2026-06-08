@@ -60,3 +60,25 @@ def test_product_runtime_openapi_uses_task_and_batch_schemas():
     )
     assert "TaskRecord" in schema["components"]["schemas"]
     assert "BatchReport" in schema["components"]["schemas"]
+
+
+def test_report_openapi_uses_product_analysis_schemas():
+    client = TestClient(api_main.app)
+
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    schema = response.json()
+    assert (
+        schema["paths"]["/v1/generate_report"]["post"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]["$ref"]
+        == "#/components/schemas/ReportGenerationResponse"
+    )
+    assert (
+        schema["paths"]["/v1/detect_with_report"]["post"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]["$ref"]
+        == "#/components/schemas/ProductAnalysisResponse"
+    )
+    assert "ProductAnalysisResponse" in schema["components"]["schemas"]

@@ -45,7 +45,9 @@ from app.schemas.runtime import (
     BatchReportResponse,
     DeleteAllTasksResponse,
     DeleteTaskResponse,
+    ProductAnalysisResponse,
     RagFeedbackReviewResponse,
+    ReportGenerationResponse,
     RuntimeMetricsResponse,
     SystemHealthResponse,
     TaskDetailResponse,
@@ -789,8 +791,8 @@ async def chat(request: Request):
     return result
 
 
-@app.post("/v1/generate_report")
-async def generate_report_endpoint(request: Request):
+@app.post("/v1/generate_report", response_model=ReportGenerationResponse)
+async def generate_report_endpoint(request: Request) -> ReportGenerationResponse:
     """
     生成完整报告接口。
     用户点击"生成报告"按钮后调用，返回完整检测报告。
@@ -802,7 +804,7 @@ async def generate_report_endpoint(request: Request):
         raise DataMissingError("task_id is required")
 
     result = await generate_report(task_id)
-    return result
+    return ReportGenerationResponse(**result)
 
 
 def get_form_text(form: Any, key: str) -> str:
@@ -895,8 +897,8 @@ async def stream_chat(request: Request):
         )
 
 
-@app.post("/v1/detect_with_report")
-async def detect_with_report(request: Request):
+@app.post("/v1/detect_with_report", response_model=ProductAnalysisResponse)
+async def detect_with_report(request: Request) -> ProductAnalysisResponse:
     """
     检测+报告一次性接口。
     首次上传图片时返回：答案 + 完整报告（前端以卡片形式嵌入）。
@@ -968,19 +970,22 @@ async def detect_with_report(request: Request):
         detection_result = await run_detection(task)
 
         if detection_result.get("status") == "pending":
-            return detection_result
+            return ProductAnalysisResponse(**detection_result)
 
         # 已有检测结果，直接生成报告
         if detection_result.get("status") == "success":
             report_result = await generate_report(task_id)
             # 合并：检测答案 + 完整报告
-            return {
+            merged_result = {
                 **detection_result,
                 "summary": report_result.get("summary"),
                 "has_report": True,
             }
+            return ProductAnalysisResponse(
+                **merged_result,
+            )
 
-        return detection_result
+        return ProductAnalysisResponse(**detection_result)
     except Exception as e:
         import traceback
 

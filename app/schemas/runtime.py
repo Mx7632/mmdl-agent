@@ -196,3 +196,31 @@ class RagFeedbackReviewResponse(BaseModel):
 
     status: str
     feedback: dict[str, Any]
+
+
+class ProductAnalysisResponse(BaseModel):
+    """Shared product response shape for analysis and report-facing endpoints."""
+
+    model_config = ConfigDict(extra="allow")
+
+    task_id: str | None = None
+    status: str
+    answer: str | None = None
+    anomalies: list[dict[str, Any]] = Field(default_factory=list)
+    summary: str | None = None
+    has_report: bool = False
+    conversation_history: list[dict[str, Any]] = Field(default_factory=list)
+    pending_clarification: str | None = None
+    pending_question: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    is_anomaly: bool | None = None
+    score: float | None = None
+    defect_type: str | None = None
+    review_status: str | None = None
+    requires_review: bool | None = None
+
+
+class ReportGenerationResponse(ProductAnalysisResponse):
+    """Response contract for /v1/generate_report."""
+
+    has_report: bool = True

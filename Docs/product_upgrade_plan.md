@@ -97,8 +97,10 @@ Started:
   names.
 - Added Pydantic runtime schemas for task detail, task deletion, task review,
   batch detection, batch report, and RAG feedback review responses.
+- Added product analysis/report response schemas for `/v1/generate_report` and
+  `/v1/detect_with_report`.
 - Added OpenAPI regression coverage for health, task detail, and batch report
-  response schemas.
+  response schemas, plus report-facing response schemas.
 
 Recommended tasks:
 
