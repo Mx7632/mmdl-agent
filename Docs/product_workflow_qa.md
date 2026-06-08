@@ -35,14 +35,34 @@ Observed result:
 - Status code: `200`
 - Content type: `text/html; charset=utf-8`
 - Page title marker: `<title>MMDL-Agent</title>`
+- Product workflow markers:
+  - `/v1/system/health`
+  - `/v1/stream`
+  - `/v1/generate_report`
+  - timeline container
+  - RAG result container
+  - industrial summary container
+  - report copy/download actions
 
 Interpretation:
 
 - The backend application can start.
 - The frontend workspace is correctly mounted by the backend.
 - The health endpoint is suitable as the frontend/system status source.
+- The default frontend contract still exposes the product demo path:
+  upload, stream detection, timeline, RAG, quality summary, report generation,
+  and report export.
 - This local environment is not ready for a real visual detection demo until at
   least one detector backend is available.
+
+Automated guard:
+
+```powershell
+python -m pytest tests\integration\test_frontend_static_contract.py -q
+```
+
+The guard intentionally checks static product markers only. It does not replace
+manual visual QA or a real detector run.
 
 ## Manual Frontend QA Checklist
 
