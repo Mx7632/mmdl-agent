@@ -1,83 +1,160 @@
 # MMDL-Agent
 
-MMDL-Agent 是一个面向工业视觉异常诊断的多 Agent 应用框架。项目以 FastAPI 提供 HTTP API，以 LangGraph 编排多步骤诊断流程，并集成视觉检测、RAG 知识检索、多轮问答、人工澄清、报告生成和运行状态持久化。
+MMDL-Agent 是一个面向工业视觉质检场景的异常检测 Agent 系统。本项目不是单独训练或调用某一个异常检测算法，而是把 **图像异常检测、热力图定位、多 Agent 协同分析、RAG 知识检索、追问续接、会话记忆和报告生成** 整合成一个可以运行、可以演示、可以继续扩展的毕业设计原型系统。
 
-当前主流程是：
+一句话概括：
 
 ```text
-上传图片 / 提交问题
-  -> Supervisor 规划专家 Agent
-  -> Vision Agent 检测与定位异常
-  -> Knowledge Agent 检索相似案例
-  -> Self Reflect 判断是否需要补充信息
-  -> Answer / Wait User / Report
+上传工业图像
+  -> 视觉检测模型定位异常
+  -> 多 Agent 组织分析流程
+  -> RAG 检索相似案例和知识
+  -> 前端展示热力图、异常区域、解释和报告
+  -> 支持继续追问和会话恢复
 ```
 
-## 运行文档入口
+## 项目定位
 
-当前推荐以 [Docs/runtime_guide.md](Docs/runtime_guide.md) 作为运行和调试主文档。它覆盖：
+工业异常检测如果只返回“是否异常”或一个分数，实际使用价值有限。真实质检场景更关心：
 
-- 本地启动与 `.env` 推荐配置
-- `/v1/stream` 主调试链路
-- MVTec RAG 建库和 few-shot 正常/异常样本注入
-- PatchCore 训练、热力图生成和前端调用
-- 多 Agent 时间线、MMAD metadata、few-shot metadata 的排障观察点
+- 异常在哪里。
+- 异常可能属于什么类型。
+- 模型为什么这样判断。
+- 是否有相似案例或知识可以参考。
+- 检测结果能否继续追问、保存和生成报告。
 
-系统架构与运行流程说明见 [Docs/system_overview.md](Docs/system_overview.md)。论文“系统总体设计”章节草稿见 [Docs/thesis_system_design.md](Docs/thesis_system_design.md)，第五章“系统详细设计与实现”初稿见 [Docs/thesis_chapter5_detailed_design.md](Docs/thesis_chapter5_detailed_design.md)。
+所以本项目把传统异常检测模型封装为 Agent 工具，再通过 LangGraph 编排视觉检测、知识检索、澄清追问和报告生成流程。项目重点是形成一条可解释、可追踪、可演示的工业异常诊断链路。
 
-## 当前架构
+## 当前能力
+
+- FastAPI 后端接口和静态前端工作台。
+- LangGraph 多 Agent 工作流。
+- VisionAgent 视觉异常检测。
+- KnowledgeAgent RAG 知识检索和相似案例分析。
+- ClarificationAgent 信息不足时生成追问。
+- ReportAgent 检测报告生成。
+- PatchCore 本地异常检测与热力图输出。
+- GRAD 算法 sidecar 服务接入。
+- MVTec-AD 标准数据集实验链路。
+- 蕾丝数据集转换、GRAD 训练与评估链路。
+- 前端展示异常列表、bbox、heatmap、overlay、mask、Agent 时间线和会话记忆。
+
+## 架构总览
+
+当前主链路如下：
+
+```text
+web/index.html
+  -> app/api/main.py
+  -> app/services/task_runner.py 或 app/services/streaming.py
+  -> app/core/graph.py
+  -> SupervisorAgent
+  -> VisionAgent / KnowledgeAgent / ClarificationAgent / ReportAgent
+  -> app/tools/*
+  -> app/rag/*
+  -> app/memory/* 和 runtime store
+  -> 返回前端展示
+```
+
+目录结构：
 
 ```text
 MMDL-Agent/
-├── main.py                         # FastAPI app 导出入口
-├── pyproject.toml                  # 项目依赖与构建配置
-├── README.md                       # 当前唯一主文档
-├── USER.md                         # 开发记录与交付记录
 ├── app/
-│   ├── api/main.py                 # HTTP 路由、中间件、异常处理、静态文件挂载
-│   ├── agents/                     # supervisor / vision / knowledge / clarification / report
-│   ├── config/settings.py          # 环境变量配置
-│   ├── core/                       # LangGraph 节点与运行入口
-│   ├── exceptions/base.py          # 统一异常体系
-│   ├── memory/                     # DetectionState、记忆、checkpoint
-│   ├── orchestration/              # AgentEnvelope 与共享上下文模型
-│   ├── rag/                        # 数据集分析、向量库、检索、在线反馈
-│   ├── schemas/detection.py        # API 请求/响应模型
-│   ├── storage/postgres.py         # PostgreSQL runtime state 镜像
-│   └── tools/image_anomaly_detection.py
-├── services/anomalygpt_local/      # 可选本地 AnomalyGPT sidecar 服务
-├── tests/                          # 自动化测试
-└── web/
-    └── index.html                  # 单页核心工作台
+│   ├── api/             # FastAPI 接口入口
+│   ├── agents/          # Supervisor / Vision / Knowledge / Clarification / Report
+│   ├── analysis/        # MMAD 七任务结构化分析
+│   ├── config/          # pydantic-settings 配置
+│   ├── core/            # LangGraph 工作流
+│   ├── memory/          # DetectionState、记忆和 checkpoint
+│   ├── orchestration/   # 执行计划、事件时间线、Agent 输出合并
+│   ├── rag/             # ChromaDB 向量库、样本检索、知识分析
+│   ├── schemas/         # Pydantic 请求/响应模型
+│   ├── services/        # detect/chat/continue/report 任务运行层
+│   └── tools/           # Qwen、PatchCore、GRAD、专业 HTTP 检测工具
+├── services/
+│   ├── anomalygpt_local/ # 可选 AnomalyGPT sidecar
+│   └── grad_local/       # GRAD sidecar 服务
+├── scripts/              # 数据准备、评估、论文辅助脚本
+├── tests/                # 自动化测试
+├── Docs/                 # 架构、运行、GRAD、交接和论文文档
+└── web/                  # 单页前端工作台
 ```
 
-## 核心模块
+更完整的架构说明见：
 
-| 模块 | 职责 | 关键文件 |
-|---|---|---|
-| API 层 | 路由、CORS、Trace ID、异常响应、静态文件挂载 | `app/api/main.py` |
-| 工作流 | LangGraph 节点、条件路由、挂起/恢复 | `app/core/graph.py`, `app/core/agent.py` |
-| 多 Agent | 主控规划与专家执行 | `app/agents/` |
-| 视觉检测 | Qwen 视觉模型或专业 HTTP 后端路由 | `app/tools/image_anomaly_detection.py` |
-| RAG | 数据集建库、文本/图像检索、反馈入库 | `app/rag/` |
-| 记忆与持久化 | 多轮上下文、长期记忆、checkpoint | `app/memory/`, `app/core/runtime.py` |
-| 前端 | 图片上传、异常定位展示、多轮追问、报告展示 | `web/index.html` |
-| AnomalyGPT sidecar | 本地专业异常检测服务封装 | `services/anomalygpt_local/` |
+- [Docs/system_overview.md](Docs/system_overview.md)
+- [Docs/architecture.md](Docs/architecture.md)
+- [Docs/project_handover_introduction.md](Docs/project_handover_introduction.md)
+
+## GRAD 接入设计
+
+GRAD 是老师提供的异常检测算法，原始算法仓库位于服务器：
+
+```text
+/root/autodl-tmp/gradcn
+```
+
+主项目位于：
+
+```text
+/root/autodl-tmp/mmad-agent
+```
+
+GRAD 没有被硬编码进主后端，而是封装成独立 sidecar 服务：
+
+```text
+MMDL-Agent 主后端
+  -> HTTP 调用
+  -> GRAD sidecar
+  -> gradcn 算法仓库
+  -> 返回 anomaly_score、bbox、heatmap、overlay、mask
+```
+
+这样设计的原因是 GRAD 有自己的 Python、PyTorch、CUDA、EfficientNet、config 和 checkpoint 依赖。主系统只通过 HTTP JSON 与 GRAD 通信，可以避免因为 CUDA 或 PyTorch 版本问题导致整个主后端无法启动。
+
+关键文件：
+
+```text
+services/grad_local/app.py
+app/tools/image_anomaly_detection.py
+app/tools/grad_detection.py
+Docs/grad_sidecar_runbook.md
+```
+
+主后端通过这些配置选择 GRAD：
+
+```env
+APP_VISION_DETECTOR_BACKEND=grad
+APP_GRAD_DETECTOR_URL=http://127.0.0.1:9011/detect
+APP_GRAD_DETECTOR_TIMEOUT=180
+```
+
+GRAD sidecar 启动后会读取：
+
+```text
+GRAD_SERVICE_REPO_DIR
+GRAD_SERVICE_CONFIG
+GRAD_SERVICE_CHECKPOINT
+GRAD_SERVICE_OUTPUT_DIR
+GRAD_SERVICE_THRESHOLD
+```
+
+蕾丝实验相关路径：
+
+```text
+/root/autodl-tmp/all/lace
+/root/autodl-tmp/gradcn/data/Lace-AD
+/root/autodl-tmp/gradcn/experiments/exp/GRAD/LaceAD/checkpoints/ckpt_best.pth.tar
+```
 
 ## 快速启动
 
-### 1. 创建环境
+### 1. 创建 Conda 环境
 
 ```powershell
-conda create -n MMDL-Agent python=3.12
+conda create -n MMDL-Agent python=3.12.12
 conda activate MMDL-Agent
-```
-
-也可以使用 venv：
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\activate
 ```
 
 ### 2. 安装依赖
@@ -86,7 +163,9 @@ python -m venv .venv
 pip install -e .
 ```
 
-### 3. 配置环境变量
+如果服务器上只需要运行而不是开发，也可以根据实际环境先安装 `requirements` 或项目依赖，再启动服务。
+
+### 3. 配置 `.env`
 
 复制示例配置：
 
@@ -94,40 +173,7 @@ pip install -e .
 Copy-Item .env.example .env
 ```
 
-常用配置：
-
-```env
-APP_OPENAI_API_KEY=
-APP_LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-APP_LLM_MODEL=qwen3.5-plus
-APP_LLM_VISION_MODEL=qwen3.5-plus
-APP_QWEN_MIN_ANOMALY_SCORE=0.65
-
-APP_CHECKPOINT_BACKEND=postgres
-APP_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mmdl_agent
-APP_DATABASE_SCHEMA=public
-
-APP_VISION_DETECTOR_BACKEND=qwen
-APP_PROFESSIONAL_VISION_DETECTOR_TYPE=anomalygpt
-APP_PROFESSIONAL_VISION_DETECTOR_URL=http://127.0.0.1:9001/detect
-
-APP_RAG_MULTIMODAL_EMBEDDING_MODEL=multimodal-embedding-v1
-```
-
-说明：
-
-- `APP_OPENAI_API_KEY` 当前同时用于兼容 OpenAI 接口的 DashScope LLM 调用和 DashScope 多模态 embedding。
-- `APP_CHECKPOINT_BACKEND=postgres` 时需要配置可访问的 PostgreSQL；未配置数据库或依赖不可用时，运行时会回退到内存 checkpoint。
-- `APP_VISION_DETECTOR_BACKEND=qwen` 默认走通用视觉模型；设为 `anomalygpt` 时默认走专业 HTTP 后端。
-- `APP_QWEN_MIN_ANOMALY_SCORE` 控制 Qwen 视觉候选进入最终异常列表的最低分数，低分、疑似反光、阴影、正常纹理等候选会被记录到 metadata，但不会直接判为异常。
-
-### 推荐启动模式
-
-#### 模式 A：本地快速联调
-
-适合先把 API、LangGraph、多 Agent 流程和前端工作台跑起来。
-
-建议 `.env` 最少这样配：
+本地最小联调推荐：
 
 ```env
 APP_OPENAI_API_KEY=your_key
@@ -135,32 +181,28 @@ APP_CHECKPOINT_BACKEND=memory
 APP_VISION_DETECTOR_BACKEND=qwen
 ```
 
-这套模式不依赖 PostgreSQL，也不要求先启动本地 AnomalyGPT sidecar。
-
-> 在 Windows 本地联调时，推荐优先使用这一模式。当前 `postgres` checkpoint
-> 后端在 Windows 默认事件循环下可能触发 psycopg async 兼容问题，此时先切到
-> `APP_CHECKPOINT_BACKEND=memory` 更稳。
-
-#### 模式 B：完整运行态
-
-适合验证持久化 checkpoint、RAG 数据和专业检测后端联动。
-
-建议额外准备：
-
-- PostgreSQL
-- `data_sets/mvtec_anomaly_detection` 数据集
-- 可选的 `services/anomalygpt_local/` sidecar
-
-常见配置：
+服务器 GRAD 路线推荐：
 
 ```env
-APP_CHECKPOINT_BACKEND=postgres
-APP_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mmdl_agent
-APP_VISION_DETECTOR_BACKEND=anomalygpt
-APP_PROFESSIONAL_VISION_DETECTOR_URL=http://127.0.0.1:9001/detect
+APP_CHECKPOINT_BACKEND=memory
+APP_OPENAI_API_KEY=your_key
+APP_VISION_DETECTOR_BACKEND=grad
+APP_GRAD_DETECTOR_URL=http://127.0.0.1:9011/detect
+APP_GRAD_DETECTOR_TIMEOUT=180
 ```
 
-### 4. 启动后端
+说明：
+
+- `APP_OPENAI_API_KEY` 当前用于兼容 OpenAI 接口的大模型调用。
+- `APP_CHECKPOINT_BACKEND=memory` 适合毕业演示和快速联调。
+- `APP_CHECKPOINT_BACKEND=postgres` 适合验证持久化 checkpoint，但需要 PostgreSQL。
+- `.env` 不应提交到 Git。
+
+## 启动方式
+
+### 模式 A：只启动主后端
+
+适合先验证 API、前端、Agent 和 RAG 主流程。
 
 ```powershell
 python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
@@ -172,454 +214,168 @@ python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 http://127.0.0.1:8000/web/index.html
 ```
 
-也可以直接用浏览器打开 `web/index.html`，页面会调用同源或本地后端 API。
-
-### 5. 启动可选的本地专业检测 sidecar
-
-如果你要联调 `anomalygpt` 专业检测后端，可以进入：
+健康检查：
 
 ```powershell
-cd services/anomalygpt_local
+curl http://127.0.0.1:8000/v1/system/health
 ```
 
-然后按该目录下的 [README](services/anomalygpt_local/README.md) 或 `docker-compose.yml` 启动。
+### 模式 B：启动 GRAD sidecar + 主后端
 
-### 6. 初始化 RAG（可选）
+适合服务器上验证 GRAD 检测路线。
 
-如果要验证知识检索链路，可以先建库：
+先启动 GRAD sidecar：
 
-```powershell
-curl -X POST http://127.0.0.1:8000/v1/rag/build `
-  -H "Content-Type: application/json" `
-  -d "{\"dataset_root\":\"data_sets/mvtec_anomaly_detection\",\"include_normal\":false}"
+```bash
+cd /root/autodl-tmp/mmad-agent
+python -m uvicorn services.grad_local.app:app --host 0.0.0.0 --port 9011
 ```
 
-RAG 构建是可选的；不建库也可以先调通检测、澄清和报告主流程。
+检查 GRAD：
 
-## 前端工作流
-
-当前前端只维护一个主入口：`web/index.html`。
-
-主要操作：
-
-1. 填写 `asset_id`、问题描述并上传图片。
-2. 点击“开始检测”，调用 `POST /v1/detect`。
-3. 查看回答、异常标签、bbox 或异常热区 mask。
-4. 如果任务进入 `pending`，输入补充信息并调用 `POST /v1/continue`。
-5. 对已有任务继续追问，调用 `POST /v1/chat`。
-6. 点击“生成报告”，调用 `POST /v1/generate_report`。
-
-## 调试指南
-
-### 最短调试路径
-
-建议按这个顺序排查：
-
-1. 启动后端：
-
-```powershell
-python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```bash
+curl http://127.0.0.1:9011/health
 ```
 
-2. 健康检查：
+再启动主后端：
 
-```powershell
-curl http://127.0.0.1:8000/health
+```bash
+cd /root/autodl-tmp/mmad-agent
+python -m uvicorn app.api.main:app --host 0.0.0.0 --port 8000
 ```
 
-3. 看 OpenAPI schema：
+检查主系统：
+
+```bash
+curl http://127.0.0.1:8000/v1/system/health
+```
+
+如果返回中 `grad_sidecar.status` 为 `configured`，说明主系统已经识别 GRAD 服务。
+
+## 一次 GRAD 检测示例
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/detect \
+  -F "task_id=grad-main-demo" \
+  -F "asset_id=bottle-demo" \
+  -F "start_time=2026-06-02T00:00:00" \
+  -F "end_time=2026-06-02T00:00:00" \
+  -F "question=请判断图片是否存在异常，并给出异常位置" \
+  -F 'parameters={"tool_type":"grad","require_localization":true,"detector_params":{"category":"bottle","threshold":0.5}}' \
+  -F "image=@/root/autodl-tmp/gradcn/data/MVTec-AD/mvtec_anomaly_detection/bottle/test/broken_large/000.png"
+```
+
+成功响应中重点看：
 
 ```text
-http://127.0.0.1:8000/openapi.json
+anomalies
+metadata.selected_backend
+metadata.anomaly_score
+metadata.heatmap_path
+metadata.overlay_path
+metadata.mask_path
 ```
-
-4. 打开前端工作台：
-
-```text
-http://127.0.0.1:8000/web/index.html
-```
-
-5. 先走一次最小检测请求，再看日志和响应中的 `metadata.agent_trace / execution_events`。
-
-### 推荐调试入口
-
-- 接口联调：`/v1/detect`、`/v1/chat`、`/v1/continue`
-- 实时流程调试：`/v1/stream`
-- 待澄清任务排查：`/v1/pending/{task_id}`
-- 报告链路验证：`/v1/generate_report`
-- RAG 验证：`/v1/rag/build`、`/v1/rag/query`
-
-### 调试多 Agent 流程时重点看什么
-
-当前后端已经暴露这些运行态信息：
-
-- `metadata.agent_trace`
-- `metadata.execution_plan`
-- `metadata.step_status`
-- `metadata.step_attempts`
-- `metadata.execution_events`
-
-前端 `web/index.html` 也已经有时间线面板，适合排查：
-
-- supervisor 实际规划了哪些 specialist
-- 哪一步失败或重试
-- 是否进入 `pending`
-- 继续澄清后是否恢复执行
-
-### 常用测试命令
-
-回归主链路：
-
-```powershell
-pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_graph_runtime.py tests/test_agent.py -q
-```
-
-只看多 Agent 编排：
-
-```powershell
-pytest tests/test_phase1_multi_agent.py -q
-```
-
-只看 API 主流程：
-
-```powershell
-pytest tests/test_main_flow_smoke.py -q
-```
-
-### 常见问题
-
-#### 1. 后端启动时报静态目录或上传目录错误
-
-确认这些目录存在：
-
-- `web/`
-- `data/uploads/`
-- `data/rag/`（如果启用了 RAG）
-
-#### 2. PostgreSQL 没起好，项目无法保存 checkpoint
-
-本地开发可以先把：
-
-```env
-APP_CHECKPOINT_BACKEND=memory
-```
-
-先切到内存模式，把主流程跑通之后再接回 PostgreSQL。
-
-#### 3. `pending` 之后不知道怎么继续
-
-先查：
-
-```text
-GET /v1/pending/{task_id}
-```
-
-确认 `pending_question`，再调用：
-
-```text
-POST /v1/continue
-```
-
-#### 4. 想看执行过程而不是只看最终答案
-
-优先用：
-
-```text
-POST /v1/stream
-```
-
-或者直接看前端时间线面板。
-
-## 工作流细节
-
-主图定义在 `app/core/graph.py`：
-
-```text
-load_data
-  -> supervisor_plan
-  -> supervisor_execute 或 supervisor_merge
-  -> supervisor_merge
-  -> wait_user 或 self_reflect
-  -> supervisor_plan 或 answer
-  -> report 或 END
-```
-
-专家 Agent：
-
-- `SupervisorAgent`：根据任务状态、图像输入、问题意图和已有输出规划专家。
-- `VisionAgent`：调用图像异常检测工具，返回异常列表、定位信息和元数据。
-- `KnowledgeAgent`：从 RAG 检索相似工业异常案例。
-- `ClarificationAgent`：当置信度或异常类型不明确时生成待澄清问题。
-- `ReportAgent`：复用报告生成服务输出完整诊断报告。
-
-## 主流程 API
-
-### `GET /`
-
-返回应用基本信息。
-
-> 当前 FastAPI 配置中 `docs_url=None`，不要把 `/docs` 当作可靠入口；可使用 `/openapi.json` 查看 OpenAPI schema。
-
-### `GET /health`
-
-健康检查。
-
-响应示例：
-
-```json
-{
-  "status": "ok",
-  "timestamp": 1770000000.0
-}
-```
-
-### `POST /v1/detect`
-
-首次检测接口。当前支持 `multipart/form-data`。
-
-表单字段：
-
-| 字段 | 必填 | 说明 |
-|---|---:|---|
-| `task_id` | 是 | 任务 ID |
-| `asset_id` | 是 | 设备或资产 ID |
-| `start_time` | 是 | 开始时间，字符串即可，建议 ISO8601 |
-| `end_time` | 是 | 结束时间，字符串即可，建议 ISO8601 |
-| `question` | 否 | 用户问题 |
-| `data_source` | 否 | 数据来源 |
-| `parameters` | 否 | JSON 字符串 |
-| `image` | 否 | 图片文件；不传则为文本模式 |
-
-示例：
-
-```powershell
-curl -X POST http://127.0.0.1:8000/v1/detect `
-  -F "task_id=test-001" `
-  -F "asset_id=pump-001" `
-  -F "start_time=2026-04-27T10:00:00+08:00" `
-  -F "end_time=2026-04-27T10:05:00+08:00" `
-  -F "question=这张图片是否存在裂纹或破损？" `
-  -F "parameters={\"tool_type\":\"qwen\",\"require_localization\":true}" `
-  -F "image=@C:\path\to\image.jpg"
-```
-
-如果你在 Windows PowerShell 下遇到 `parameters must be valid JSON string`，
-最简单的做法是先省略 `parameters`，把主链路跑通后再逐步补调参字段。
-
-成功响应字段通常包括：
-
-- `task_id`
-- `status`: `success` 或 `pending`
-- `answer`
-- `anomalies`
-- `metadata.logs`
-- `metadata.agent_trace`
-- `metadata.result_metadata`
-
-`pending` 响应会额外包含：
-
-- `pending_clarification`
-- `pending_question`
-- `conversation_history`
-- `agent_trace`
-
-### `POST /v1/chat`
-
-基于已有任务继续追问。
-
-请求体：
-
-```json
-{
-  "task_id": "test-001",
-  "question": "这个异常可能是什么原因导致的？"
-}
-```
-
-PowerShell 推荐写法：
-
-```powershell
-$payload = @{
-  task_id = "test-001"
-  question = "这个异常可能是什么原因导致的？"
-} | ConvertTo-Json -Compress
-
-Invoke-RestMethod `
-  -Method Post `
-  -Uri "http://127.0.0.1:8000/v1/chat" `
-  -ContentType "application/json" `
-  -Body $payload
-```
-
-### `POST /v1/continue`
-
-为 pending 任务提交人工澄清。
-
-请求体：
-
-```json
-{
-  "task_id": "test-001",
-  "user_reply": "异常位于图像右下角，现场观察到轻微裂纹。"
-}
-```
-
-PowerShell 推荐写法：
-
-```powershell
-$payload = @{
-  task_id = "test-001"
-  user_reply = "异常位于图像右下角，现场观察到轻微裂纹。"
-} | ConvertTo-Json -Compress
-
-Invoke-RestMethod `
-  -Method Post `
-  -Uri "http://127.0.0.1:8000/v1/continue" `
-  -ContentType "application/json" `
-  -Body $payload
-```
-
-### `GET /v1/pending/{task_id}`
-
-查询某个任务是否处于待澄清状态。
-
-### `POST /v1/generate_report`
-
-基于已有任务状态生成完整报告。
-
-PowerShell 推荐写法：
-
-```powershell
-$payload = @{
-  task_id = "test-001"
-} | ConvertTo-Json -Compress
-
-Invoke-RestMethod `
-  -Method Post `
-  -Uri "http://127.0.0.1:8000/v1/generate_report" `
-  -ContentType "application/json" `
-  -Body $payload
-```
-
-请求体：
-
-```json
-{
-  "task_id": "test-001"
-}
-```
-
-### `POST /v1/detect_with_report`
-
-一次性执行检测并生成报告。请求格式与 `/v1/detect` 相同；如果检测结果为 `pending`，会直接返回 pending，不生成报告。
-
-### `POST /v1/stream`
-
-SSE 流式接口，使用 `multipart/form-data`。
-
-常见事件：
-
-- `node_start`
-- `tool_start`
-- `tool_end`
-- `stream`
-- `final_result`
-- `error`
-- `close`
-
-## RAG API
-
-RAG 由 `app/rag/service.py` 统一管理，向量库默认写入 `data/rag/chroma`。
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| `POST` | `/v1/rag/build` | 同步扫描数据集并构建向量索引 |
-| `POST` | `/v1/rag/build/start` | 异步启动建库任务 |
-| `GET` | `/v1/rag/build/status/{task_id}` | 查询异步建库进度 |
-| `POST` | `/v1/rag/query` | 按文本检索相似异常案例 |
-| `POST` | `/v1/rag/query-image` | 按图片路径检索相似异常案例 |
-| `POST` | `/v1/rag/generate-descriptions` | 为数据集异常样本生成描述 |
-| `POST` | `/v1/rag/ingest-feedback` | 将高置信用户反馈写入向量库 |
-
-文本检索示例：
-
-```json
-{
-  "query_text": "表面划痕，靠近边缘",
-  "category": "capsule",
-  "top_k": 3
-}
-```
-
-反馈入库示例：
-
-```json
-{
-  "image_path": "data/uploads/case-001.png",
-  "category": "capsule",
-  "user_description": "右侧边缘存在细长裂纹",
-  "model_confidence": 0.93,
-  "is_anomaly": true,
-  "anomaly_type": "crack",
-  "severity": "medium"
-}
-```
-
-只有 `model_confidence >= APP_RAG_LEARNING_THRESHOLD` 的反馈会被接受。
 
 ## 视觉后端路由
 
-视觉检测入口是 `ImageAnomalyDetectionTool`。
+视觉检测统一入口是：
 
-可选后端：
-
-- `qwen`：调用兼容 OpenAI 接口的视觉模型，默认模型来自 `APP_LLM_VISION_MODEL`。
-- `anomalygpt` / `professional`：调用 `APP_PROFESSIONAL_VISION_DETECTOR_URL` 指向的专业 HTTP 服务。
-
-全局默认：
-
-```env
-APP_VISION_DETECTOR_BACKEND=qwen
+```text
+app/tools/image_anomaly_detection.py
 ```
 
-单次请求覆盖：
+当前支持：
+
+| 后端 | 说明 | 关键配置 |
+|---|---|---|
+| `qwen` | 通用视觉大模型 | `APP_LLM_VISION_MODEL` |
+| `patchcore` | 本地 PatchCore 异常定位 | `APP_PATCHCORE_*` |
+| `grad` | GRAD sidecar 或本地 GRAD 工具 | `APP_GRAD_DETECTOR_URL` |
+| `anomalygpt` / `professional` | 专业 HTTP 视觉检测服务 | `APP_PROFESSIONAL_VISION_DETECTOR_URL` |
+
+单次请求可以通过 `parameters.tool_type` 覆盖默认后端：
 
 ```json
 {
-  "tool_type": "anomalygpt",
+  "tool_type": "grad",
   "require_localization": true,
   "detector_params": {
-    "mask_threshold": 0.5
+    "category": "bottle",
+    "threshold": 0.5
   }
 }
 ```
 
-本地 AnomalyGPT sidecar 的部署细节见 `services/anomalygpt_local/README.md`。
+## RAG 与知识库
 
-## 状态与记忆
+RAG 由 `app/rag/` 负责，向量库默认写入：
 
-### Checkpoint
+```text
+data/rag/chroma
+```
 
-运行时通过 `app/core/runtime.py` 创建 LangGraph session。
+常用接口：
 
-- `APP_CHECKPOINT_BACKEND=memory`：进程内保存，多轮任务只在当前后端进程生命周期内有效。
-- `APP_CHECKPOINT_BACKEND=postgres`：使用 LangGraph Postgres saver；同时把应用级状态镜像写入 `agent_run_state` 表。
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `POST` | `/v1/rag/build` | 同步构建知识库 |
+| `POST` | `/v1/rag/build/start` | 异步构建知识库 |
+| `GET` | `/v1/rag/build/status/{task_id}` | 查询构建进度 |
+| `POST` | `/v1/rag/query` | 文本检索相似案例 |
+| `POST` | `/v1/rag/query-image` | 图片路径检索相似案例 |
+| `POST` | `/v1/rag/ingest-feedback` | 高置信反馈入库 |
 
-### Memory
+RAG 的作用是给 KnowledgeAgent 提供相似案例、缺陷解释和对象知识，使最终回答不只是视觉模型结果。
 
-`app/memory/memory_manager.py` 管理工作记忆、短期记忆、长期记忆和工具上下文。
+## 会话记忆
 
-运行时文件策略：
+当前前端支持会话记忆，后端接口包括：
 
-- `app/data/memory/working_memory.json` 是运行时生成文件，不应提交。
-- `app/data/memory/working_memory.example.json` 是结构示例。
+```text
+GET    /v1/memory/sessions
+POST   /v1/memory/sessions
+GET    /v1/memory/sessions/{session_id}
+DELETE /v1/memory/sessions/{session_id}
+```
+
+实现位置：
+
+```text
+app/api/main.py
+app/services/industrial_runtime.py
+web/index.html
+```
+
+它保存检测对话历史、任务 ID、资产 ID、摘要和最近结果，方便用户恢复之前的分析过程。
+
+## 主流程 API
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/v1/system/health` | 系统健康检查 |
+| `POST` | `/v1/detect` | 首次检测 |
+| `POST` | `/v1/stream` | SSE 流式检测 |
+| `POST` | `/v1/chat` | 基于已有任务追问 |
+| `POST` | `/v1/continue` | 为 pending 任务提交澄清 |
+| `GET` | `/v1/pending/{task_id}` | 查询待澄清任务 |
+| `POST` | `/v1/generate_report` | 基于已有任务生成报告 |
+| `POST` | `/v1/detect_with_report` | 检测并尝试生成报告 |
+
+`/v1/stream` 更适合演示 Agent 时间线，`/v1/detect` 更适合 curl 和脚本验证。
 
 ## 测试与检查
 
+常用测试：
+
 ```powershell
-python -m compileall app -q
-python -m compileall services -q
-python -m pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py tests/test_image_anomaly_detection_router.py tests/test_graph_runtime.py tests/test_checkpoint_store.py -q
+python -m pytest tests/test_industrial_pilot.py -q
+python -m pytest tests/test_image_anomaly_detection_router.py -q
+```
+
+Ruff 检查：
+
+```powershell
+python -m ruff check app tests scripts
 ```
 
 完整测试：
@@ -628,12 +384,168 @@ python -m pytest tests/test_phase1_multi_agent.py tests/test_main_flow_smoke.py 
 pytest -q
 ```
 
-## 文档维护策略
+如果只修改文档，可以不运行代码测试，但需要确认 Markdown 可正常读取。
 
-当前项目以 `README.md` 作为唯一主文档，避免接口说明分散后再次过时。
+## 重要文档
 
-保留文档：
+- [Docs/project_handover_introduction.md](Docs/project_handover_introduction.md)：毕业交接项目介绍。
+- [Docs/system_overview.md](Docs/system_overview.md)：系统架构与运行流程。
+- [Docs/architecture.md](Docs/architecture.md)：当前活跃架构说明。
+- [Docs/runtime_guide.md](Docs/runtime_guide.md)：本地运行、调试和 API 验证。
+- [Docs/grad_sidecar_runbook.md](Docs/grad_sidecar_runbook.md)：GRAD sidecar 启动、配置和排障。
+- [Docs/mmad_import.md](Docs/mmad_import.md)：MMAD 数据导入说明。
+- [Docs/thesis_system_design.md](Docs/thesis_system_design.md)：论文系统总体设计材料。
+- [Docs/thesis_chapter5_detailed_design.md](Docs/thesis_chapter5_detailed_design.md)：论文详细设计与实现材料。
 
-- 保留：`README.md`、`USER.md`、`services/anomalygpt_local/README.md`
-- 可保留为模块说明：`app/prompts/README.md`
-- 保留学习笔记：`Docs/01-LangChain.ipynb`、`Docs/02-LangGraph.ipynb`、`Docs/03-LangSmith.ipynb`
+## 接手建议
+
+如果是老师或同学第一次接手，建议按这个顺序理解：
+
+1. 先读 `Docs/project_handover_introduction.md`，了解项目整体定位。
+2. 再读 `Docs/system_overview.md`，理解分层架构和 Agent 流程。
+3. 按 `Docs/runtime_guide.md` 启动主后端和前端。
+4. 如果要验证老师给的算法，再按 `Docs/grad_sidecar_runbook.md` 启动 GRAD sidecar。
+5. 从一次完整图片检测请求入手，看前端结果、后端日志、Agent 时间线和热力图文件。
+
+后续继续开发时，建议优先做三件事：
+
+- 扩展更多工业类别数据和检测权重。
+- 标定 GRAD、PatchCore 等后端的阈值和评估指标。
+- 优化 RAG 知识库、Agent 解释和报告生成内容。
+
+## 项目更新流程
+
+后续接手人在更新项目时，建议按下面流程操作，避免把本地数据、模型权重或运行缓存误提交。
+
+### 1. 更新代码前先看本地状态
+
+```bash
+git status
+```
+
+如果看到 `.env`、`data/`、模型权重、ChromaDB sqlite、热力图输出等运行时文件变化，不要直接提交。先确认这些是否只是本地运行产生的文件。
+
+### 2. 拉取远程最新代码
+
+```bash
+git fetch origin
+git pull
+```
+
+如果需要合并指定分支，例如老师或其他同学提交到了 `tjw` 分支，可以使用：
+
+```bash
+git fetch origin tjw
+git merge origin/tjw
+```
+
+合并时如果出现冲突，优先保留当前主流程的接口结构、配置方式和文档说明，解决后再运行测试。
+
+### 3. 更新依赖
+
+如果 `pyproject.toml`、依赖说明或环境配置发生变化，重新安装项目：
+
+```bash
+pip install -e .
+```
+
+服务器上如果使用独立 Conda 环境，需要先确认当前环境：
+
+```bash
+conda info --envs
+```
+
+主项目推荐环境名：
+
+```text
+MMDL-Agent
+```
+
+GRAD sidecar 可以使用独立环境，不要求和主项目完全一致。
+
+### 4. 检查 `.env`
+
+更新后对比 `.env.example` 和本地 `.env`，确认新增配置已经补齐。常见关键项包括：
+
+```env
+APP_OPENAI_API_KEY=
+APP_CHECKPOINT_BACKEND=memory
+APP_VISION_DETECTOR_BACKEND=grad
+APP_GRAD_DETECTOR_URL=http://127.0.0.1:9011/detect
+APP_GRAD_DETECTOR_TIMEOUT=180
+```
+
+`.env` 只保存在本地或服务器，不要提交到 Git。
+
+### 5. 启动验证
+
+主后端验证：
+
+```bash
+python -m uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+curl http://127.0.0.1:8000/v1/system/health
+```
+
+如果使用 GRAD，先启动 sidecar：
+
+```bash
+python -m uvicorn services.grad_local.app:app --host 0.0.0.0 --port 9011
+curl http://127.0.0.1:9011/health
+```
+
+再启动主后端并检查 `grad_sidecar` 是否为 `configured`。
+
+### 6. 修改后测试
+
+如果修改了后端、Agent、工具或接口，至少运行相关测试：
+
+```bash
+python -m pytest tests/test_industrial_pilot.py -q
+python -m pytest tests/test_image_anomaly_detection_router.py -q
+```
+
+如果只改文档，可以不运行代码测试，但要确认 Markdown 能正常读取、路径没有写错。
+
+### 7. 提交更新
+
+提交前再次确认状态：
+
+```bash
+git status
+```
+
+只提交代码、文档、配置模板和测试，不提交：
+
+```text
+.env
+data/rag/chroma/
+data/heatmaps/
+data/runtime/
+models/
+*.pth
+*.pt
+*.ckpt
+```
+
+提交信息建议使用中文，并遵循：
+
+```text
+type(scope): subject
+```
+
+示例：
+
+```bash
+git add README.md Docs/
+git commit -m "docs(readme): 更新项目交接与运行说明"
+git push origin feat/rag
+```
+
+## 注意事项
+
+- 不要提交 `.env`、API Key、Token、密码、私钥。
+- 不要提交模型权重、大数据集、ChromaDB 运行时索引和热力图缓存。
+- `data/` 下多数内容是运行时文件，提交前要确认是否应该进入 Git。
+- GRAD 训练环境和主系统环境可以不同，优先通过 sidecar 隔离。
+- 修改 API 字段时要同步检查前端、Pydantic schema 和测试。
+- 修改核心流程后至少运行相关测试或做一次完整接口验证。
