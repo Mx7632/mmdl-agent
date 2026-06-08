@@ -128,6 +128,9 @@ Started:
 - Added backend component health chips to the workbench status area.
 - Added structured RAG source chips for query results so retrieved cases expose
   source, category, anomaly type, severity, anomaly flag, and distance.
+- Upgraded the pilot quality status area into a structured inspection verdict
+  panel with score, defect type, review status, detector backend, model version,
+  and sample version.
 
 Recommended tasks:
 

@@ -1067,6 +1067,104 @@
             font-weight: 600;
         }
 
+        .quality-summary {
+            display: grid;
+            gap: 12px;
+        }
+
+        .quality-verdict {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            border: 1px solid var(--line-soft);
+            border-radius: 8px;
+            background: #fbfcfa;
+            padding: 12px;
+        }
+
+        .quality-title {
+            margin-bottom: 5px;
+            font-size: 15px;
+            font-weight: 800;
+            color: var(--text);
+        }
+
+        .quality-copy {
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .quality-score {
+            min-width: 72px;
+            text-align: right;
+            font-family: Consolas, "SFMono-Regular", monospace;
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text);
+        }
+
+        .quality-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .quality-item {
+            border: 1px solid var(--line-soft);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.72);
+            padding: 9px 10px;
+        }
+
+        .quality-item small {
+            display: block;
+            margin-bottom: 4px;
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .quality-item span {
+            display: block;
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 750;
+            overflow-wrap: anywhere;
+        }
+
+        .quality-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .quality-badge {
+            display: inline-flex;
+            min-height: 24px;
+            align-items: center;
+            border-radius: 999px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 750;
+        }
+
+        .quality-badge.warning {
+            background: var(--warn-soft);
+            color: var(--warn);
+        }
+
+        .quality-badge.ok {
+            background: var(--ok-soft);
+            color: var(--ok);
+        }
+
+        .quality-badge.neutral {
+            background: #edf2f7;
+            color: #334155;
+        }
+
         .analysis-section {
             margin-top: 12px;
             padding: 12px 14px;
@@ -3987,16 +4085,46 @@
 
         function renderIndustrialSummary(result) {
             const industrial = getIndustrialMetadata(result);
-            const lines = result ? [
-                `模型判断：${industrial.is_anomaly ? '异常候选' : '未见明确异常'}`,
-                `置信度：${Number(industrial.score || result.score || 0).toFixed(3)}`,
-                `缺陷类型：${industrial.defect_type || result.defect_type || 'unknown'}`,
-                `复核状态：${industrial.review_status || result.review_status || 'unknown'}`,
-                `模型版本：${industrial.model_version || 'unknown'}`,
-                `样本版本：${industrial.sample_version || 'unversioned'}`
-            ] : ['等待检测结果。'];
             if (els.industrialSummary) {
-                els.industrialSummary.innerHTML = renderMarkdown(lines.join('\n'));
+                if (!result) {
+                    els.industrialSummary.textContent = '等待检测结果。';
+                } else {
+                    const isAnomaly = industrial.is_anomaly ?? result.is_anomaly ?? Boolean(result.anomalies?.length);
+                    const score = Number(industrial.score ?? result.score ?? 0);
+                    const defectType = industrial.defect_type || result.defect_type || 'unknown';
+                    const reviewStatus = industrial.review_status || result.review_status || 'unknown';
+                    const requiresReview = Boolean(industrial.requires_review ?? result.requires_review);
+                    const modelBackend = industrial.model_backend || getResultMetadata(result)?.selected_backend || 'unknown';
+                    const modelVersion = industrial.model_version || 'unknown';
+                    const sampleVersion = industrial.sample_version || 'unversioned';
+                    const verdictTitle = isAnomaly ? '异常候选' : '未见明确异常';
+                    const verdictCopy = requiresReview
+                        ? '当前结果需要人工复核后再进入知识库或报告闭环。'
+                        : '当前结果可继续追问、生成报告或进入历史记录。';
+                    const badges = [
+                        `<span class="quality-badge ${isAnomaly ? 'warning' : 'ok'}">${escapeHtml(verdictTitle)}</span>`,
+                        `<span class="quality-badge ${requiresReview ? 'warning' : 'neutral'}">${escapeHtml(requiresReview ? '待人工复核' : reviewStatus)}</span>`,
+                        result.has_report ? '<span class="quality-badge ok">已生成报告</span>' : ''
+                    ].filter(Boolean).join('');
+                    els.industrialSummary.innerHTML = `
+                        <div class="quality-summary">
+                            <div class="quality-verdict">
+                                <div>
+                                    <div class="quality-title">${escapeHtml(verdictTitle)}</div>
+                                    <div class="quality-copy">${escapeHtml(verdictCopy)}</div>
+                                </div>
+                                <div class="quality-score">${Number.isFinite(score) ? score.toFixed(3) : '0.000'}</div>
+                            </div>
+                            <div class="quality-badges">${badges}</div>
+                            <div class="quality-grid">
+                                <div class="quality-item"><small>缺陷类型</small><span>${escapeHtml(defectType)}</span></div>
+                                <div class="quality-item"><small>检测后端</small><span>${escapeHtml(modelBackend)}</span></div>
+                                <div class="quality-item"><small>模型版本</small><span>${escapeHtml(modelVersion)}</span></div>
+                                <div class="quality-item"><small>样本版本</small><span>${escapeHtml(sampleVersion)}</span></div>
+                            </div>
+                        </div>
+                    `;
+                }
             }
             const canReview = Boolean(result?.task_id && (industrial.requires_review || result.requires_review));
             if (els.approveReviewButton) els.approveReviewButton.disabled = !canReview;
