@@ -88,6 +88,15 @@ Recommended tasks:
 
 Goal: reduce fragile ad hoc payload handling.
 
+Started:
+
+- Added Pydantic runtime schemas for health, metrics, task list, and pending
+  review list responses.
+- Bound `/v1/system/health`, `/v1/metrics`, `/v1/tasks`, and
+  `/v1/reviews/pending` to response models without changing their JSON field
+  names.
+- Added OpenAPI regression coverage for the health response schema.
+
 Recommended tasks:
 
 - Add or refine Pydantic response schemas for:

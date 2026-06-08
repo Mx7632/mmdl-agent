@@ -17,7 +17,13 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from app.config.settings import settings
 from app.exceptions.base import AppError, DataMissingError, ResponseParseError, TaskNotFoundError
 from app.rag.service import get_rag_service
-from app.services import continue_detection, generate_report, get_pending_task, run_chat, run_detection
+from app.services import (
+    continue_detection,
+    generate_report,
+    get_pending_task,
+    run_chat,
+    run_detection,
+)
 from app.services.industrial_runtime import industrial_store, normalize_industrial_result
 from app.schemas.detection import DetectionTask
 from app.schemas.detection import (
@@ -34,6 +40,11 @@ from app.schemas.detection import (
     RagQueryRequest,
     RagQueryResponse,
 )
+from app.schemas.runtime import (
+    RuntimeMetricsResponse,
+    SystemHealthResponse,
+    TaskListResponse,
+)
 from app.utils.logging import TRACE_ID_HEADER, new_trace_id, set_trace_id, setup_logger
 
 app = FastAPI(
@@ -45,10 +56,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        origin.strip()
-        for origin in (settings.allowed_origins or "").split(",")
-        if origin.strip()
-    ] or ["http://127.0.0.1:8000"],
+        origin.strip() for origin in (settings.allowed_origins or "").split(",") if origin.strip()
+    ]
+    or ["http://127.0.0.1:8000"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -96,9 +106,15 @@ def _mount_local_swagger_assets() -> None:
         swagger_pkg_dir = Path(swagger_ui_bundle.__file__).resolve().parent
         swagger_vendor_candidates = sorted((swagger_pkg_dir / "vendor").glob("swagger-ui-*"))
         if not swagger_vendor_candidates:
-            raise FileNotFoundError(f"No swagger-ui vendor assets found under {swagger_pkg_dir / 'vendor'}")
+            raise FileNotFoundError(
+                f"No swagger-ui vendor assets found under {swagger_pkg_dir / 'vendor'}"
+            )
         swagger_assets_dir = swagger_vendor_candidates[-1]
-        app.mount(_SWAGGER_STATIC_ROUTE, StaticFiles(directory=str(swagger_assets_dir)), name="swagger_static")
+        app.mount(
+            _SWAGGER_STATIC_ROUTE,
+            StaticFiles(directory=str(swagger_assets_dir)),
+            name="swagger_static",
+        )
         _swagger_local_assets_ok = True
         logger.info("Mounted local Swagger assets from %s", swagger_assets_dir)
     except Exception as exc:  # pragma: no cover
@@ -134,13 +150,19 @@ async def add_trace_id(request: Request, call_next):
         setattr(request.state, "trace_id", trace_id)
         set_trace_id(trace_id)
     except HTTPException as e:
-        response = JSONResponse(status_code=e.status_code, content={"code": "unauthorized", "message": e.detail, "trace_id": trace_id})
+        response = JSONResponse(
+            status_code=e.status_code,
+            content={"code": "unauthorized", "message": e.detail, "trace_id": trace_id},
+        )
         origin = request.headers.get("origin")
         if _is_allowed_origin(origin):
             response.headers["Access-Control-Allow-Origin"] = origin
         return response
     except HTTPException as e:
-        response = JSONResponse(status_code=e.status_code, content={"code": "unauthorized", "message": e.detail, "trace_id": trace_id})
+        response = JSONResponse(
+            status_code=e.status_code,
+            content={"code": "unauthorized", "message": e.detail, "trace_id": trace_id},
+        )
         origin = request.headers.get("origin")
         if _is_allowed_origin(origin):
             response.headers["Access-Control-Allow-Origin"] = origin
@@ -152,27 +174,28 @@ async def add_trace_id(request: Request, call_next):
         _check_api_token(request)
         response = await call_next(request)
         response.headers[TRACE_ID_HEADER] = trace_id
-        
+
         # 强制补充 CORS 头（防止 500 时 CORSMiddleware 失效）
         origin = request.headers.get("origin")
         if _is_allowed_origin(origin):
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Methods"] = "*"
             response.headers["Access-Control-Allow-Headers"] = "*"
-            
+
         return response
     except Exception as e:
         import traceback
+
         logger.error(f"Middleware execution error: {e}\n{traceback.format_exc()}")
-        
+
         content = {"code": "internal_error", "message": str(e), "trace_id": trace_id}
         response = JSONResponse(status_code=500, content=content)
-        
+
         # 错误响应也必须带上 CORS 头
         origin = request.headers.get("origin")
         if _is_allowed_origin(origin):
             response.headers["Access-Control-Allow-Origin"] = origin
-            
+
         return response
 
 
@@ -181,17 +204,26 @@ async def app_error_handler(request: Request, exc: AppError):
     logger.error(f"{exc.code}: {exc.message}")
     return JSONResponse(
         status_code=exc.status_code,
-        content={"code": exc.code, "message": exc.message, "trace_id": getattr(request.state, "trace_id", "-")},
+        content={
+            "code": exc.code,
+            "message": exc.message,
+            "trace_id": getattr(request.state, "trace_id", "-"),
+        },
     )
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     import traceback
+
     logger.error(f"Unhandled Exception: {exc}\n{traceback.format_exc()}")
     return JSONResponse(
         status_code=500,
-        content={"code": "internal_error", "message": str(exc), "trace_id": getattr(request.state, "trace_id", "-")},
+        content={
+            "code": "internal_error",
+            "message": str(exc),
+            "trace_id": getattr(request.state, "trace_id", "-"),
+        },
     )
 
 
@@ -212,16 +244,18 @@ async def health_check():
     return {"status": "ok", "timestamp": __import__("time").time()}
 
 
-@app.get("/v1/system/health")
-async def system_health():
+@app.get("/v1/system/health", response_model=SystemHealthResponse)
+async def system_health() -> SystemHealthResponse:
     from app.tools.patchcore_detection import trained_patchcore_categories
 
     trained_categories = trained_patchcore_categories()
-    allowed_origins = [origin.strip() for origin in (settings.allowed_origins or "").split(",") if origin.strip()]
-    return {
-        "status": "ok",
-        "timestamp": time.time(),
-        "components": {
+    allowed_origins = [
+        origin.strip() for origin in (settings.allowed_origins or "").split(",") if origin.strip()
+    ]
+    return SystemHealthResponse(
+        status="ok",
+        timestamp=time.time(),
+        components={
             "api": {"status": "ok"},
             "rag": {
                 "status": "ok" if Path(settings.rag_vector_dir).exists() else "missing",
@@ -237,7 +271,9 @@ async def system_health():
                 "trained_categories": trained_categories,
             },
             "anomalygpt_sidecar": {
-                "status": "configured" if settings.professional_vision_detector_url else "not_configured",
+                "status": "configured"
+                if settings.professional_vision_detector_url
+                else "not_configured",
                 "url": settings.professional_vision_detector_url,
             },
             "grad_sidecar": {
@@ -249,13 +285,13 @@ async def system_health():
                 "allowed_origins": allowed_origins,
             },
         },
-        "metrics": industrial_store.metrics(),
-    }
+        metrics=industrial_store.metrics(),
+    )
 
 
-@app.get("/v1/metrics")
-async def runtime_metrics():
-    return {"status": "success", "metrics": industrial_store.metrics()}
+@app.get("/v1/metrics", response_model=RuntimeMetricsResponse)
+async def runtime_metrics() -> RuntimeMetricsResponse:
+    return RuntimeMetricsResponse(status="success", metrics=industrial_store.metrics())
 
 
 @app.get("/v1/memory/sessions")
@@ -283,7 +319,10 @@ async def save_memory_session(request: Request):
 async def get_memory_session(session_id: str):
     session = industrial_store.get_session(session_id)
     if session is None:
-        return JSONResponse(status_code=404, content={"code": "not_found", "message": f"Session {session_id} not found"})
+        return JSONResponse(
+            status_code=404,
+            content={"code": "not_found", "message": f"Session {session_id} not found"},
+        )
     return {"status": "success", "session": session}
 
 
@@ -291,7 +330,10 @@ async def get_memory_session(session_id: str):
 async def delete_memory_session(session_id: str):
     deleted = industrial_store.delete_session(session_id)
     if not deleted:
-        return JSONResponse(status_code=404, content={"code": "not_found", "message": f"Session {session_id} not found"})
+        return JSONResponse(
+            status_code=404,
+            content={"code": "not_found", "message": f"Session {session_id} not found"},
+        )
     return {"status": "success", "deleted": True}
 
 
@@ -332,7 +374,9 @@ async def rag_build(payload: RagBuildRequest) -> RagBuildResponse:
 
 
 @app.post("/v1/rag/generate-descriptions", response_model=RagGenerateDescriptionsResponse)
-async def rag_generate_descriptions(payload: RagGenerateDescriptionsRequest) -> RagGenerateDescriptionsResponse:
+async def rag_generate_descriptions(
+    payload: RagGenerateDescriptionsRequest,
+) -> RagGenerateDescriptionsResponse:
     service = get_rag_service()
     result = service.generate_anomaly_descriptions(
         dataset_root=payload.dataset_root,
@@ -500,6 +544,7 @@ async def detect(request: Request):
         return normalize_industrial_result(result)
     except Exception as e:
         import traceback
+
         logger.error(f"[detect] run_detection failed: {e}\n{traceback.format_exc()}")
         raise
 
@@ -523,9 +568,13 @@ async def batch_detect(request: Request):
 
     raw_parameters = form.get("parameters")
     try:
-        parameters = json.loads(raw_parameters) if isinstance(raw_parameters, str) and raw_parameters else {}
+        parameters = (
+            json.loads(raw_parameters) if isinstance(raw_parameters, str) and raw_parameters else {}
+        )
     except Exception as exc:
-        raise ResponseParseError("parameters must be valid JSON string", raw_response=raw_parameters, original_error=exc)
+        raise ResponseParseError(
+            "parameters must be valid JSON string", raw_response=raw_parameters, original_error=exc
+        )
 
     uploads = [
         item
@@ -535,7 +584,9 @@ async def batch_detect(request: Request):
     if not uploads:
         raise DataMissingError("At least one image is required")
 
-    batch = industrial_store.create_batch(asset_id=asset_id, question=question, item_count=len(uploads))
+    batch = industrial_store.create_batch(
+        asset_id=asset_id, question=question, item_count=len(uploads)
+    )
     task_ids: list[str] = []
     results: list[dict[str, Any]] = []
     for index, upload in enumerate(uploads, start=1):
@@ -570,7 +621,7 @@ async def batch_detect(request: Request):
     }
 
 
-@app.get("/v1/tasks")
+@app.get("/v1/tasks", response_model=TaskListResponse)
 async def list_task_history(
     asset_id: str | None = None,
     status: str | None = None,
@@ -578,21 +629,21 @@ async def list_task_history(
     review_status: str | None = None,
     limit: int = 50,
 ):
-    return {
-        "status": "success",
-        "tasks": industrial_store.list_tasks(
+    return TaskListResponse(
+        status="success",
+        tasks=industrial_store.list_tasks(
             asset_id=asset_id,
             status=status,
             defect_type=defect_type,
             review_status=review_status,
             limit=limit,
         ),
-    }
+    )
 
 
-@app.get("/v1/reviews/pending")
-async def pending_reviews(limit: int = 50):
-    return {"status": "success", "tasks": industrial_store.pending_reviews(limit=limit)}
+@app.get("/v1/reviews/pending", response_model=TaskListResponse)
+async def pending_reviews(limit: int = 50) -> TaskListResponse:
+    return TaskListResponse(status="success", tasks=industrial_store.pending_reviews(limit=limit))
 
 
 @app.get("/v1/tasks/{task_id}")
@@ -632,7 +683,9 @@ async def review_task(task_id: str, request: Request):
             reviewer=(body.get("reviewer") or None),
         )
     except KeyError:
-        return JSONResponse(status_code=404, content={"code": "not_found", "message": f"Task {task_id} not found"})
+        return JSONResponse(
+            status_code=404, content={"code": "not_found", "message": f"Task {task_id} not found"}
+        )
     return {"status": "success", "task": task}
 
 
@@ -641,7 +694,9 @@ async def batch_report(batch_id: str):
     try:
         return {"status": "success", **industrial_store.batch_report(batch_id)}
     except KeyError:
-        return JSONResponse(status_code=404, content={"code": "not_found", "message": f"Batch {batch_id} not found"})
+        return JSONResponse(
+            status_code=404, content={"code": "not_found", "message": f"Batch {batch_id} not found"}
+        )
 
 
 @app.post("/v1/rag/feedback/{feedback_id}/review")
@@ -653,7 +708,9 @@ async def review_rag_feedback(feedback_id: str, request: Request):
     try:
         feedback = industrial_store.review_feedback(feedback_id, decision)
     except KeyError:
-        return JSONResponse(status_code=404, content={"code": "not_found", "message": "feedback not found"})
+        return JSONResponse(
+            status_code=404, content={"code": "not_found", "message": "feedback not found"}
+        )
     return {"status": "success", "feedback": feedback}
 
 
@@ -757,9 +814,11 @@ async def stream_chat(request: Request):
         asset_id = get_form_text(form, "asset_id") or "EQUIP-001"
         question = get_form_text(form, "question")
         user_reply = get_form_text(form, "user_reply").strip()
-        
-        logger.info(f"[stream_chat] Received request: task_id={task_id}, asset_id={asset_id}, question={question}")
-        
+
+        logger.info(
+            f"[stream_chat] Received request: task_id={task_id}, asset_id={asset_id}, question={question}"
+        )
+
         # 构造任务
         parameters = {}
         raw_params = form.get("parameters")
@@ -785,7 +844,7 @@ async def stream_chat(request: Request):
             logger.info("[stream_chat] No image upload detected in current request")
 
         from app.services import stream_continue_detection, stream_detection
-        
+
         async def wrapped_stream():
             try:
                 if user_reply:
@@ -799,12 +858,13 @@ async def stream_chat(request: Request):
                         input_type=input_type,
                         parameters=parameters,
                         start_time=datetime.now().isoformat(),
-                        end_time=datetime.now().isoformat()
+                        end_time=datetime.now().isoformat(),
                     )
                     async for chunk in stream_detection(task):
                         yield chunk
             except Exception as e:
                 import traceback
+
                 logger.error(f"[stream_chat] Error during streaming: {e}\n{traceback.format_exc()}")
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
@@ -815,14 +875,14 @@ async def stream_chat(request: Request):
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
                 "Content-Type": "text/event-stream",
-            }
+            },
         )
     except Exception as e:
         import traceback
+
         logger.error(f"[stream_chat] Setup Error: {e}\n{traceback.format_exc()}")
         return JSONResponse(
-            status_code=500,
-            content={"code": "stream_setup_error", "message": str(e)}
+            status_code=500, content={"code": "stream_setup_error", "message": str(e)}
         )
 
 
@@ -914,5 +974,6 @@ async def detect_with_report(request: Request):
         return detection_result
     except Exception as e:
         import traceback
+
         logger.error(f"[detect_with_report] failed: {e}\n{traceback.format_exc()}")
         raise
