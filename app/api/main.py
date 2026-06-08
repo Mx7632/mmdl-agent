@@ -485,8 +485,8 @@ async def rag_ingest_feedback(payload: RagIngestFeedbackRequest) -> RagIngestFee
 # ── 检测端点（合并本地 + 远程逻辑）─────────────────────────────────────────────
 
 
-@app.post("/v1/detect")
-async def detect(request: Request):
+@app.post("/v1/detect", response_model=ProductAnalysisResponse, response_model_exclude_none=True)
+async def detect(request: Request) -> ProductAnalysisResponse:
     """
     创建检测任务并执行循环工作流。
 
@@ -554,7 +554,7 @@ async def detect(request: Request):
 
     try:
         result = await run_detection(task)
-        return normalize_industrial_result(result)
+        return ProductAnalysisResponse(**normalize_industrial_result(result))
     except Exception as e:
         import traceback
 
@@ -742,8 +742,8 @@ async def queue_rag_feedback(payload: RagIngestFeedbackRequest) -> RagIngestFeed
     )
 
 
-@app.post("/v1/continue")
-async def continue_req(request: Request):
+@app.post("/v1/continue", response_model=ProductAnalysisResponse, response_model_exclude_none=True)
+async def continue_req(request: Request) -> ProductAnalysisResponse:
     """
     续传检测任务（用户澄清后调用）。
     将用户回复注入当前挂起任务，继续执行工作流。
@@ -758,7 +758,7 @@ async def continue_req(request: Request):
         raise DataMissingError("user_reply cannot be empty")
 
     result = await continue_detection(task_id, user_reply)
-    return result
+    return ProductAnalysisResponse(**result)
 
 
 @app.get("/v1/pending/{task_id}")
@@ -776,8 +776,8 @@ async def pending(task_id: str):
     return info
 
 
-@app.post("/v1/chat")
-async def chat(request: Request):
+@app.post("/v1/chat", response_model=ProductAnalysisResponse, response_model_exclude_none=True)
+async def chat(request: Request) -> ProductAnalysisResponse:
     """
     多轮对话接口。
     基于已有检测任务，回答用户的新问题。
@@ -792,7 +792,7 @@ async def chat(request: Request):
         raise DataMissingError("question cannot be empty")
 
     result = await run_chat(task_id, question)
-    return result
+    return ProductAnalysisResponse(**result)
 
 
 @app.post("/v1/generate_report", response_model=ReportGenerationResponse)

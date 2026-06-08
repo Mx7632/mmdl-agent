@@ -84,6 +84,22 @@ def test_report_openapi_uses_product_analysis_schemas():
     assert "ProductAnalysisResponse" in schema["components"]["schemas"]
 
 
+def test_main_interaction_openapi_uses_product_analysis_schema():
+    client = TestClient(api_main.app)
+
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    schema = response.json()
+    for path in ("/v1/detect", "/v1/chat", "/v1/continue"):
+        assert (
+            schema["paths"][path]["post"]["responses"]["200"]["content"]["application/json"][
+                "schema"
+            ]["$ref"]
+            == "#/components/schemas/ProductAnalysisResponse"
+        )
+
+
 def test_rag_query_openapi_exposes_source_metadata_schema():
     client = TestClient(api_main.app)
 

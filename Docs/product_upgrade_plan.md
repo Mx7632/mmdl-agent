@@ -99,6 +99,8 @@ Started:
   batch detection, batch report, and RAG feedback review responses.
 - Added product analysis/report response schemas for `/v1/generate_report` and
   `/v1/detect_with_report`.
+- Bound `/v1/detect`, `/v1/chat`, and `/v1/continue` to the shared product
+  analysis response schema so the frontend can consume one result contract.
 - Added a structured RAG source metadata schema for `/v1/rag/query` and
   `/v1/rag/query-image`, while preserving extension fields for future dataset
   provenance.
