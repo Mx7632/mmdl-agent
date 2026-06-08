@@ -95,7 +95,10 @@ Started:
 - Bound `/v1/system/health`, `/v1/metrics`, `/v1/tasks`, and
   `/v1/reviews/pending` to response models without changing their JSON field
   names.
-- Added OpenAPI regression coverage for the health response schema.
+- Added Pydantic runtime schemas for task detail, task deletion, task review,
+  batch detection, batch report, and RAG feedback review responses.
+- Added OpenAPI regression coverage for health, task detail, and batch report
+  response schemas.
 
 Recommended tasks:
 

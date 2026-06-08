@@ -41,9 +41,16 @@ from app.schemas.detection import (
     RagQueryResponse,
 )
 from app.schemas.runtime import (
+    BatchDetectResponse,
+    BatchReportResponse,
+    DeleteAllTasksResponse,
+    DeleteTaskResponse,
+    RagFeedbackReviewResponse,
     RuntimeMetricsResponse,
     SystemHealthResponse,
+    TaskDetailResponse,
     TaskListResponse,
+    TaskReviewResponse,
 )
 from app.utils.logging import TRACE_ID_HEADER, new_trace_id, set_trace_id, setup_logger
 
@@ -554,8 +561,8 @@ def now_iso_or(value: str) -> str:
     return cleaned or datetime.now().isoformat()
 
 
-@app.post("/v1/batches/detect")
-async def batch_detect(request: Request):
+@app.post("/v1/batches/detect", response_model=BatchDetectResponse)
+async def batch_detect(request: Request) -> BatchDetectResponse:
     content_type = (request.headers.get("content-type") or "").lower()
     if "multipart/form-data" not in content_type:
         raise DataMissingError("Only multipart/form-data is supported for /v1/batches/detect")
@@ -613,12 +620,12 @@ async def batch_detect(request: Request):
         results.append(result)
 
     batch = industrial_store.finish_batch(batch["batch_id"], task_ids)
-    return {
-        "status": "success",
-        "batch": batch,
-        "results": results,
-        "report": industrial_store.batch_report(batch["batch_id"]),
-    }
+    return BatchDetectResponse(
+        status="success",
+        batch=batch,
+        results=results,
+        report=industrial_store.batch_report(batch["batch_id"]),
+    )
 
 
 @app.get("/v1/tasks", response_model=TaskListResponse)
@@ -646,30 +653,30 @@ async def pending_reviews(limit: int = 50) -> TaskListResponse:
     return TaskListResponse(status="success", tasks=industrial_store.pending_reviews(limit=limit))
 
 
-@app.get("/v1/tasks/{task_id}")
-async def get_task_detail(task_id: str):
+@app.get("/v1/tasks/{task_id}", response_model=TaskDetailResponse)
+async def get_task_detail(task_id: str) -> TaskDetailResponse:
     task = industrial_store.get_task(task_id)
     if task is None:
         raise TaskNotFoundError(f"Task {task_id} not found")
-    return {"status": "success", **task}
+    return TaskDetailResponse(status="success", **task)
 
 
-@app.delete("/v1/tasks/{task_id}")
-async def delete_task(task_id: str):
+@app.delete("/v1/tasks/{task_id}", response_model=DeleteTaskResponse)
+async def delete_task(task_id: str) -> DeleteTaskResponse:
     deleted = industrial_store.delete_task(task_id)
     if not deleted:
         raise TaskNotFoundError(f"Task {task_id} not found")
-    return {"status": "success", "deleted": task_id}
+    return DeleteTaskResponse(status="success", deleted=task_id)
 
 
-@app.delete("/v1/tasks")
-async def delete_all_tasks():
+@app.delete("/v1/tasks", response_model=DeleteAllTasksResponse)
+async def delete_all_tasks() -> DeleteAllTasksResponse:
     count = industrial_store.delete_all_tasks()
-    return {"status": "success", "deleted_count": count}
+    return DeleteAllTasksResponse(status="success", deleted_count=count)
 
 
-@app.post("/v1/tasks/{task_id}/review")
-async def review_task(task_id: str, request: Request):
+@app.post("/v1/tasks/{task_id}/review", response_model=TaskReviewResponse)
+async def review_task(task_id: str, request: Request) -> TaskReviewResponse | JSONResponse:
     body = await request.json()
     decision = str(body.get("decision", "")).strip().lower()
     if decision not in {"approve", "approved", "confirm", "confirmed", "reject", "rejected"}:
@@ -686,21 +693,23 @@ async def review_task(task_id: str, request: Request):
         return JSONResponse(
             status_code=404, content={"code": "not_found", "message": f"Task {task_id} not found"}
         )
-    return {"status": "success", "task": task}
+    return TaskReviewResponse(status="success", task=task)
 
 
-@app.post("/v1/batches/{batch_id}/report")
-async def batch_report(batch_id: str):
+@app.post("/v1/batches/{batch_id}/report", response_model=BatchReportResponse)
+async def batch_report(batch_id: str) -> BatchReportResponse | JSONResponse:
     try:
-        return {"status": "success", **industrial_store.batch_report(batch_id)}
+        return BatchReportResponse(status="success", **industrial_store.batch_report(batch_id))
     except KeyError:
         return JSONResponse(
             status_code=404, content={"code": "not_found", "message": f"Batch {batch_id} not found"}
         )
 
 
-@app.post("/v1/rag/feedback/{feedback_id}/review")
-async def review_rag_feedback(feedback_id: str, request: Request):
+@app.post("/v1/rag/feedback/{feedback_id}/review", response_model=RagFeedbackReviewResponse)
+async def review_rag_feedback(
+    feedback_id: str, request: Request
+) -> RagFeedbackReviewResponse | JSONResponse:
     body = await request.json()
     decision = str(body.get("decision", "")).strip().lower()
     if decision not in {"approve", "approved", "reject", "rejected"}:
@@ -711,7 +720,7 @@ async def review_rag_feedback(feedback_id: str, request: Request):
         return JSONResponse(
             status_code=404, content={"code": "not_found", "message": "feedback not found"}
         )
-    return {"status": "success", "feedback": feedback}
+    return RagFeedbackReviewResponse(status="success", feedback=feedback)
 
 
 @app.post("/v1/rag/feedback/queue", response_model=RagIngestFeedbackResponse)

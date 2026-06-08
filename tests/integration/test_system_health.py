@@ -37,3 +37,26 @@ def test_system_health_openapi_uses_structured_schema():
         == "#/components/schemas/SystemHealthResponse"
     )
     assert "RuntimeMetrics" in schema["components"]["schemas"]
+
+
+def test_product_runtime_openapi_uses_task_and_batch_schemas():
+    client = TestClient(api_main.app)
+
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    schema = response.json()
+    assert (
+        schema["paths"]["/v1/tasks/{task_id}"]["get"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]["$ref"]
+        == "#/components/schemas/TaskDetailResponse"
+    )
+    assert (
+        schema["paths"]["/v1/batches/{batch_id}/report"]["post"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]["$ref"]
+        == "#/components/schemas/BatchReportResponse"
+    )
+    assert "TaskRecord" in schema["components"]["schemas"]
+    assert "BatchReport" in schema["components"]["schemas"]
