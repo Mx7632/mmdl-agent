@@ -54,9 +54,14 @@ Completed in the first pass:
   - converted legacy core node files to valid UTF-8;
   - removed unused imports and variables from affected modules/tests.
 
+Completed in the second pass:
+
+- Verified the backend can start and return `/v1/system/health`.
+- Added an integration test for the product runtime health contract.
+- Added a manual product workflow QA checklist with detector-readiness notes.
+
 Next recommended checks:
 
-- Run the backend health endpoint from a live server.
 - Verify one frontend detection workflow through `/web/index.html`.
 - Run a broader test subset around streaming and graph runtime.
 
