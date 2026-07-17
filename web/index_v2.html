@@ -891,7 +891,7 @@ function renderPatchcoreStatus() {
 
 async function refreshPatchcoreCatalog() {
     try {
-        const res = await fetch(API_BASE + '/v1/patchcore/catalog');
+        const res = await fetch(API_BASE + '/v1/patchcore/categories');
         if (res.ok) {
             state.patchcoreCatalog = await res.json();
             renderPatchcoreStatus();

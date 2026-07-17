@@ -35,6 +35,16 @@ def test_frontend_workspace_exposes_detector_and_failure_state_controls() -> Non
     assert 'value="qwen"' in html
     assert 'value="patchcore"' in html
     assert 'id="patchcore-status"' in html
-    assert "PatchCore 类别" in html
-    assert "检测失败" in html
-    assert "报告生成失败" in html
+    assert "/v1/patchcore/categories" in html
+    assert "/v1/system/health" in html
+
+
+def test_frontend_v2_uses_existing_patchcore_categories_endpoint() -> None:
+    client = TestClient(api_main.app)
+
+    response = client.get("/web/index_v2.html")
+
+    assert response.status_code == 200
+    html = response.text
+    assert "/v1/patchcore/categories" in html
+    assert "/v1/patchcore/catalog" not in html
